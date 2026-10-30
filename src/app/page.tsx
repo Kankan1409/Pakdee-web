@@ -14,6 +14,7 @@ import { MeterSpreadsheetView } from "@/components/meters/meter-spreadsheet-view
 import { InvoicePreviewModal } from "@/components/invoice/invoice-preview-modal";
 import { SuperAdminModal } from "@/components/admin/super-admin-modal";
 import { ContractManagementView } from "@/components/contracts/contract-management-view";
+import { DigitalLeases } from "@/components/leases/digital-leases";
 import { RepairsManagementView } from "@/components/repairs/repairs-management-view";
 import { AccountingExportView } from "@/components/accounting/accounting-export-view";
 import { BranchSettingsView } from "@/components/settings/branch-settings-view";
@@ -413,7 +414,8 @@ export default function HomePage() {
     slips: { path: "/slips", title: "ระบบตรวจสลิปโอนเงิน" },
     receipts: { path: "/receipts", title: "ระบบออกใบเสร็จรับเงิน" },
     tenants: { path: "/tenants", title: "ทะเบียนผู้เช่าและเอกสาร" },
-    leases: { path: "/contracts", title: "สัญญาเช่าดิจิทัล (เซ็นออนไลน์)" },
+    "digital-leases": { path: "/digital-leases", title: "สัญญาเช่าดิจิทัล (เซ็นออนไลน์ E-Sign)" },
+    leases: { path: "/contracts", title: "ระบบจัดการสัญญาเช่าเดิม" },
     checkout: { path: "/checkout", title: "ระบบสรุปย้ายออก & คืนเงินประกัน" },
     cleaning: { path: "/cleaning", title: "งานแม่บ้านทำความสะอาด" },
     repairs: { path: "/repairs", title: "ระบบแจ้งซ่อมบำรุงห้องพัก" },
@@ -432,6 +434,9 @@ export default function HomePage() {
     }
     if (clean === "/rooms" || clean === "/room-grid") {
       return { tab: "room-grid", isBranches: false };
+    }
+    if (clean === "/digital-leases" || clean === "/esign") {
+      return { tab: "digital-leases", isBranches: false };
     }
     if (clean === "/contracts" || clean === "/leases") {
       return { tab: "leases", isBranches: false };
@@ -1647,8 +1652,10 @@ export default function HomePage() {
         return "ระบบออกใบเสร็จรับเงิน";
       case "tenants":
         return "ทะเบียนผู้เช่าและเอกสาร";
+      case "digital-leases":
+        return "สัญญาเช่าดิจิทัล (เซ็นออนไลน์ E-Sign)";
       case "leases":
-        return "สัญญาเช่าดิจิทัล (เซ็นออนไลน์)";
+        return "ระบบจัดการสัญญาเช่าเดิม";
       case "checkout":
         return "ระบบสรุปย้ายออก & คืนเงินประกัน";
       case "cleaning":
@@ -2252,7 +2259,16 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* VIEW: Leases & Contracts */}
+          {/* VIEW: Digital Leases (Isolated Component) */}
+          {currentTab === "digital-leases" && (
+            <DigitalLeases
+              key={property.id}
+              rooms={rooms}
+              property={property}
+            />
+          )}
+
+          {/* VIEW: Leases & Contracts (Original) */}
           {currentTab === "leases" && (
             <ContractManagementView
               property={property}

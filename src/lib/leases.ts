@@ -1,7 +1,22 @@
 import type { Property, Room } from "@/types/dormitory";
 
 export type SignerRole = "landlord" | "tenant" | "witness1" | "witness2";
-export const roleLabels: Record<SignerRole, string> = { landlord: "ผู้ให้เช่า", tenant: "ผู้เช่า", witness1: "พยาน 1", witness2: "พยาน 2" };
+export const roleLabels: Record<SignerRole, string> = {
+  landlord: "ผู้ให้เช่า",
+  tenant: "ผู้เช่า",
+  witness1: "พยานคนที่ 1",
+  witness2: "พยานคนที่ 2",
+};
+
+export interface LeaseAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+  uploadedAt: string;
+}
+
 export interface LeaseDetails {
   propertyName: string; propertyAddress: string; roomNumber: string; floor: number;
   landlord: string; landlordPhone: string; tenant: string; tenantPhone: string; tenantIdCard: string; tenantAddress: string;
@@ -12,6 +27,7 @@ export interface LeaseSignature { name: string; image: string; signedAt: string;
 export interface LeaseRecord {
   id: string; propertyId: string; roomId: string; tenantId: string; revision: number;
   createdAt: string; updatedAt: string; details: LeaseDetails; signatures: Partial<Record<SignerRole, LeaseSignature>>;
+  attachments?: LeaseAttachment[];
 }
 export const consentText = "ข้าพเจ้าได้อ่านและยอมรับข้อความในสัญญาฉบับนี้ และยินยอมใช้ลายเซ็นอิเล็กทรอนิกส์ของข้าพเจ้าเพื่อลงนามในสัญญานี้";
 export const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -19,7 +35,7 @@ export function createLease(property: Property, room: Room): LeaseRecord {
   const start = today();
   const end = new Date(`${start}T12:00:00Z`); end.setUTCFullYear(end.getUTCFullYear() + 1); end.setUTCDate(end.getUTCDate() - 1);
   return { id: crypto.randomUUID(), propertyId: property.id, roomId: room.id, tenantId: room.currentTenant!.id,
-    revision: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), signatures: {},
+    revision: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), signatures: {}, attachments: [],
     details: { propertyName: property.name, propertyAddress: property.address, roomNumber: room.roomNumber, floor: room.floor,
       landlord: "", landlordPhone: property.phone, tenant: room.currentTenant!.fullName, tenantPhone: room.currentTenant!.phone,
       tenantIdCard: room.currentTenant!.idCard || "", tenantAddress: room.currentTenant!.address || "", witness1: "", witness2: "", madeAt: property.name,
@@ -60,7 +76,12 @@ export async function readLeases(): Promise<LeaseRecord[]> {
 }
 export async function saveLease(record: LeaseRecord): Promise<LeaseRecord> {
   const db = await openStore();
-  const next = { ...record, revision: record.revision + 1, updatedAt: new Date().toISOString() };
+  const next: LeaseRecord = {
+    ...record,
+    attachments: record.attachments || [],
+    revision: record.revision + 1,
+    updatedAt: new Date().toISOString()
+  };
   try { return await new Promise((resolve, reject) => {
     const tx = db.transaction("leases", "readwrite"); const store = tx.objectStore("leases");
     let conflict = false;

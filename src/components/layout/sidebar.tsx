@@ -13,6 +13,7 @@ import {
   Printer,
   Users,
   FileSignature,
+  FileText,
   DoorOpen,
   Sparkles,
   BarChart3,
@@ -149,9 +150,16 @@ export function Sidebar({
           icon: Users,
         },
         {
-          id: "leases",
+          id: "digital-leases",
           label: "สัญญาเช่าดิจิทัล",
           icon: FileSignature,
+          badgeText: "ใหม่",
+          badgeType: "brand",
+        },
+        {
+          id: "leases",
+          label: "สัญญาเช่าเดิม",
+          icon: FileText,
         },
         {
           id: "checkout",

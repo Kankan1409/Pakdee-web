@@ -41,6 +41,7 @@ const nextConfig: NextConfig = {
       { source: "/tenants", destination: "/" },
       { source: "/contracts", destination: "/" },
       { source: "/leases", destination: "/" },
+      { source: "/digital-leases", destination: "/" },
       { source: "/checkout", destination: "/" },
       { source: "/cleaning", destination: "/" },
       { source: "/repairs", destination: "/" },

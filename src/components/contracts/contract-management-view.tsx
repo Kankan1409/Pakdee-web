@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { DigitalLeases } from "@/components/leases/digital-leases";
 import { ContractItem, Room, Property } from "@/types/dormitory";
 import {
   FileSignature,
@@ -24,26 +23,14 @@ import {
 import { formatCurrency, formatDateThai } from "@/lib/utils";
 
 interface ContractManagementViewProps {
-  property: Property;
+  property?: Property;
   contracts: ContractItem[];
   rooms: Room[];
   onAddContract: (contract: Omit<ContractItem, "id" | "createdAt" | "contractNumber">) => void;
   onUpdateSignature?: (contractId: string, signatureUrl: string) => void;
 }
 
-export function ContractManagementView(props: ContractManagementViewProps) {
-  const [view, setView] = useState<"digital" | "legacy">("digital");
-  return <div className="space-y-5">
-    <nav aria-label="ประเภทหน้าสัญญา" className="flex flex-wrap gap-2">
-      <button type="button" aria-pressed={view === "digital"} onClick={() => setView("digital")} className={`rounded-xl px-4 py-2 text-sm ${view === "digital" ? "bg-emerald-600 text-white" : "border border-[var(--border)]"}`}>สัญญาเช่าดิจิทัล (ทดลอง)</button>
-      <button type="button" aria-pressed={view === "legacy"} onClick={() => setView("legacy")} className={`rounded-xl px-4 py-2 text-sm ${view === "legacy" ? "bg-emerald-600 text-white" : "border border-[var(--border)]"}`}>สัญญาเดิม ({props.contracts.length})</button>
-    </nav>
-    <div hidden={view !== "digital"}><DigitalLeases key={props.property.id} rooms={props.rooms} property={props.property} /></div>
-    {view === "legacy" && <LegacyContractManagementView {...props} />}
-  </div>;
-}
-
-function LegacyContractManagementView({
+export function ContractManagementView({
   contracts,
   rooms,
   onAddContract,

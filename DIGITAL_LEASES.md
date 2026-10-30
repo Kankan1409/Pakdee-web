@@ -2,12 +2,12 @@
 
 Branch: `feature/digital-leases-esign` (based on `921e4be`).
 
-Open the Contracts menu (`/contracts`). The new **สัญญาเช่าดิจิทัล (ทดลอง)** tab is the default. The **สัญญาเดิม** tab retains the existing contract workflow and records.
+Open the Digital Leases menu (`/digital-leases`). It operates as an independent component. The **สัญญาเช่าเดิม** menu (`/contracts`) retains the original contract workflow and records.
 
 ## New workflow
 
 - Select an occupied room, enter the parties, dates, rent, deposit, utilities and editable terms.
-- Save a draft, review the document and collect handwritten signatures from the landlord, tenant and optional witnesses.
+- Save a draft, review the document, attach ID cards/documents, and collect handwritten signatures from the landlord, tenant and 2 optional witnesses.
 - Each signer confirms consent. The first signature locks the document in the editor; subsequent signatures refer to the same SHA-256 document snapshot. This is an application-level integrity check, not an identity certificate.
 - Print only the agreement, with its signatures, in A4. Both Thai and Latin text use the bundled TH Sarabun New regular/bold fonts.
 - The LINE demo simulates a message, a tenant mobile signing view and an owner status update. It never sends a message, generates a working external link or persists its sample signature.
