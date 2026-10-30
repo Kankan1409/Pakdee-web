@@ -1,0 +1,53 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+  allowedDevOrigins: [
+    "192.168.7.126",
+    "192.168.7.126:3000",
+    "192.168.7.126:3001",
+    "192.168.7.98",
+    "192.168.7.98:3000",
+    "192.168.7.98:3001",
+    "localhost",
+    "localhost:3000",
+    "localhost:3001",
+    "127.0.0.1",
+    "127.0.0.1:3000",
+    "127.0.0.1:3001",
+    "0.0.0.0",
+    "0.0.0.0:3000",
+    "0.0.0.0:3001",
+  ],
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
+  async rewrites() {
+    return [
+      { source: "/branches", destination: "/" },
+      { source: "/dashboard", destination: "/" },
+      { source: "/rooms", destination: "/" },
+      { source: "/room-grid", destination: "/" },
+      { source: "/daily", destination: "/" },
+      { source: "/meter", destination: "/" },
+      { source: "/invoices", destination: "/" },
+      { source: "/slips", destination: "/" },
+      { source: "/receipts", destination: "/" },
+      { source: "/tenants", destination: "/" },
+      { source: "/contracts", destination: "/" },
+      { source: "/leases", destination: "/" },
+      { source: "/checkout", destination: "/" },
+      { source: "/cleaning", destination: "/" },
+      { source: "/repairs", destination: "/" },
+      { source: "/reports", destination: "/" },
+      { source: "/settings", destination: "/" },
+    ];
+  },
+};
+
+export default nextConfig;

@@ -1,0 +1,501 @@
+{
+  "pakdee_dev_properties": [
+    {
+      "id": "prop-1",
+      "name": "พักดี แมนชั่น (สาขา 1)",
+      "address": "123/45 ซอยสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110",
+      "phone": "081-234-5678",
+      "promptpayNumber": "0812345678",
+      "promptpayName": "หอพัก พักดี แมนชั่น",
+      "plan": "pro",
+      "electricRate": 8,
+      "waterRate": 18,
+      "totalRooms": 24,
+      "vacantRooms": 19,
+      "occupiedRooms": 4,
+      "dailyRooms": 1,
+      "buildingName": "อาคาร A"
+    }
+  ],
+  "pakdee_dev_active_property_id": "prop-1",
+  "pakdee_dev_rooms": [
+    {
+      "id": "room-101",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "101",
+      "floor": 1,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "occupied",
+      "currentTenant": {
+        "id": "t-101",
+        "propertyId": "prop-1",
+        "fullName": "นายสมชาย สุขสบาย",
+        "phone": "089-999-8888",
+        "idCard": "1100200300400"
+      },
+      "currentElectricMeter": 1315,
+      "currentWaterMeter": 265,
+      "leaseEndDate": "2027-10-31"
+    },
+    {
+      "id": "room-102",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "102",
+      "floor": 1,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "occupied",
+      "currentTenant": {
+        "id": "t-102",
+        "propertyId": "prop-1",
+        "fullName": "นางสาวมณีรัตน์ แสงทอง",
+        "phone": "082-345-6789",
+        "idCard": "1100200300401"
+      },
+      "currentElectricMeter": 1330,
+      "currentWaterMeter": 270,
+      "leaseEndDate": "2027-10-31"
+    },
+    {
+      "id": "room-103",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "103",
+      "floor": 1,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1345,
+      "currentWaterMeter": 275
+    },
+    {
+      "id": "room-104",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "104",
+      "floor": 1,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1360,
+      "currentWaterMeter": 280
+    },
+    {
+      "id": "room-105",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "105",
+      "floor": 1,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "overdue",
+      "currentTenant": {
+        "id": "t-105",
+        "propertyId": "prop-1",
+        "fullName": "นายเอกชัย รุ่งโรจน์วิริยะ",
+        "phone": "087-777-6655",
+        "idCard": "1100200300405"
+      },
+      "currentElectricMeter": 1375,
+      "currentWaterMeter": 285
+    },
+    {
+      "id": "room-106",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "106",
+      "floor": 1,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1390,
+      "currentWaterMeter": 290
+    },
+    {
+      "id": "room-201",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "201",
+      "floor": 2,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "daily",
+      "currentElectricMeter": 1415,
+      "currentWaterMeter": 285
+    },
+    {
+      "id": "room-202",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "202",
+      "floor": 2,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1430,
+      "currentWaterMeter": 290
+    },
+    {
+      "id": "room-203",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "203",
+      "floor": 2,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1445,
+      "currentWaterMeter": 295
+    },
+    {
+      "id": "room-204",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "204",
+      "floor": 2,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "cleaning",
+      "currentElectricMeter": 1460,
+      "currentWaterMeter": 300
+    },
+    {
+      "id": "room-205",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "205",
+      "floor": 2,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1475,
+      "currentWaterMeter": 305
+    },
+    {
+      "id": "room-206",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "206",
+      "floor": 2,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1490,
+      "currentWaterMeter": 310
+    },
+    {
+      "id": "room-301",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "301",
+      "floor": 3,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1515,
+      "currentWaterMeter": 305
+    },
+    {
+      "id": "room-302",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "302",
+      "floor": 3,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1530,
+      "currentWaterMeter": 310
+    },
+    {
+      "id": "room-303",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "303",
+      "floor": 3,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1545,
+      "currentWaterMeter": 315
+    },
+    {
+      "id": "room-304",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "304",
+      "floor": 3,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1560,
+      "currentWaterMeter": 320
+    },
+    {
+      "id": "room-305",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "305",
+      "floor": 3,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1575,
+      "currentWaterMeter": 325
+    },
+    {
+      "id": "room-306",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "306",
+      "floor": 3,
+      "type": "Standard",
+      "monthlyRate": 4000,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1590,
+      "currentWaterMeter": 330
+    },
+    {
+      "id": "room-401",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "401",
+      "floor": 4,
+      "type": "Deluxe Suite",
+      "monthlyRate": 4500,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1615,
+      "currentWaterMeter": 325
+    },
+    {
+      "id": "room-402",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "402",
+      "floor": 4,
+      "type": "Deluxe Suite",
+      "monthlyRate": 4500,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1630,
+      "currentWaterMeter": 330
+    },
+    {
+      "id": "room-403",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "403",
+      "floor": 4,
+      "type": "Deluxe Suite",
+      "monthlyRate": 4500,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1645,
+      "currentWaterMeter": 335
+    },
+    {
+      "id": "room-404",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "404",
+      "floor": 4,
+      "type": "Deluxe Suite",
+      "monthlyRate": 4500,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1660,
+      "currentWaterMeter": 340
+    },
+    {
+      "id": "room-405",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "405",
+      "floor": 4,
+      "type": "Deluxe Suite",
+      "monthlyRate": 4500,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1675,
+      "currentWaterMeter": 345
+    },
+    {
+      "id": "room-406",
+      "propertyId": "prop-1",
+      "buildingId": "bldg-a",
+      "roomNumber": "406",
+      "floor": 4,
+      "type": "Deluxe Suite",
+      "monthlyRate": 4500,
+      "dailyRate": 650,
+      "status": "vacant",
+      "currentElectricMeter": 1690,
+      "currentWaterMeter": 350
+    }
+  ],
+  "pakdee_dev_tenants": [
+    {
+      "id": "t-101",
+      "propertyId": "prop-1",
+      "fullName": "นายสมชาย สุขสบาย",
+      "phone": "089-999-8888",
+      "idCard": "1100200300400",
+      "emergencyContact": "081-111-2222",
+      "lineId": "somchai_s",
+      "vehiclePlate": "1กข 1234 กทม.",
+      "roomId": "room-101"
+    },
+    {
+      "id": "t-102",
+      "propertyId": "prop-1",
+      "fullName": "นางสาวมณีรัตน์ แสงทอง",
+      "phone": "082-345-6789",
+      "idCard": "1100200300401",
+      "emergencyContact": "082-222-3333",
+      "lineId": "maneerat_s",
+      "vehiclePlate": "2กค 5678 กทม.",
+      "roomId": "room-102"
+    },
+    {
+      "id": "t-105",
+      "propertyId": "prop-1",
+      "fullName": "นายเอกชัย รุ่งโรจน์วิริยะ",
+      "phone": "087-777-6655",
+      "idCard": "1100200300405",
+      "emergencyContact": "083-333-4444",
+      "lineId": "ekkachai_r",
+      "vehiclePlate": "3กด 9012 กทม.",
+      "roomId": "room-105"
+    }
+  ],
+  "pakdee_dev_invoices": [
+    {
+      "id": "inv-202610-101",
+      "propertyId": "prop-1",
+      "invoiceNumber": "INV-202610-101",
+      "roomNumber": "101",
+      "tenantName": "นายสมชาย สุขสบาย",
+      "tenantPhone": "089-999-8888",
+      "billingDate": "2026-10-25",
+      "dueDate": "2026-11-05",
+      "items": [
+        {
+          "name": "ค่าเช่าห้องพักประจำเดือน (ห้องแอร์)",
+          "units": 1,
+          "rate": 4000,
+          "amount": 4000
+        },
+        {
+          "name": "ค่าไฟฟ้า (เลข 1420 ถึง 1485)",
+          "units": 65,
+          "rate": 8,
+          "amount": 520,
+          "meterPrev": 1420,
+          "meterCurr": 1485
+        },
+        {
+          "name": "ค่าน้ำประปา (เลข 320 ถึง 328)",
+          "units": 8,
+          "rate": 18,
+          "amount": 144,
+          "meterPrev": 320,
+          "meterCurr": 328
+        },
+        {
+          "name": "ค่าบริการส่วนกลางและเก็บขยะ",
+          "units": 1,
+          "rate": 100,
+          "amount": 100
+        },
+        {
+          "name": "ค่าที่จอดรถยนต์",
+          "units": 1,
+          "rate": 300,
+          "amount": 300
+        }
+      ],
+      "totalAmount": 5064,
+      "status": "paid",
+      "paidAt": "2026-10-26 10:15 น."
+    },
+    {
+      "id": "inv-202610-105",
+      "propertyId": "prop-1",
+      "invoiceNumber": "INV-202610-105",
+      "roomNumber": "105",
+      "tenantName": "นายเอกชัย รุ่งโรจน์วิริยะ",
+      "tenantPhone": "087-777-6655",
+      "billingDate": "2026-10-25",
+      "dueDate": "2026-10-20",
+      "items": [
+        {
+          "name": "ค่าเช่าห้องพักประจำเดือน",
+          "units": 1,
+          "rate": 4200,
+          "amount": 4200
+        },
+        {
+          "name": "ค่าไฟฟ้า (60 หน่วย)",
+          "units": 60,
+          "rate": 8,
+          "amount": 480
+        },
+        {
+          "name": "ค่าน้ำประปา (8 หน่วย)",
+          "units": 8,
+          "rate": 18,
+          "amount": 144
+        },
+        {
+          "name": "ค่าปรับชำระล่าช้า (5 วัน)",
+          "units": 1,
+          "rate": 100,
+          "amount": 100
+        }
+      ],
+      "totalAmount": 4924,
+      "status": "unpaid"
+    }
+  ],
+  "pakdee_dev_contracts": [],
+  "pakdee_dev_repairs": [],
+  "pakdee_dev_expenses": [],
+  "pakdee_dev_branch_settings": {
+    "id": "settings-prop-1",
+    "branchName": "พักดี แมนชั่น (สาขา 1)",
+    "address": "123/45 ซอยสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110",
+    "phone": "081-234-5678",
+    "ownerName": "นายพักดี มีสุข",
+    "ownerPhone": "081-234-5678",
+    "promptpayNumber": "0812345678",
+    "promptpayName": "หอพัก พักดี แมนชั่น",
+    "electricRate": 8,
+    "waterRate": 18
+  },
+  "pakdee_dev_broadcasts": [],
+  "pakdee_dev_activity_logs": [],
+  "pakdee_dev_meter_readings": [],
+  "pakdee_dev_daily_bookings": []
+}
