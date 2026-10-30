@@ -25,4 +25,3 @@ Existing contracts are not automatically imported, re-signed or migrated. Produc
 Validated in an isolated Chrome context with the application's `/api/db` requests intercepted and synthetic room/tenant fixtures. Covered draft creation, consent gating, both signatures, immutable editor after signing, reopen/reload, isolated print, embedded fonts, LINE simulation, mobile dialog layout, reset on close and no saved record from the LINE demo. TypeScript and the new-file ESLint checks were also run.
 
 To check locally: `npm ci`, `npm run dev`, then open `/contracts` after entering the local test session. For printouts, disable browser headers/footers to omit the URL and browser-generated date.
-

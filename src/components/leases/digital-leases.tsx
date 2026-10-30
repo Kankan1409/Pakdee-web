@@ -45,7 +45,7 @@ export function DigitalLeases({ rooms, property }: { rooms: Room[]; property: Pr
   const filtered = current.filter(r => `${r.details.roomNumber} ${r.details.tenant}`.toLowerCase().includes(query.toLowerCase()) && (filter === "all" || (filter === "signed" ? complete(r) : filter === "pending" ? locked(r) && !complete(r) : !locked(r))));
   if (selected) return <LeaseEditor key={selected.id} initial={selected} onBack={() => { setSelected(null); void refresh(); }} onSaved={r => setRecords(prev => [r, ...prev.filter(x => x.id !== r.id)])} />;
   return <section className="space-y-6">
-    {demo && <LineSigningDemo record={demo} onClose={() => setDemo(null)} renderDocument={r => <LeaseDocument record={r} />} />} 
+    {demo && <LineSigningDemo record={demo} onClose={() => setDemo(null)} renderDocument={r => <LeaseDocument record={r} />} />}
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div><div className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-widest text-emerald-600 dark:text-emerald-400"><FileSignature size={16} /> DIGITAL LEASES</div><h2 className="text-2xl font-bold">สัญญาเช่าดิจิทัล</h2><p className="mt-2 text-sm text-[var(--muted)]">เตรียมสัญญา ตรวจทาน และลงนามในที่เดียว</p></div>
       <div className="flex flex-wrap gap-2"><button className={secondary} disabled={!occupied.length} onClick={() => setDemo(createLease(property, occupied[0]))}>ทดลองส่งสัญญาทาง LINE</button>
@@ -170,7 +170,7 @@ img { max-width: 100%; }
     return <label key={key} className="block text-xs font-medium text-[var(--muted)]">{label}<input className={`${inputClass} mt-1.5`} type={type} value={d[key]} disabled={isLocked || busy} min={type === "number" ? (key === "dueDay" ? 1 : 0) : undefined} max={key === "dueDay" ? 28 : undefined} step={key === "dueDay" ? 1 : type === "number" ? "0.01" : undefined} onChange={e => update(key, type === "number" ? Number(e.target.value) : e.target.value)} /></label>;
   }
   return <section className="space-y-5">
-    {showLineDemo && <LineSigningDemo record={record} onClose={() => setShowLineDemo(false)} renderDocument={r => <LeaseDocument record={r} />} />} 
+    {showLineDemo && <LineSigningDemo record={record} onClose={() => setShowLineDemo(false)} renderDocument={r => <LeaseDocument record={r} />} />}
     <button className="flex items-center gap-2 text-sm text-[var(--muted)]" disabled={busy} onClick={() => { if ((!dirty && !signature) || window.confirm("มีข้อมูลหรือลายเซ็นที่ยังไม่บันทึก ต้องการออกจากเอกสารหรือไม่?")) onBack(); }}><ArrowLeft size={16} />กลับไปหน้าสัญญา</button>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-bold">สัญญาห้อง {d.roomNumber}</h2><p className="mt-1 text-xs text-[var(--muted)]">{d.tenant} · {leaseLabel(record)} · {status(record)}</p></div><div className="flex flex-wrap gap-2"><button className={secondary} disabled={busy} onClick={() => setShowLineDemo(true)}>ส่งทาง LINE (ตัวอย่าง)</button>{!isLocked && <button className={secondary} disabled={busy} onClick={() => void saveDraft()}><Save size={15} />บันทึกฉบับร่าง</button>}<button className={primary} disabled={busy || !verified} onClick={() => void print()}><Printer size={15} />พิมพ์ / บันทึก PDF</button></div></div>
     {error && <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-sm text-red-600">{error}</p>}{message && <p role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-600">{message}</p>}
