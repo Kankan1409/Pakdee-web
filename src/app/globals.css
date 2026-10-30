@@ -54,3 +54,22 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.4);
 }
+
+/* Bundled Thai and Latin glyphs for lease documents. */
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: url('/fonts/THSarabunNew.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: url('/fonts/THSarabunNewBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+.lease-paper, .lease-paper * { font-family: 'TH Sarabun New', sans-serif; }
+.lease-paper .text-xs { font-size: 16px; }
+.lease-paper .text-\[10px\] { font-size: 14px; }

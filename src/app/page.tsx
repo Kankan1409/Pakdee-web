@@ -2255,6 +2255,7 @@ export default function HomePage() {
           {/* VIEW: Leases & Contracts */}
           {currentTab === "leases" && (
             <ContractManagementView
+              property={property}
               contracts={contracts}
               rooms={rooms}
               onAddContract={handleAddContract}
