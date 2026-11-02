@@ -212,8 +212,9 @@ export function RoomMatrix({
   const getLeaseCountdown = (leaseEndDate?: string) => {
     if (!leaseEndDate) return null;
     const end = new Date(leaseEndDate).getTime();
+    const isInvalidDate = Number.isNaN(end);
     const now = new Date().setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+    const diffDays = isInvalidDate ? null : Math.ceil((end - now) / (1000 * 60 * 60 * 24));
 
     const d = new Date(leaseEndDate);
     const thaiMonthsShort = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -559,7 +560,11 @@ export function RoomMatrix({
                               </div>
                             ) : countdown ? (
                               <div className="mt-1">
-                                {countdown.diffDays < 0 ? (
+                                {countdown.diffDays === null ? (
+                                  <div className="text-[11px] text-[var(--muted)]">
+                                    {countdown.dateStr}
+                                  </div>
+                                ) : countdown.diffDays < 0 ? (
                                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/25">
                                     หมดสัญญาแล้ว ({Math.abs(countdown.diffDays)} วัน)
                                   </span>
@@ -640,7 +645,7 @@ export function RoomMatrix({
                               <AlertCircle className="w-3 h-3" />
                               <span>ค้างชำระค่าเช่า</span>
                             </div>
-                            {countdown && countdown.diffDays <= 30 && (
+                            {countdown && countdown.diffDays !== null && countdown.diffDays <= 30 && (
                               <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
                                 สัญญาหมดอีก {countdown.diffDays} วัน
                               </div>

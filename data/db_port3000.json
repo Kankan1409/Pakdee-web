@@ -28,18 +28,10 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "occupied",
-      "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
-      "version": 1,
-      "currentTenant": {
-        "id": "t-1793591313260",
-        "propertyId": "prop-1793250152420",
-        "fullName": "ปารเมศ เชิดชู",
-        "phone": "09",
-        "idCard": "-"
-      },
-      "leaseEndDate": "สัญญาต่อเนื่อง"
+      "status": "vacant",
+      "currentElectricMeter": 25,
+      "currentWaterMeter": 4,
+      "version": 1
     },
     {
       "id": "room-prop-1793250152420-102-1793589427858",
@@ -51,8 +43,8 @@
       "monthlyRate": 4000,
       "dailyRate": 650,
       "status": "vacant",
-      "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
+      "currentElectricMeter": 25,
+      "currentWaterMeter": 4,
       "version": 1
     },
     {
@@ -71,6 +63,27 @@
     }
   ],
   "pakdee_dev_tenants": [
+    {
+      "id": "t-1793591893841",
+      "propertyId": "prop-1793250152420",
+      "fullName": "เ",
+      "phone": "เ",
+      "idCard": "เ",
+      "gender": "MALE",
+      "invoiceLang": "TH",
+      "depositAmount": 8000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": []
+    },
     {
       "id": "t-1793591313098",
       "propertyId": "prop-1793250152420",
@@ -129,6 +142,47 @@
     }
   ],
   "pakdee_dev_invoices": [
+    {
+      "id": "inv-prop-1793250152420-1793591920303-101",
+      "propertyId": "prop-1793250152420",
+      "invoiceNumber": "INV-202611-101",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "tenantPhone": "เ",
+      "billingDate": "2026-11-25",
+      "dueDate": "2026-11-05",
+      "totalAmount": 4575,
+      "status": "paid",
+      "items": [
+        {
+          "name": "ค่าเช่าห้องพัก (ห้อง 101)",
+          "amount": 4000
+        },
+        {
+          "name": "ค่าไฟ 25 หน่วย (0 - 25)",
+          "units": 25,
+          "rate": 15,
+          "amount": 375,
+          "meterPrev": 0,
+          "meterCurr": 25
+        },
+        {
+          "name": "ค่าน้ำประปา 4 หน่วย (0 - 4)",
+          "units": 4,
+          "rate": 25,
+          "amount": 100,
+          "meterPrev": 0,
+          "meterCurr": 4
+        },
+        {
+          "name": "ค่าส่วนกลางและขยะ",
+          "amount": 100
+        }
+      ],
+      "paidAt": "2/11/2569 10:58:59",
+      "paidAmount": 4575,
+      "remainingAmount": 0
+    },
     {
       "id": "inv-202610-101",
       "propertyId": "prop-1",
@@ -208,6 +262,115 @@
     }
   ],
   "pakdee_dev_contracts": [
+    {
+      "id": "cnt-1793591893958",
+      "propertyId": "prop-1793250152420",
+      "contractNumber": "CT-2026-101-105",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "tenantPhone": "เ",
+      "startDate": "2026-11-02",
+      "endDate": "2027-11-02",
+      "monthlyRent": 4000,
+      "depositAmount": 8000,
+      "advanceRent": 4000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": [],
+      "paymentDueDay": 5,
+      "lateFeePerDay": 100,
+      "electricalEquipmentFee": 0,
+      "furnitureFee": 0,
+      "isContinuous": false,
+      "noticeDays": 30,
+      "depositRefundDays": 7,
+      "overdueGraceDays": 7,
+      "allowPets": false,
+      "noSmoking": true,
+      "additionalRules": [],
+      "clauses": [
+        {
+          "id": 1,
+          "title": "ห้องพักที่เช่า",
+          "content": "ผู้เช่าตกลงเช่าและผู้ให้เช่าตกลงให้เช่าห้องพักเลขที่ [หมายเลขห้อง] ชั้น [ชั้น] ตั้งอยู่ที่ [ที่อยู่หอพัก] เพื่อใช้เป็นที่พักอาศัยเท่านั้น ห้ามใช้เพื่อประโยชน์อื่นใดโดยมิได้รับความยินยอมเป็นลายลักษณ์อักษรจากผู้ให้เช่า"
+        },
+        {
+          "id": 2,
+          "title": "ระยะเวลาการเช่า",
+          "content": "สัญญาเช่าฉบับนี้กำหนดระยะเวลา ตั้งแต่วันที่ [วันเริ่มสัญญา] ถึงวันที่ [วันสิ้นสุดสัญญา] หากผู้เช่าประสงค์จะต่อสัญญา จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า 30 วันก่อนวันสิ้นสุดสัญญา"
+        },
+        {
+          "id": 3,
+          "title": "ค่าเช่า",
+          "content": "ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าเดือนละ [ค่าเช่า] บาท ([ค่าเช่าตัวอักษร]) ภายในวันที่ [วันกำหนดชำระ] ของทุกเดือน หากชำระล่าช้าจะต้องเสียค่าปรับวันละ [ค่าปรับ] บาท"
+        },
+        {
+          "id": 4,
+          "title": "เงินประกัน",
+          "content": "ผู้เช่าได้วางเงินประกันจำนวน [เงินประกัน] บาท ให้แก่ผู้ให้เช่า เงินประกันจะคืนให้ภายใน [จำนวนวันคืนเงินประกัน] วัน หลังจากวันสิ้นสุดสัญญาและย้ายออก หากไม่มีค่าเสียหายหรือค่าน้ำไฟค้างชำระ"
+        },
+        {
+          "id": 5,
+          "title": "ค่าสาธารณูปโภค",
+          "content": "ผู้เช่าตกลงชำระค่าสาธารณูปโภค ได้แก่ ค่าน้ำประปา ค่าไฟฟ้า ค่าบริการส่วนกลาง ค่าอินเทอร์เน็ต ตามอัตราที่หอพักกำหนด โดยชำระพร้อมกับค่าเช่าประจำเดือน"
+        },
+        {
+          "id": 6,
+          "title": "เฟอร์นิเจอร์และอุปกรณ์",
+          "content": "ผู้เช่าตกลงรับมอบห้องพักพร้อมเฟอร์นิเจอร์และอุปกรณ์ตามรายการที่ตรวจรับ ผู้เช่าจะบำรุงรักษาทรัพย์สินดังกล่าวให้อยู่ในสภาพดี หากเกิดความเสียหายต้องรับผิดชอบค่าซ่อมแซมหรือชดใช้"
+        },
+        {
+          "id": 7,
+          "title": "การดูแลรักษาห้องพัก",
+          "content": "ผู้เช่าจะต้องดูแลรักษาห้องพักให้มีสุขอนามัยเรียบร้อย สะอาด ไม่ทำลายทรัพย์สินของผู้ให้เช่า และไม่ดัดแปลงหรือต่อเติมห้องพักโดยไม่ได้รับอนุญาต"
+        },
+        {
+          "id": 8,
+          "title": "การใช้ห้องพัก",
+          "content": "ผู้เช่าจะไม่กระทำการอันเป็นการรบกวนความสงบสุขของผู้อื่น ไม่ประกอบกิจกรรมผิดกฎหมาย เก็บวัตถุอันตรายหรือสารเสพติด และต้องไม่กระทำการใดๆ ที่เป็นการรบกวนผู้อยู่อาศัยอื่น"
+        },
+        {
+          "id": 9,
+          "title": "ผู้พักอาศัย",
+          "content": "ผู้เช่าจะพักอาศัยตามจำนวนคนที่ตกลงไว้ หากมีบุคคลอื่นมาพักร่วมจะต้องได้รับอนุญาตและแจ้งให้ทราบและเสียค่าบริการเพิ่มเติม ห้ามนำบุคคลภายนอกเข้ามาพักอาศัยโดยพลการ"
+        },
+        {
+          "id": 10,
+          "title": "การซ่อมแซม",
+          "content": "หากมีความชำรุดเสียหายจากการใช้งานปกติ ผู้ให้เช่าจะเป็นผู้รับผิดชอบซ่อมแซม แต่หากเกิดจากความผิดของผู้เช่า ผู้เช่าต้องเป็นผู้รับผิดชอบค่าซ่อมแซมเอง"
+        },
+        {
+          "id": 11,
+          "title": "การตรวจสอบห้องพัก",
+          "content": "ผู้ให้เช่ามีสิทธิ์เข้าตรวจสอบห้องพักได้ โดยแจ้งให้ผู้เช่าทราบล่วงหน้าอย่างน้อย 24 ชั่วโมง ยกเว้นกรณีฉุกเฉิน"
+        },
+        {
+          "id": 12,
+          "title": "การบอกเลิกสัญญา",
+          "content": "หากผู้เช่าประสงค์จะบอกเลิกสัญญาก่อนครบกำหนด จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า [จำนวนวันแจ้งล่วงหน้า] วัน มิฉะนั้นจะถูกริบเงินประกัน"
+        },
+        {
+          "id": 13,
+          "title": "การผิดสัญญา",
+          "content": "หากผู้เช่าผิดข้อตกลงในสัญญาข้อใดข้อหนึ่ง ผู้ให้เช่ามีสิทธิ์บอกเลิกสัญญาได้ทันที โดยผู้เช่าไม่มีสิทธิ์เรียกร้องค่าเสียหายใดๆ"
+        },
+        {
+          "id": 14,
+          "title": "ข้อตกลงทั่วไป",
+          "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
+        }
+      ],
+      "status": "terminated",
+      "createdAt": "2026-11-02"
+    },
     {
       "id": "cnt-1793591313260",
       "propertyId": "prop-1793250152420",
@@ -314,7 +477,7 @@
           "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
         }
       ],
-      "status": "active",
+      "status": "terminated",
       "createdAt": "2026-11-02"
     }
   ],
@@ -366,6 +529,87 @@
     }
   ],
   "pakdee_dev_activity_logs": [
+    {
+      "id": "log-1793593999394",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตข้อมูลสาขาหอพัก: prop-1793250152420",
+      "createdAt": "2/11/69 11:33 น."
+    },
+    {
+      "id": "log-1793593993795",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตข้อมูลสาขาหอพัก: prop-1793250152420",
+      "createdAt": "2/11/69 11:33 น."
+    },
+    {
+      "id": "log-1793591942497",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "PAYMENT",
+      "entity": "INVOICE",
+      "description": "บันทึกการรับเงิน PMT-202611-0002 ยอด ฿4,575 (ออกใบเสร็จ REC-202611-0002)",
+      "createdAt": "2/11/69 10:59 น."
+    },
+    {
+      "id": "log-1793591920374",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้ INV-202611-101 ห้อง 101 (฿4,575)",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591911338",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 103: ไฟ 25, น้ำ 4",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591911336",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 102: ไฟ 25, น้ำ 4",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591911320",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 25, น้ำ 4",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591893959",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "CONTRACT",
+      "description": "สร้างสัญญาเช่าห้อง 101 ผู้เช่า: เ",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591893855",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "TENANT",
+      "description": "ลงทะเบียนผู้เช่าใหม่: เ (เ)",
+      "createdAt": "2/11/69 10:58 น."
+    },
     {
       "id": "log-1793591313261",
       "propertyId": "prop-1793250152420",
@@ -734,90 +978,37 @@
       "entity": "INVOICE",
       "description": "อัปเดตสถานะบิล ID inv-prop-1-1793266123300-102 เป็น \"paid\"",
       "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266123300",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้ INV-202610-102 ห้อง 102 (฿16,550)",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103034",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 406: ไฟ 1715, น้ำ 354",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103032",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 405: ไฟ 1700, น้ำ 349",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103030",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 404: ไฟ 1685, น้ำ 344",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103029",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 403: ไฟ 1670, น้ำ 339",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103027",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 402: ไฟ 1655, น้ำ 334",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103025",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 401: ไฟ 1640, น้ำ 329",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103024",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 306: ไฟ 1615, น้ำ 334",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103022",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 305: ไฟ 1600, น้ำ 329",
-      "createdAt": "29/10/69 16:28 น."
     }
   ],
   "pakdee_dev_meter_readings": [
+    {
+      "id": "mtr-1793591911335-room-prop-1793250152420-102-1793589427858",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-102-1793589427858",
+      "room_number": "102",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "2/11/2569 10:58:31"
+    },
+    {
+      "id": "mtr-1793591911320-room-prop-1793250152420-101-1793589427856",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-101-1793589427856",
+      "room_number": "101",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "2/11/2569 10:58:31"
+    },
     {
       "id": "mtr-1793266321565-room-406",
       "property_id": "prop-1",
@@ -1520,18 +1711,10 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "occupied",
-      "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
-      "version": 1,
-      "currentTenant": {
-        "id": "t-1793591313260",
-        "propertyId": "prop-1793250152420",
-        "fullName": "ปารเมศ เชิดชู",
-        "phone": "09",
-        "idCard": "-"
-      },
-      "leaseEndDate": "สัญญาต่อเนื่อง"
+      "status": "vacant",
+      "currentElectricMeter": 25,
+      "currentWaterMeter": 4,
+      "version": 1
     },
     {
       "id": "room-prop-1793250152420-102-1793589427858",
@@ -1543,8 +1726,8 @@
       "monthlyRate": 4000,
       "dailyRate": 650,
       "status": "vacant",
-      "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
+      "currentElectricMeter": 25,
+      "currentWaterMeter": 4,
       "version": 1
     },
     {
@@ -1563,6 +1746,87 @@
     }
   ],
   "activity_logs": [
+    {
+      "id": "log-1793593999394",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตข้อมูลสาขาหอพัก: prop-1793250152420",
+      "createdAt": "2/11/69 11:33 น."
+    },
+    {
+      "id": "log-1793593993795",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตข้อมูลสาขาหอพัก: prop-1793250152420",
+      "createdAt": "2/11/69 11:33 น."
+    },
+    {
+      "id": "log-1793591942497",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "PAYMENT",
+      "entity": "INVOICE",
+      "description": "บันทึกการรับเงิน PMT-202611-0002 ยอด ฿4,575 (ออกใบเสร็จ REC-202611-0002)",
+      "createdAt": "2/11/69 10:59 น."
+    },
+    {
+      "id": "log-1793591920374",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้ INV-202611-101 ห้อง 101 (฿4,575)",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591911338",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 103: ไฟ 25, น้ำ 4",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591911336",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 102: ไฟ 25, น้ำ 4",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591911320",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 25, น้ำ 4",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591893959",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "CONTRACT",
+      "description": "สร้างสัญญาเช่าห้อง 101 ผู้เช่า: เ",
+      "createdAt": "2/11/69 10:58 น."
+    },
+    {
+      "id": "log-1793591893855",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "TENANT",
+      "description": "ลงทะเบียนผู้เช่าใหม่: เ (เ)",
+      "createdAt": "2/11/69 10:58 น."
+    },
     {
       "id": "log-1793591313261",
       "propertyId": "prop-1793250152420",
@@ -1931,87 +2195,6 @@
       "entity": "INVOICE",
       "description": "อัปเดตสถานะบิล ID inv-prop-1-1793266123300-102 เป็น \"paid\"",
       "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266123300",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้ INV-202610-102 ห้อง 102 (฿16,550)",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103034",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 406: ไฟ 1715, น้ำ 354",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103032",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 405: ไฟ 1700, น้ำ 349",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103030",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 404: ไฟ 1685, น้ำ 344",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103029",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 403: ไฟ 1670, น้ำ 339",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103027",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 402: ไฟ 1655, น้ำ 334",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103025",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 401: ไฟ 1640, น้ำ 329",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103024",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 306: ไฟ 1615, น้ำ 334",
-      "createdAt": "29/10/69 16:28 น."
-    },
-    {
-      "id": "log-1793266103022",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 305: ไฟ 1600, น้ำ 329",
-      "createdAt": "29/10/69 16:28 น."
     }
   ],
   "properties": [
@@ -2116,6 +2299,27 @@
   ],
   "tenants": [
     {
+      "id": "t-1793591893841",
+      "propertyId": "prop-1793250152420",
+      "fullName": "เ",
+      "phone": "เ",
+      "idCard": "เ",
+      "gender": "MALE",
+      "invoiceLang": "TH",
+      "depositAmount": 8000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": []
+    },
+    {
       "id": "t-1793591313098",
       "propertyId": "prop-1793250152420",
       "fullName": "ปารเมศ เชิดชู",
@@ -2173,6 +2377,115 @@
     }
   ],
   "contracts": [
+    {
+      "id": "cnt-1793591893958",
+      "propertyId": "prop-1793250152420",
+      "contractNumber": "CT-2026-101-105",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "tenantPhone": "เ",
+      "startDate": "2026-11-02",
+      "endDate": "2027-11-02",
+      "monthlyRent": 4000,
+      "depositAmount": 8000,
+      "advanceRent": 4000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": [],
+      "paymentDueDay": 5,
+      "lateFeePerDay": 100,
+      "electricalEquipmentFee": 0,
+      "furnitureFee": 0,
+      "isContinuous": false,
+      "noticeDays": 30,
+      "depositRefundDays": 7,
+      "overdueGraceDays": 7,
+      "allowPets": false,
+      "noSmoking": true,
+      "additionalRules": [],
+      "clauses": [
+        {
+          "id": 1,
+          "title": "ห้องพักที่เช่า",
+          "content": "ผู้เช่าตกลงเช่าและผู้ให้เช่าตกลงให้เช่าห้องพักเลขที่ [หมายเลขห้อง] ชั้น [ชั้น] ตั้งอยู่ที่ [ที่อยู่หอพัก] เพื่อใช้เป็นที่พักอาศัยเท่านั้น ห้ามใช้เพื่อประโยชน์อื่นใดโดยมิได้รับความยินยอมเป็นลายลักษณ์อักษรจากผู้ให้เช่า"
+        },
+        {
+          "id": 2,
+          "title": "ระยะเวลาการเช่า",
+          "content": "สัญญาเช่าฉบับนี้กำหนดระยะเวลา ตั้งแต่วันที่ [วันเริ่มสัญญา] ถึงวันที่ [วันสิ้นสุดสัญญา] หากผู้เช่าประสงค์จะต่อสัญญา จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า 30 วันก่อนวันสิ้นสุดสัญญา"
+        },
+        {
+          "id": 3,
+          "title": "ค่าเช่า",
+          "content": "ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าเดือนละ [ค่าเช่า] บาท ([ค่าเช่าตัวอักษร]) ภายในวันที่ [วันกำหนดชำระ] ของทุกเดือน หากชำระล่าช้าจะต้องเสียค่าปรับวันละ [ค่าปรับ] บาท"
+        },
+        {
+          "id": 4,
+          "title": "เงินประกัน",
+          "content": "ผู้เช่าได้วางเงินประกันจำนวน [เงินประกัน] บาท ให้แก่ผู้ให้เช่า เงินประกันจะคืนให้ภายใน [จำนวนวันคืนเงินประกัน] วัน หลังจากวันสิ้นสุดสัญญาและย้ายออก หากไม่มีค่าเสียหายหรือค่าน้ำไฟค้างชำระ"
+        },
+        {
+          "id": 5,
+          "title": "ค่าสาธารณูปโภค",
+          "content": "ผู้เช่าตกลงชำระค่าสาธารณูปโภค ได้แก่ ค่าน้ำประปา ค่าไฟฟ้า ค่าบริการส่วนกลาง ค่าอินเทอร์เน็ต ตามอัตราที่หอพักกำหนด โดยชำระพร้อมกับค่าเช่าประจำเดือน"
+        },
+        {
+          "id": 6,
+          "title": "เฟอร์นิเจอร์และอุปกรณ์",
+          "content": "ผู้เช่าตกลงรับมอบห้องพักพร้อมเฟอร์นิเจอร์และอุปกรณ์ตามรายการที่ตรวจรับ ผู้เช่าจะบำรุงรักษาทรัพย์สินดังกล่าวให้อยู่ในสภาพดี หากเกิดความเสียหายต้องรับผิดชอบค่าซ่อมแซมหรือชดใช้"
+        },
+        {
+          "id": 7,
+          "title": "การดูแลรักษาห้องพัก",
+          "content": "ผู้เช่าจะต้องดูแลรักษาห้องพักให้มีสุขอนามัยเรียบร้อย สะอาด ไม่ทำลายทรัพย์สินของผู้ให้เช่า และไม่ดัดแปลงหรือต่อเติมห้องพักโดยไม่ได้รับอนุญาต"
+        },
+        {
+          "id": 8,
+          "title": "การใช้ห้องพัก",
+          "content": "ผู้เช่าจะไม่กระทำการอันเป็นการรบกวนความสงบสุขของผู้อื่น ไม่ประกอบกิจกรรมผิดกฎหมาย เก็บวัตถุอันตรายหรือสารเสพติด และต้องไม่กระทำการใดๆ ที่เป็นการรบกวนผู้อยู่อาศัยอื่น"
+        },
+        {
+          "id": 9,
+          "title": "ผู้พักอาศัย",
+          "content": "ผู้เช่าจะพักอาศัยตามจำนวนคนที่ตกลงไว้ หากมีบุคคลอื่นมาพักร่วมจะต้องได้รับอนุญาตและแจ้งให้ทราบและเสียค่าบริการเพิ่มเติม ห้ามนำบุคคลภายนอกเข้ามาพักอาศัยโดยพลการ"
+        },
+        {
+          "id": 10,
+          "title": "การซ่อมแซม",
+          "content": "หากมีความชำรุดเสียหายจากการใช้งานปกติ ผู้ให้เช่าจะเป็นผู้รับผิดชอบซ่อมแซม แต่หากเกิดจากความผิดของผู้เช่า ผู้เช่าต้องเป็นผู้รับผิดชอบค่าซ่อมแซมเอง"
+        },
+        {
+          "id": 11,
+          "title": "การตรวจสอบห้องพัก",
+          "content": "ผู้ให้เช่ามีสิทธิ์เข้าตรวจสอบห้องพักได้ โดยแจ้งให้ผู้เช่าทราบล่วงหน้าอย่างน้อย 24 ชั่วโมง ยกเว้นกรณีฉุกเฉิน"
+        },
+        {
+          "id": 12,
+          "title": "การบอกเลิกสัญญา",
+          "content": "หากผู้เช่าประสงค์จะบอกเลิกสัญญาก่อนครบกำหนด จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า [จำนวนวันแจ้งล่วงหน้า] วัน มิฉะนั้นจะถูกริบเงินประกัน"
+        },
+        {
+          "id": 13,
+          "title": "การผิดสัญญา",
+          "content": "หากผู้เช่าผิดข้อตกลงในสัญญาข้อใดข้อหนึ่ง ผู้ให้เช่ามีสิทธิ์บอกเลิกสัญญาได้ทันที โดยผู้เช่าไม่มีสิทธิ์เรียกร้องค่าเสียหายใดๆ"
+        },
+        {
+          "id": 14,
+          "title": "ข้อตกลงทั่วไป",
+          "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
+        }
+      ],
+      "status": "terminated",
+      "createdAt": "2026-11-02"
+    },
     {
       "id": "cnt-1793591313260",
       "propertyId": "prop-1793250152420",
@@ -2279,7 +2592,7 @@
           "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
         }
       ],
-      "status": "active",
+      "status": "terminated",
       "createdAt": "2026-11-02"
     }
   ],
@@ -2383,6 +2696,47 @@
   },
   "invoices": [
     {
+      "id": "inv-prop-1793250152420-1793591920303-101",
+      "propertyId": "prop-1793250152420",
+      "invoiceNumber": "INV-202611-101",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "tenantPhone": "เ",
+      "billingDate": "2026-11-25",
+      "dueDate": "2026-11-05",
+      "totalAmount": 4575,
+      "status": "paid",
+      "items": [
+        {
+          "name": "ค่าเช่าห้องพัก (ห้อง 101)",
+          "amount": 4000
+        },
+        {
+          "name": "ค่าไฟ 25 หน่วย (0 - 25)",
+          "units": 25,
+          "rate": 15,
+          "amount": 375,
+          "meterPrev": 0,
+          "meterCurr": 25
+        },
+        {
+          "name": "ค่าน้ำประปา 4 หน่วย (0 - 4)",
+          "units": 4,
+          "rate": 25,
+          "amount": 100,
+          "meterPrev": 0,
+          "meterCurr": 4
+        },
+        {
+          "name": "ค่าส่วนกลางและขยะ",
+          "amount": 100
+        }
+      ],
+      "paidAt": "2/11/2569 10:58:59",
+      "paidAmount": 4575,
+      "remainingAmount": 0
+    },
+    {
       "id": "inv-202610-101",
       "propertyId": "prop-1",
       "invoiceNumber": "INV-202610-101",
@@ -2474,6 +2828,34 @@
     }
   ],
   "meter_readings": [
+    {
+      "id": "mtr-1793591911335-room-prop-1793250152420-102-1793589427858",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-102-1793589427858",
+      "room_number": "102",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "2/11/2569 10:58:31"
+    },
+    {
+      "id": "mtr-1793591911320-room-prop-1793250152420-101-1793589427856",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-101-1793589427856",
+      "room_number": "101",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "2/11/2569 10:58:31"
+    },
     {
       "id": "mtr-1793266321565-room-406",
       "property_id": "prop-1",
@@ -3151,6 +3533,21 @@
   "expenses": [],
   "pakdee_dev_payments": [
     {
+      "id": "pmt-1793591939973-270",
+      "paymentNumber": "PMT-202611-0002",
+      "propertyId": "prop-1793250152420",
+      "invoiceId": "inv-prop-1793250152420-1793591920303-101",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "amount": 4575,
+      "paymentMethod": "promptpay",
+      "paidAt": "2026-11-02T03:58:59.973Z",
+      "receivedBy": "admin",
+      "status": "completed",
+      "version": 1,
+      "createdAt": "2026-11-02T03:58:59.973Z"
+    },
+    {
       "id": "pmt-legacy-inv-202610-101",
       "paymentNumber": "PMT-202611-0001",
       "propertyId": "prop-1",
@@ -3167,6 +3564,21 @@
     }
   ],
   "payments": [
+    {
+      "id": "pmt-1793591939973-270",
+      "paymentNumber": "PMT-202611-0002",
+      "propertyId": "prop-1793250152420",
+      "invoiceId": "inv-prop-1793250152420-1793591920303-101",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "amount": 4575,
+      "paymentMethod": "promptpay",
+      "paidAt": "2026-11-02T03:58:59.973Z",
+      "receivedBy": "admin",
+      "status": "completed",
+      "version": 1,
+      "createdAt": "2026-11-02T03:58:59.973Z"
+    },
     {
       "id": "pmt-legacy-inv-202610-101",
       "paymentNumber": "PMT-202611-0001",
@@ -3185,6 +3597,18 @@
   ],
   "pakdee_dev_receipts": [
     {
+      "id": "rec-1793591939975",
+      "receiptNumber": "REC-202611-0002",
+      "propertyId": "prop-1793250152420",
+      "paymentId": "pmt-1793591939973-270",
+      "invoiceId": "inv-prop-1793250152420-1793591920303-101",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "amount": 4575,
+      "issuedAt": "2026-11-02T03:58:59.975Z",
+      "issuedBy": "admin"
+    },
+    {
       "id": "rec-legacy-inv-202610-101",
       "receiptNumber": "REC-202611-0001",
       "propertyId": "prop-1",
@@ -3198,6 +3622,18 @@
     }
   ],
   "receipts": [
+    {
+      "id": "rec-1793591939975",
+      "receiptNumber": "REC-202611-0002",
+      "propertyId": "prop-1793250152420",
+      "paymentId": "pmt-1793591939973-270",
+      "invoiceId": "inv-prop-1793250152420-1793591920303-101",
+      "roomNumber": "101",
+      "tenantName": "เ",
+      "amount": 4575,
+      "issuedAt": "2026-11-02T03:58:59.975Z",
+      "issuedBy": "admin"
+    },
     {
       "id": "rec-legacy-inv-202610-101",
       "receiptNumber": "REC-202611-0001",

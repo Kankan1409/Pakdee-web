@@ -1240,13 +1240,14 @@ export const DatabaseService = {
     );
     setLocal(KEYS.CONTRACTS, updated);
 
-    // Also mark room as vacant in rooms table if it was active
+    // Only reset tenant info, DO NOT overwrite room status if it was set to "cleaning"
     const allRooms = this.getAllRawRooms();
     const updatedRooms = allRooms.map((r) => {
       if ((!targetPropId || (r.propertyId || "prop-1") === targetPropId) && r.roomNumber === roomNumber) {
         return {
           ...r,
-          status: "vacant" as RoomStatus,
+          // Preserve "cleaning" if already set, otherwise set to vacant
+          status: (r.status === "cleaning" ? "cleaning" : "vacant") as RoomStatus,
           leaseEndDate: undefined,
           currentTenant: undefined,
         };

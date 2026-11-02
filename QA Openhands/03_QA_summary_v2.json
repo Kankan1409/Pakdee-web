@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-11-02T04:06:13.563Z",
+  "scenarios": [
+    {
+      "name": "scenario1-monthly",
+      "total": 16,
+      "pass": 16,
+      "fail": 0,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedRequests": 0
+    },
+    {
+      "name": "scenario2-daily",
+      "total": 10,
+      "pass": 9,
+      "fail": 1,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedRequests": 0
+    },
+    {
+      "name": "scenario3-edge",
+      "total": 10,
+      "pass": 9,
+      "fail": 1,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedRequests": 0
+    },
+    {
+      "name": "scenario4-modules",
+      "total": 8,
+      "pass": 8,
+      "fail": 0,
+      "consoleErrors": 0,
+      "pageErrors": 0,
+      "failedRequests": 0
+    }
+  ],
+  "totals": {
+    "scenarios": 4,
+    "steps": 44,
+    "pass": 42,
+    "fail": 2,
+    "passRate": "95.5%"
+  }
+}
