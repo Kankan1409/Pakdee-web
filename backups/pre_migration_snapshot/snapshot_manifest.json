@@ -1,0 +1,14 @@
+[
+  {
+    "file": "data/db_port3000.json",
+    "size": 114208,
+    "hash": "94e0448b6a76024a4957be23ff7af1b8c17a6e2adf46c80c10259a50548da401",
+    "dest": "D:\\DESKTOP\\Pakdee\\backups\\pre_migration_snapshot\\db_port3000_snapshot_20261102.json"
+  },
+  {
+    "file": "data/pakdee_db.json",
+    "size": 13551,
+    "hash": "694eca21f8d307fae749a360cfeae5cfb037c16f5854eb570e64498304a9ac0a",
+    "dest": "D:\\DESKTOP\\Pakdee\\backups\\pre_migration_snapshot\\pakdee_db_snapshot_20261102.json"
+  }
+]

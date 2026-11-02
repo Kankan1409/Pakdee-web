@@ -68,7 +68,7 @@ export function AdvancedBillingView({
     .reduce((acc, i) => acc + i.totalAmount, 0);
 
   const filtered = invoices.filter((inv) => {
-    if (activeTab === "unpaid" && inv.status !== "unpaid") return false;
+    if (activeTab === "unpaid" && inv.status !== "unpaid" && inv.status !== "partial") return false;
     if (activeTab === "paid" && inv.status !== "paid") return false;
     if (activeTab === "overdue" && inv.status !== "overdue") return false;
     if (activeTab === "pending_review" && inv.status !== "pending_review") return false;

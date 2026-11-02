@@ -40,6 +40,8 @@ const KEYS = {
   ROOMS: "pakdee_dev_rooms",
   TENANTS: "pakdee_dev_tenants",
   INVOICES: "pakdee_dev_invoices",
+  PAYMENTS: "pakdee_dev_payments",
+  RECEIPTS: "pakdee_dev_receipts",
   CONTRACTS: "pakdee_dev_contracts",
   REPAIRS: "pakdee_dev_repairs",
   EXPENSES: "pakdee_dev_expenses",
@@ -628,9 +630,24 @@ export const DatabaseService = {
     return true;
   },
 
-  async deleteRoom(roomId: string): Promise<boolean> {
+  async deleteRoom(roomId: string): Promise<{ success: boolean; error?: string }> {
     const allRooms = this.getAllRawRooms();
     const target = allRooms.find((r) => r.id === roomId);
+    if (!target) return { success: false, error: "ไม่พบข้อมูลห้องพัก" };
+
+    // Safety Guard: Check if room has active tenant, contract, or unpaid invoices
+    if (target.status === "occupied" || target.currentTenant) {
+      return { success: false, error: `ไม่สามารถลบห้อง ${target.roomNumber} ได้เนื่องจากยังมีผู้เช่าพักอาศัยอยู่ กรุณาย้ายหรือเช็คเอาท์ผู้เช่าออกก่อน` };
+    }
+
+    const allInvoices = this.getAllRawInvoices();
+    const unpaidInv = allInvoices.find(
+      (inv) => inv.roomNumber === target.roomNumber && (inv.status === "unpaid" || inv.status === "overdue" || inv.status === "partial")
+    );
+    if (unpaidInv) {
+      return { success: false, error: `ไม่สามารถลบห้อง ${target.roomNumber} ได้เนื่องจากยังมีบิลค้างชำระ (บิลเลขที่ ${unpaidInv.invoiceNumber})` };
+    }
+
     const updated = allRooms.filter((r) => r.id !== roomId);
     setLocal(KEYS.ROOMS, updated);
 
@@ -648,11 +665,18 @@ export const DatabaseService = {
       }
     }
     await this.logActivity("DELETE", "ROOM", `ลบห้องพัก ${target?.roomNumber || roomId}`, target?.propertyId);
-    return true;
+    return { success: true };
   },
 
-  async deleteRooms(roomIds: string[]): Promise<boolean> {
+  async deleteRooms(roomIds: string[]): Promise<{ success: boolean; error?: string }> {
     const allRooms = this.getAllRawRooms();
+    // Safety check for all rooms
+    for (const rid of roomIds) {
+      const room = allRooms.find((r) => r.id === rid);
+      if (room && (room.status === "occupied" || room.currentTenant)) {
+        return { success: false, error: `ไม่สามารถลบห้อง ${room.roomNumber} ได้เนื่องจากมีผู้เช่าอยู่` };
+      }
+    }
     const updated = allRooms.filter((r) => !roomIds.includes(r.id));
     setLocal(KEYS.ROOMS, updated);
 
@@ -670,7 +694,7 @@ export const DatabaseService = {
       }
     }
     await this.logActivity("DELETE", "ROOM", `ลบห้องพักจำนวน ${roomIds.length} ห้องพร้อมกัน`);
-    return true;
+    return { success: true };
   },
 
   async checkoutRoom(roomId: string): Promise<boolean> {
@@ -987,20 +1011,121 @@ export const DatabaseService = {
     return true;
   },
 
-  async updateInvoiceStatus(invoiceId: string, status: "paid" | "unpaid" | "overdue"): Promise<boolean> {
+  async updateInvoiceStatus(
+    invoiceId: string,
+    status: "paid" | "unpaid" | "overdue" | "partial",
+    paidAmount?: number
+  ): Promise<boolean> {
     const allInvoices = this.getAllRawInvoices();
+    const target = allInvoices.find((i) => i.id === invoiceId);
+    if (!target) return false;
+
+    const actualTotal = Number(target.totalAmount) || 0;
+    const actualPaid = paidAmount !== undefined ? Number(paidAmount) : status === "paid" ? actualTotal : 0;
+    const remaining = Math.max(0, actualTotal - actualPaid);
+    const resolvedStatus = remaining === 0 && actualPaid > 0 ? "paid" : actualPaid > 0 ? "partial" : status;
+
     const updated = allInvoices.map((inv) =>
       inv.id === invoiceId
         ? {
             ...inv,
-            status,
-            paidAt: status === "paid" ? new Date().toLocaleString("th-TH") : inv.paidAt,
+            status: resolvedStatus,
+            paidAmount: actualPaid,
+            remainingAmount: remaining,
+            paidAt: actualPaid > 0 ? new Date().toLocaleString("th-TH") : inv.paidAt,
           }
         : inv
     );
     setLocal(KEYS.INVOICES, updated);
-    await this.logActivity("PAYMENT", "INVOICE", `อัปเดตสถานะบิล ID ${invoiceId} เป็น "${status}"`);
+
+    // Record into Payment Ledger if payment was made
+    if (actualPaid > 0) {
+      await this.recordPayment({
+        invoiceId: target.id,
+        propertyId: target.propertyId || this.getActivePropertyId(),
+        roomNumber: target.roomNumber,
+        tenantName: target.tenantName,
+        amount: actualPaid,
+        paymentMethod: "promptpay",
+      });
+    }
+
+    await this.logActivity("PAYMENT", "INVOICE", `อัปเดตสถานะบิล ID ${invoiceId} เป็น "${resolvedStatus}" (ยอดชำระ ฿${actualPaid.toLocaleString()})`);
     return true;
+  },
+
+  // -------------------------------------------------------------
+  // 5.5 PAYMENTS & RECEIPTS (FINANCIAL LEDGER)
+  // -------------------------------------------------------------
+  getAllRawPayments(): any[] {
+    return getLocal<any[]>(KEYS.PAYMENTS, []);
+  },
+
+  async getPayments(propertyId?: string): Promise<any[]> {
+    const targetPropId = propertyId || this.getActivePropertyId();
+    const all = this.getAllRawPayments();
+    return all.filter((p) => (p.propertyId || "prop-1") === targetPropId);
+  },
+
+  async recordPayment(paymentData: {
+    invoiceId: string;
+    amount: number;
+    propertyId?: string;
+    roomNumber?: string;
+    tenantName?: string;
+    paymentMethod?: "transfer" | "cash" | "promptpay" | "credit_card";
+    notes?: string;
+  }): Promise<any> {
+    const propId = paymentData.propertyId || this.getActivePropertyId();
+    const all = this.getAllRawPayments();
+    const idx = all.length + 1;
+    const paymentId = `pmt-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const paymentNumber = `PMT-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, "0")}-${idx.toString().padStart(4, "0")}`;
+
+    const newPayment = {
+      id: paymentId,
+      paymentNumber,
+      propertyId: propId,
+      invoiceId: paymentData.invoiceId,
+      roomNumber: paymentData.roomNumber,
+      tenantName: paymentData.tenantName,
+      amount: paymentData.amount,
+      paymentMethod: paymentData.paymentMethod || "promptpay",
+      paidAt: new Date().toISOString(),
+      receivedBy: "admin",
+      status: "completed",
+      notes: paymentData.notes,
+      version: 1,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedPayments = [newPayment, ...all];
+    setLocal(KEYS.PAYMENTS, updatedPayments);
+
+    // Also auto-generate official Receipt
+    const allReceipts = getLocal<any[]>(KEYS.RECEIPTS, []);
+    const receiptNumber = `REC-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, "0")}-${(allReceipts.length + 1).toString().padStart(4, "0")}`;
+    const newReceipt = {
+      id: `rec-${Date.now()}`,
+      receiptNumber,
+      propertyId: propId,
+      paymentId,
+      invoiceId: paymentData.invoiceId,
+      roomNumber: paymentData.roomNumber || "",
+      tenantName: paymentData.tenantName || "",
+      amount: paymentData.amount,
+      issuedAt: new Date().toISOString(),
+      issuedBy: "admin",
+    };
+    setLocal(KEYS.RECEIPTS, [newReceipt, ...allReceipts]);
+
+    await this.persistBatch({
+      [KEYS.PAYMENTS]: updatedPayments,
+      [KEYS.RECEIPTS]: [newReceipt, ...allReceipts],
+    });
+
+    await this.logActivity("PAYMENT", "INVOICE", `บันทึกการรับเงิน ${paymentNumber} ยอด ฿${paymentData.amount.toLocaleString()} (ออกใบเสร็จ ${receiptNumber})`, propId);
+    return newPayment;
   },
 
   // -------------------------------------------------------------

@@ -92,6 +92,7 @@ export interface Room {
   notes?: string;
   size?: string;
   depositAmount?: number;
+  version?: number;
 }
 
 export interface AdditionalService {
@@ -102,6 +103,7 @@ export interface AdditionalService {
 }
 
 export interface InvoiceItem {
+  id?: string;
   name: string;
   units?: number;
   rate?: number;
@@ -110,23 +112,69 @@ export interface InvoiceItem {
   meterCurr?: number;
 }
 
+export interface PaymentAllocation {
+  invoiceItemId?: string;
+  itemType: "rent" | "water" | "electric" | "service" | "parking" | "internet" | "penalty" | "other";
+  allocatedAmount: number;
+}
+
+export interface Payment {
+  id: string;
+  paymentNumber: string; // e.g. PMT-202611-001
+  propertyId?: string;
+  invoiceId: string;
+  tenantId?: string;
+  tenantName?: string;
+  roomNumber?: string;
+  amount: number;
+  paymentMethod: "transfer" | "cash" | "promptpay" | "credit_card";
+  paidAt: string;
+  receivedBy?: string;
+  status: "completed" | "voided" | "reversed";
+  slipUrl?: string;
+  notes?: string;
+  idempotencyKey?: string;
+  allocations?: PaymentAllocation[];
+  version?: number;
+  createdAt: string;
+}
+
+export interface Receipt {
+  id: string;
+  receiptNumber: string; // e.g. REC-202611-001
+  propertyId?: string;
+  paymentId: string;
+  invoiceId: string;
+  roomNumber: string;
+  tenantName: string;
+  amount: number;
+  issuedAt: string;
+  issuedBy?: string;
+  pdfUrl?: string;
+}
+
 export interface Invoice {
   id: string;
   propertyId?: string;
   invoiceNumber: string;
   roomNumber: string;
+  tenantId?: string;
   tenantName: string;
   tenantPhone: string;
   billingDate: string;
   dueDate: string;
   items: InvoiceItem[];
   totalAmount: number;
-  status: "unpaid" | "pending_review" | "paid" | "overdue" | "cancelled";
+  paidAmount?: number;
+  remainingAmount?: number;
+  status: "unpaid" | "partial" | "pending_review" | "paid" | "overdue" | "cancelled";
   slipUrl?: string;
   paidAt?: string;
   qrCodeUrl?: string;
   invoiceType?: "monthly" | "move_in" | "custom";
   slipStatus?: "passed" | "action_needed" | "retrying" | "none";
+  payments?: Payment[];
+  version?: number;
 }
 
 export interface DailyBooking {

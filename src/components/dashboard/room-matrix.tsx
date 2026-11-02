@@ -249,28 +249,6 @@ export function RoomMatrix({
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-white/90 absolute right-2.5 pointer-events-none" />
           </div>
-
-          {/* Quick Search Input in Matrix Toolbar */}
-          <div className="relative min-w-[200px] sm:w-64 shrink-0">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--muted)] pointer-events-none" />
-            <input
-              type="text"
-              value={activeSearch}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="ค้นหาเลขห้อง, ชื่อผู้เข้าพัก..."
-              className="w-full bg-[var(--subtle)] border border-[var(--border)] rounded-xl pl-8 pr-7 py-1.5 text-xs text-[var(--foreground)] placeholder-[var(--muted)] focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/25 transition shadow-2xs font-medium"
-            />
-            {activeSearch && (
-              <button
-                type="button"
-                onClick={() => handleSearchChange("")}
-                className="absolute right-2 top-2 text-[var(--muted)] hover:text-[var(--foreground)] transition cursor-pointer p-0.5 rounded"
-                title="ล้างคำค้นหา"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Status Filters & Legend */}

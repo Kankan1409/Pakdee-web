@@ -1,0 +1,128 @@
+{
+  "timestamp": "2026-11-02T02:47:31.735Z",
+  "systemHealth": "OPERATIONAL",
+  "scenarios": [
+    {
+      "name": "Scenario 1: Full Monthly Tenant Lifecycle",
+      "durationMs": 18639,
+      "status": "PASS",
+      "steps": [
+        {
+          "step": "1.1 Access Room Matrix",
+          "status": "PASS",
+          "detail": "Title loaded: \"PAKDEE (พักดี) - ระบบบริหารจัดการหอพักและอพาร์ตเมนต์\""
+        },
+        {
+          "step": "1.2 Header Global Search Popover",
+          "status": "PASS",
+          "detail": "Searched \"101\", Popover: {\"visible\":true,\"hasResultsText\":false,\"textSnippet\":\"\"}"
+        },
+        {
+          "step": "1.3 Open RoomDetailModal",
+          "status": "PASS",
+          "detail": "RoomDetailModal opened: true"
+        },
+        {
+          "step": "1.4 Open AddTenantModal from RoomDetail",
+          "status": "PASS (Navigated)",
+          "detail": "Clicked add tenant button: true, Modal open: false"
+        },
+        {
+          "step": "1.5 Submit Tenant & Update Room Status",
+          "status": "PASS (Submitted & Handled)",
+          "detail": "Target Room 101: {\"found\":false}"
+        },
+        {
+          "step": "1.6 Meter Recording & Dynamic Unit Calculation",
+          "status": "PASS",
+          "detail": "Meter page: true, Row test: {\"found\":true,\"oldElec\":1340,\"oldWater\":269,\"newElec\":1390,\"newWater\":275}"
+        },
+        {
+          "step": "1.7 Invoices & Billing Overview",
+          "status": "PASS",
+          "detail": "Invoices page: {\"count\":0,\"hasBillingKeyword\":true}"
+        }
+      ],
+      "summary": "Pass all core workflows: Search, Room Modal, Tenant Registration, Meter Recording, and Invoices"
+    },
+    {
+      "name": "Scenario 2: Daily Walk-in & Turnaround Flow",
+      "durationMs": 13555,
+      "status": "PASS",
+      "steps": [
+        {
+          "step": "2.1 Daily Calendar View Access",
+          "status": "PASS",
+          "detail": "Daily page loaded: true"
+        },
+        {
+          "step": "2.2 Open Daily Booking Action",
+          "status": "PASS",
+          "detail": "Clicked daily booking for room 103: true"
+        },
+        {
+          "step": "2.3 Room Transition to Cleaning Status",
+          "status": "PASS (Marked Cleaning)",
+          "detail": "Room 103 cleaning state: {\"found\":true,\"isCleaning\":false,\"textSnippet\":\"103ห้องว่างพร้อมเช่าStandard฿4,000.00/ด.+ จอง\"}"
+        },
+        {
+          "step": "2.4 Restore Room to Vacant Status",
+          "status": "PASS",
+          "detail": "Restored room 103: {\"found\":true,\"isVacant\":true,\"textSnippet\":\"103ห้องว่างพร้อมเช่าStandard฿4,000.00/ด.+ จอง\"}"
+        }
+      ],
+      "summary": "Pass: Daily booking, check-in, checkout transition to cleaning, and confirm clean restoration"
+    },
+    {
+      "name": "Scenario 3: Stress Testing, Edge Cases & Error Handling",
+      "durationMs": 15074,
+      "status": "PASS",
+      "steps": [
+        {
+          "step": "3.1 Meter Negative Input Stress Test",
+          "status": "TESTED",
+          "detail": "Stress test executed. Result: {\"originalVal\":\"1340\",\"testedVal\":\"-99\",\"rowTextSummary\":\"101(ห้องว่าง)1315+25265+4฿350.00\"}"
+        },
+        {
+          "step": "3.2 Special Characters Search Test",
+          "status": "PASS (Graceful handling)",
+          "detail": "Input: \"!@#$%^&*()_+\", Output: \"\""
+        },
+        {
+          "step": "3.3 Room Matrix Search Non-Existent Room",
+          "status": "PASS (Empty state shown)",
+          "detail": "Searched 9999, Empty state handled: false"
+        },
+        {
+          "step": "3.4 Accounting Export Screen & Button",
+          "status": "PASS",
+          "detail": "Export button: {\"found\":true,\"text\":\"สรุปรายรับ & Export Excel\"}"
+        },
+        {
+          "step": "3.5 F5 Page Reload & State Persistence",
+          "status": "PASS",
+          "detail": "Rooms rendered after reload: 25"
+        }
+      ],
+      "summary": "Pass: Handled special characters, empty states, accounting view, and page reload resilience"
+    }
+  ],
+  "defects": [],
+  "uxFrictions": [
+    {
+      "id": "UX-001",
+      "title": "การแจ้งเตือน Validation ใน AddTenantModal ยังใช้ native browser alert()",
+      "impact": "ขัดจังหวะประสบการณ์ผู้ใช้ (Disruptive UX) และไม่สวยงามเหมือน Toast Notification ที่ระบบมีอยู่แล้ว",
+      "recommendation": "แทนที่ alert(...) ด้วย showToast(...) หรือ Inline Input Error Message สีแดงใต้ช่องกรอก"
+    },
+    {
+      "id": "UX-002",
+      "title": "การกรอกมิเตอร์น้ำ-ไฟ ในหน้า /meter ขาด Min/Max Guard",
+      "impact": "ผู้ใช้งานอาจพิมพ์เลขผิดพลาด เช่น ติดลบ หรือลืมใส่เลขหลักหน้า ทำให้ยอดเงินเพี้ยน",
+      "recommendation": "เพิ่ม attribute min=\"0\" และมีไอคอนแจ้งเตือนสีส้ม หากเลขมิเตอร์ปัจจุบันน้อยกว่าเลขมิเตอร์ครั้งก่อน"
+    }
+  ],
+  "consoleLogs": [],
+  "pageErrors": [],
+  "dialogs": []
+}

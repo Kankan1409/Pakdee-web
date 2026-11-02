@@ -470,16 +470,6 @@ export function RoomDetailModal({
                   {onOpenDailyBooking && (
                     <button
                       type="button"
-                      onClick={() => onOpenDailyBooking(room.roomNumber, "monthly")}
-                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      <span>จองห้องพักรายเดือน</span>
-                    </button>
-                  )}
-                  {onOpenDailyBooking && (
-                    <button
-                      type="button"
                       onClick={() => onOpenDailyBooking(room.roomNumber, "daily")}
                       className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
                     >
