@@ -110,6 +110,7 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom }: AddRoomModalProps) 
                 <input
                   type="text"
                   required
+                  maxLength={10}
                   placeholder="เช่น 101, 201"
                   value={roomNumber}
                   onChange={(e) => setRoomNumber(e.target.value)}
@@ -152,6 +153,7 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom }: AddRoomModalProps) 
                   <label className="block text-xs font-medium text-[var(--muted)] mb-1">คำนำหน้าห้อง</label>
                   <input
                     type="text"
+                    maxLength={5}
                     value={batchPrefix}
                     onChange={(e) => setBatchPrefix(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"

@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { BranchSettingsDetail, Property } from "@/types/dormitory";
 import { isValidPromptPayTarget } from "@/lib/promptpay";
+import { isValidHttpsUrl, isValidBankAccount } from "@/lib/validators";
+import { globalPopup } from "@/lib/popup-context";
 import {
   Settings,
   Building,
@@ -108,10 +110,37 @@ export function BranchSettingsView({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.electricRate !== undefined && formData.electricRate < 0) {
+      globalPopup.error("อัตราค่าไฟฟ้าไม่ถูกต้อง", "อัตราค่าไฟฟ้าต้องไม่ติดลบ (อย่างน้อย 0 บาท/หน่วย)");
+      setActiveTab("rates");
+      return;
+    }
+    if (formData.waterRate !== undefined && formData.waterRate < 0) {
+      globalPopup.error("อัตราค่าน้ำประปาไม่ถูกต้อง", "อัตราค่าน้ำประปาต้องไม่ติดลบ (อย่างน้อย 0 บาท/หน่วย)");
+      setActiveTab("rates");
+      return;
+    }
     if (formData.promptpayNumber && formData.promptpayNumber.trim() !== "") {
       if (!isValidPromptPayTarget(formData.promptpayNumber)) {
-        alert("⚠️ หมายเลขพร้อมเพย์ไม่ถูกต้อง!\nกรุณากรอกเบอร์โทรศัพท์ 10 หลัก (ขึ้นต้นด้วย 0) หรือเลขบัตรประชาชน/เลขนิติบุคคล 13 หลัก ตามมาตรฐานสากล PromptPay EMVCo");
+        globalPopup.error(
+          "หมายเลขพร้อมเพย์ไม่ถูกต้อง!",
+          "กรุณากรอกเบอร์โทรศัพท์ 10 หลัก (ขึ้นต้นด้วย 0) หรือเลขบัตรประชาชน/เลขนิติบุคคล 13 หลัก ตามมาตรฐานสากล PromptPay EMVCo"
+        );
         setActiveTab("banking");
+        return;
+      }
+    }
+    if (formData.bankAccountNumber && formData.bankAccountNumber.trim() !== "") {
+      if (!isValidBankAccount(formData.bankAccountNumber)) {
+        globalPopup.error("เลขที่บัญชีไม่ถูกต้อง", "เลขที่บัญชีธนาคารต้องเป็นตัวเลข 10 - 15 หลัก");
+        setActiveTab("banking");
+        return;
+      }
+    }
+    if (formData.lineWebhookUrl && formData.lineWebhookUrl.trim() !== "") {
+      if (!isValidHttpsUrl(formData.lineWebhookUrl)) {
+        globalPopup.error("Webhook URL ไม่ถูกต้อง", "LINE Webhook URL ต้องขึ้นต้นด้วย https:// ตามมาตรฐานความปลอดภัย");
+        setActiveTab("line");
         return;
       }
     }
@@ -190,6 +219,7 @@ export function BranchSettingsView({
                 <label className="block text-xs font-medium text-[var(--muted)] mb-1">ชื่อหอพัก / สาขา *</label>
                 <input
                   type="text"
+                  maxLength={100}
                   value={formData.branchName}
                   onChange={(e) => handleChange("branchName", e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
@@ -200,6 +230,7 @@ export function BranchSettingsView({
                 <label className="block text-xs font-medium text-[var(--muted)] mb-1">ที่อยู่ของหอพัก *</label>
                 <textarea
                   rows={2}
+                  maxLength={300}
                   value={formData.address}
                   onChange={(e) => handleChange("address", e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
@@ -210,16 +241,19 @@ export function BranchSettingsView({
                 <div>
                   <label className="block text-xs font-medium text-[var(--muted)] mb-1">เบอร์โทรศัพท์สาขา</label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="tel"
+                    maxLength={12}
                     value={formData.phone}
                     onChange={(e) => handleChange("phone", e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[var(--muted)] mb-1">ชื่อเจ้าของ / ผู้จัดการ</label>
                   <input
                     type="text"
+                    maxLength={100}
                     value={formData.ownerName}
                     onChange={(e) => handleChange("ownerName", e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
@@ -245,6 +279,8 @@ export function BranchSettingsView({
                   <label className="block text-[11px] text-[var(--muted)] mb-1">อัตราค่าไฟ (บาท/หน่วย) *</label>
                   <input
                     type="number"
+                    min="0"
+                    step="0.01"
                     value={formData.electricRate}
                     onChange={(e) => handleChange("electricRate", Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs font-bold text-amber-600 dark:text-amber-400"
@@ -272,6 +308,8 @@ export function BranchSettingsView({
                   <label className="block text-[11px] text-[var(--muted)] mb-1">อัตราค่าน้ำ (บาท/หน่วย) *</label>
                   <input
                     type="number"
+                    min="0"
+                    step="0.01"
                     value={formData.waterRate}
                     onChange={(e) => handleChange("waterRate", Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs font-bold text-blue-600 dark:text-blue-400"
@@ -366,8 +404,11 @@ export function BranchSettingsView({
                 <label className="block text-xs font-medium text-[var(--muted)] mb-1">เลขที่บัญชี *</label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  maxLength={15}
+                  placeholder="เช่น 123-4-56789-0"
                   value={formData.bankAccountNumber}
-                  onChange={(e) => handleChange("bankAccountNumber", e.target.value)}
+                  onChange={(e) => handleChange("bankAccountNumber", e.target.value.replace(/[^\d-]/g, "").slice(0, 15))}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono text-[var(--foreground)]"
                 />
               </div>
@@ -433,7 +474,7 @@ export function BranchSettingsView({
                 />
                 <button
                   type="button"
-                  onClick={() => alert("คัดลอก Webhook URL เรียบร้อยแล้ว")}
+                  onClick={() => globalPopup.info("คัดลอกสำเร็จ", "คัดลอก Webhook URL เรียบร้อยแล้ว")}
                   className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shrink-0"
                 >
                   คัดลอก
@@ -486,7 +527,7 @@ export function BranchSettingsView({
                 />
                 <button
                   type="button"
-                  onClick={() => alert("คัดลอกลิงก์ส่งต่อ LINE OA ให้ผู้เช่าเรียบร้อยแล้ว!")}
+                  onClick={() => globalPopup.info("คัดลอกสำเร็จ", "คัดลอกลิงก์ส่งต่อ LINE OA ให้ผู้เช่าเรียบร้อยแล้ว!")}
                   className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 transition cursor-pointer"
                 >
                   คัดลอกลิงก์

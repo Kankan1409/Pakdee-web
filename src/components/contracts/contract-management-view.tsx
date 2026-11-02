@@ -21,6 +21,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import { formatCurrency, formatDateThai } from "@/lib/utils";
+import { isDateAfter, isValidThaiPhone, formatThaiPhone } from "@/lib/validators";
 
 interface ContractManagementViewProps {
   contracts: ContractItem[];
@@ -58,6 +59,7 @@ export function ContractManagementView({
   const [depositAmount, setDepositAmount] = useState<number>(8000);
   const [advanceRent, setAdvanceRent] = useState<number>(4000);
   const [status, setStatus] = useState<ContractItem["status"]>("active");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleRoomChange = (rNum: string) => {
     setRoomNumber(rNum);
@@ -100,11 +102,35 @@ export function ContractManagementView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenantName.trim()) return;
+    setErrorMessage(null);
+    if (!tenantName.trim()) {
+      setErrorMessage("กรุณาระบุชื่อ-นามสกุลของผู้เช่า");
+      return;
+    }
+    if (tenantPhone.trim()) {
+      const cleanPhone = tenantPhone.replace(/\D/g, "");
+      if (!isValidThaiPhone(cleanPhone)) {
+        setErrorMessage("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
+        return;
+      }
+    }
+    if (!isDateAfter(endDate, startDate)) {
+      setErrorMessage("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
+      return;
+    }
+    if (monthlyRent < 0) {
+      setErrorMessage("ค่าเช่ารายเดือนต้องไม่ติดลบ");
+      return;
+    }
+    if (depositAmount < 0) {
+      setErrorMessage("เงินประกันมัดจำต้องไม่ติดลบ");
+      return;
+    }
+
     onAddContract({
       roomNumber,
-      tenantName,
-      tenantPhone,
+      tenantName: tenantName.trim(),
+      tenantPhone: tenantPhone.trim(),
       startDate,
       endDate,
       monthlyRent,
@@ -412,6 +438,13 @@ export function ContractManagementView({
             </div>
 
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
+              {errorMessage && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[var(--muted)] mb-1">
@@ -460,6 +493,7 @@ export function ContractManagementView({
                   <input
                     type="text"
                     required
+                    maxLength={100}
                     value={tenantName}
                     onChange={(e) => setTenantName(e.target.value)}
                     placeholder="ชื่อ-นามสกุล ผู้เช่า"
@@ -472,12 +506,14 @@ export function ContractManagementView({
                     เบอร์โทรศัพท์ *
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="tel"
                     required
+                    maxLength={12}
                     value={tenantPhone}
-                    onChange={(e) => setTenantPhone(e.target.value)}
-                    placeholder="0812345678"
-                    className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
+                    onChange={(e) => setTenantPhone(formatThaiPhone(e.target.value))}
+                    placeholder="08X-XXX-XXXX"
+                    className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] font-mono"
                   />
                 </div>
               </div>

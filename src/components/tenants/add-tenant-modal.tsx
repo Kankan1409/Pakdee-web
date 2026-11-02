@@ -18,12 +18,21 @@ import {
   Car,
   Globe,
 } from "lucide-react";
+import {
+  isValidThaiIdCard,
+  formatThaiIdCard,
+  isValidThaiPhone,
+  formatThaiPhone,
+  isValidEmail,
+  isDateAfter,
+} from "@/lib/validators";
 
 interface AddTenantModalProps {
   isOpen: boolean;
   onClose: () => void;
   rooms: Room[];
   initialRoomId?: string;
+  existingTenants?: Tenant[];
   onAddTenant: (tenantData: {
     roomId: string;
     fullName: string;
@@ -51,6 +60,7 @@ export function AddTenantModal({
   onClose,
   rooms,
   initialRoomId,
+  existingTenants,
   onAddTenant,
 }: AddTenantModalProps) {
   // Find first truly vacant room (status === 'vacant' and no current tenant)
@@ -72,6 +82,7 @@ export function AddTenantModal({
   const [vehiclePlate, setVehiclePlate] = useState<string>("");
   const [invoiceLang, setInvoiceLang] = useState<"TH" | "EN">("TH");
   const [notes, setNotes] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Lease term and single lump-sum deposit
   const [startDate, setStartDate] = useState<string>("2026-10-28");
@@ -101,6 +112,7 @@ export function AddTenantModal({
     setIdCardImage(null);
     setFileName("");
     setOcrSuccess(false);
+    setErrorMessage(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -177,26 +189,63 @@ export function AddTenantModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !phone.trim()) {
-      alert("กรุณากรอกชื่อ-นามสกุล และเบอร์โทรศัพท์ของผู้เช่า");
+    setErrorMessage(null);
+
+    if (!fullName.trim()) {
+      setErrorMessage("กรุณาระบุชื่อ-นามสกุลของผู้เช่า");
+      return;
+    }
+    if (!phone.trim()) {
+      setErrorMessage("กรุณาระบุเบอร์โทรศัพท์ติดต่อของผู้เช่า");
+      return;
+    }
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (!isValidThaiPhone(cleanPhone)) {
+      setErrorMessage("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
       return;
     }
     if (!roomId) {
-      alert("กรุณาเลือกห้องพักว่างที่ต้องการเข้าอยู่");
+      setErrorMessage("กรุณาเลือกห้องพักว่างที่ต้องการเข้าอยู่");
       return;
     }
     // Defensive check: ห้องพักต้องมีสถานะ "ว่าง" (vacant) เท่านั้น
     const targetRoom = rooms.find((r) => r.id === roomId);
     if (!targetRoom || targetRoom.status !== "vacant" || targetRoom.currentTenant) {
-      alert(`ห้องพักที่เลือกไม่ว่าง (สถานะ: ${targetRoom?.status || "ไม่พบห้อง"}) ไม่สามารถลงทะเบียนเข้าพักได้`);
+      setErrorMessage(`ห้องพักที่เลือกไม่ว่าง (สถานะ: ${targetRoom?.status || "ไม่พบห้อง"}) ไม่สามารถลงทะเบียนเข้าพักได้`);
       return;
     }
     if (!idCard.trim()) {
-      alert("กรุณากรอกเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
+      setErrorMessage("กรุณากรอกเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
+      return;
+    }
+    const cleanId = idCard.replace(/\D/g, "");
+    if (!isValidThaiIdCard(cleanId)) {
+      setErrorMessage("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)");
+      return;
+    }
+    // ตรวจสอบเลขประจำตัวประชาชนซ้ำกับผู้เช่าปัจจุบันในระบบ
+    if (existingTenants && existingTenants.some((t) => t.idCard && t.idCard.replace(/\D/g, "") === cleanId)) {
+      setErrorMessage("มีผู้เช่าที่ใช้เลขประจำตัวประชาชนนี้อยู่ในระบบแล้ว (ไม่สามารถลงทะเบียนซ้ำได้)");
       return;
     }
     if (!address.trim()) {
-      alert("กรุณากรอกที่อยู่ตามบัตรประชาชน/ทะเบียนบ้านของผู้เช่า");
+      setErrorMessage("กรุณากรอกที่อยู่ตามบัตรประชาชน/ทะเบียนบ้านของผู้เช่า");
+      return;
+    }
+    if (email.trim() && !isValidEmail(email)) {
+      setErrorMessage("รูปแบบอีเมลไม่ถูกต้อง (เช่น example@gmail.com)");
+      return;
+    }
+    if (age && (Number(age) < 1 || Number(age) > 120)) {
+      setErrorMessage("กรุณาระบุอายุที่ถูกต้อง (1 - 120 ปี)");
+      return;
+    }
+    if (!isDateAfter(endDate, startDate)) {
+      setErrorMessage("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
+      return;
+    }
+    if (depositAmount < 0) {
+      setErrorMessage("จำนวนเงินประกันมัดจำต้องไม่ติดลบ");
       return;
     }
 
@@ -264,6 +313,14 @@ export function AddTenantModal({
 
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+          {/* Error Message Banner */}
+          {errorMessage && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           {/* Room Selection (เฉพาะห้องสถานะว่างเท่านั้น ป้องกันการจองทับ) */}
           <div>
             <label className="block font-semibold text-[var(--foreground)] mb-1.5">
@@ -395,6 +452,7 @@ export function AddTenantModal({
               <input
                 type="text"
                 required
+                maxLength={100}
                 placeholder="นาย/นาง/นางสาว ..."
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -407,9 +465,11 @@ export function AddTenantModal({
               <input
                 type="tel"
                 required
+                inputMode="tel"
+                maxLength={12}
                 placeholder="08X-XXX-XXXX"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(formatThaiPhone(e.target.value))}
                 className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-[var(--foreground)] font-mono focus:outline-emerald-500"
               />
             </div>
@@ -433,8 +493,8 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">อายุ (ปี)</label>
               <input
                 type="number"
-                min="15"
-                max="100"
+                min="1"
+                max="120"
                 placeholder="เช่น 28"
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
@@ -446,6 +506,7 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">LINE ID</label>
               <input
                 type="text"
+                maxLength={50}
                 placeholder="@lineid"
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
@@ -463,9 +524,11 @@ export function AddTenantModal({
               <input
                 type="text"
                 required
+                inputMode="numeric"
+                maxLength={17}
                 placeholder="1-XXXX-XXXXX-XX-X"
                 value={idCard}
-                onChange={(e) => setIdCard(e.target.value)}
+                onChange={(e) => setIdCard(formatThaiIdCard(e.target.value))}
                 className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-[var(--foreground)] font-mono focus:outline-emerald-500 font-medium"
               />
             </div>
@@ -474,9 +537,11 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">เลขประจำตัวผู้เสียภาษี (เบิกบริษัท)</label>
               <input
                 type="text"
+                inputMode="numeric"
+                maxLength={13}
                 placeholder="เลขผู้เสียภาษีนิติบุคคล (ถ้ามี)"
                 value={taxId}
-                onChange={(e) => setTaxId(e.target.value)}
+                onChange={(e) => setTaxId(e.target.value.replace(/\D/g, "").slice(0, 13))}
                 className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-[var(--foreground)] font-mono focus:outline-emerald-500"
               />
             </div>
@@ -488,6 +553,7 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">อีเมล</label>
               <input
                 type="email"
+                maxLength={100}
                 placeholder="example@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -499,6 +565,7 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">ผู้ติดต่อฉุกเฉิน (ชื่อ & เบอร์)</label>
               <input
                 type="text"
+                maxLength={100}
                 placeholder="เช่น บิดา (081-xxx-xxxx)"
                 value={emergencyContact}
                 onChange={(e) => setEmergencyContact(e.target.value)}
@@ -510,6 +577,7 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">ทะเบียนยานพาหนะ</label>
               <input
                 type="text"
+                maxLength={20}
                 placeholder="เช่น 1กข-9999 กทม."
                 value={vehiclePlate}
                 onChange={(e) => setVehiclePlate(e.target.value)}
@@ -549,6 +617,7 @@ export function AddTenantModal({
                 <label className="block font-medium text-[var(--muted)] mb-1">เงินประกันมัดจำ (บาท) *</label>
                 <input
                   type="number"
+                  min="0"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--card)] border border-[var(--border)] text-[var(--foreground)] focus:outline-emerald-500 font-mono font-bold"
@@ -564,6 +633,7 @@ export function AddTenantModal({
             <textarea
               rows={2}
               required
+              maxLength={300}
               placeholder="เลขที่ หมู่บ้าน ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
@@ -588,6 +658,7 @@ export function AddTenantModal({
               <label className="block font-medium text-[var(--muted)] mb-1">หมายเหตุ / ข้อตกลงพิเศษ</label>
               <input
                 type="text"
+                maxLength={500}
                 placeholder="เช่น จอดมอเตอร์ไซค์ 1 คัน หรือ ขอคีย์การ์ด 2 ใบ"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}

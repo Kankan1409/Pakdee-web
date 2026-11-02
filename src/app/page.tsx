@@ -25,6 +25,12 @@ import { DailyCheckoutModal } from "@/components/dashboard/daily-checkout-modal"
 import { DatabaseInspectorModal } from "@/components/admin/database-inspector-modal";
 import { ConfirmModal, ConfirmVariant, ConfirmIconType } from "@/components/ui/confirm-modal";
 import { DatabaseService } from "@/lib/database.service";
+import {
+  isValidThaiIdCard,
+  formatThaiIdCard,
+  isValidThaiPhone,
+  formatThaiPhone,
+} from "@/lib/validators";
 import { useAuth } from "@/lib/auth-context";
 import { LoginView } from "@/components/auth/login-view";
 import { PakdeeLogo } from "@/components/ui/pakdee-logo";
@@ -1245,8 +1251,22 @@ export default function HomePage() {
   // Handler: Add Daily Booking (Synchronized with Rooms Database)
   const handleAddBooking = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBookingForm.guestName || !newBookingForm.guestPhone) {
-      showToast("กรุณากรอกชื่อและเบอร์โทรผู้เข้าพัก", "warning");
+    if (!newBookingForm.guestName.trim()) {
+      showToast("กรุณากรอกชื่อและนามสกุลผู้เข้าพัก", "warning");
+      return;
+    }
+    const cleanPhone = (newBookingForm.guestPhone || "").replace(/\D/g, "");
+    if (!isValidThaiPhone(cleanPhone)) {
+      showToast("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)", "warning");
+      return;
+    }
+    const cleanId = (newBookingForm.idCard || "").replace(/\D/g, "");
+    if (!cleanId) {
+      showToast("กรุณากรอกเลขประจำตัวประชาชน 13 หลัก", "warning");
+      return;
+    }
+    if (!isValidThaiIdCard(cleanId)) {
+      showToast("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)", "warning");
       return;
     }
     if (!newBookingForm.roomNumber) {
@@ -1277,10 +1297,10 @@ export default function HomePage() {
     if (newBookingForm.bookingType === "monthly") {
       // 1. บันทึกการจองห้องพักรายเดือน (User Requirement 3)
       const monthlyTenant = await DatabaseService.createTenant({
-        fullName: newBookingForm.guestName,
-        phone: newBookingForm.guestPhone,
-        idCard: newBookingForm.idCard || "",
-        vehiclePlate: newBookingForm.vehiclePlate || "",
+        fullName: newBookingForm.guestName.trim(),
+        phone: newBookingForm.guestPhone.trim(),
+        idCard: newBookingForm.idCard.trim(),
+        vehiclePlate: newBookingForm.vehiclePlate?.trim() || "",
         roomNumber: newBookingForm.roomNumber,
         roomId: targetRoom.id,
         notes: `[จองห้องพักรายเดือน] เข้าพักวันที่ ${formatDateThai(newBookingForm.checkInDate)} (ค่าเช่า ฿${(newBookingForm.monthlyRate || targetRoom.monthlyRate || 4000).toLocaleString()}/ด. มัดจำ ฿${(newBookingForm.roomDeposit || 0).toLocaleString()})`,
@@ -1301,10 +1321,10 @@ export default function HomePage() {
                 monthlyRate: newBookingForm.monthlyRate || r.monthlyRate,
                 currentTenant: monthlyTenant || {
                   id: `t-${Date.now()}`,
-                  fullName: newBookingForm.guestName,
-                  phone: newBookingForm.guestPhone,
-                  idCard: newBookingForm.idCard,
-                  vehiclePlate: newBookingForm.vehiclePlate,
+                  fullName: newBookingForm.guestName.trim(),
+                  phone: newBookingForm.guestPhone.trim(),
+                  idCard: newBookingForm.idCard.trim(),
+                  vehiclePlate: newBookingForm.vehiclePlate?.trim() || "",
                   roomNumber: newBookingForm.roomNumber,
                   roomId: targetRoom.id,
                 },
@@ -1339,7 +1359,11 @@ export default function HomePage() {
     // 2. บันทึกการจองห้องพักรายวัน (Daily Booking)
     const checkIn = new Date(newBookingForm.checkInDate);
     const checkOut = new Date(newBookingForm.checkOutDate);
-    const diffTime = Math.max(86400000, checkOut.getTime() - checkIn.getTime());
+    if (checkOut.getTime() <= checkIn.getTime()) {
+      showToast("วันที่เช็คเอาท์ต้องอยู่หลังวันที่เช็คอินอย่างน้อย 1 วัน", "error");
+      return;
+    }
+    const diffTime = checkOut.getTime() - checkIn.getTime();
     const totalNights = Math.round(diffTime / (1000 * 60 * 60 * 24));
     const totalAmount = totalNights * newBookingForm.nightlyRate;
 
@@ -3231,6 +3255,7 @@ export default function HomePage() {
             <TenantRegistrationView
               rooms={rooms}
               initialRoomId={initialAddTenantRoomId}
+              existingTenants={tenants}
               onBack={() => handleTabChange("tenants")}
               onSubmit={handleAddTenantComplete}
             />
@@ -3618,6 +3643,7 @@ export default function HomePage() {
         }}
         rooms={rooms}
         initialRoomId={initialAddTenantRoomId}
+        existingTenants={tenants}
         onAddTenant={handleAddTenantComplete}
       />
 
@@ -3744,10 +3770,11 @@ export default function HomePage() {
                         <input
                           type="text"
                           required
+                          maxLength={100}
                           placeholder="เช่น คุณกานดา รักษ์ดี"
                           value={newBookingForm.guestName}
                           onChange={(e) => setNewBookingForm({ ...newBookingForm, guestName: e.target.value })}
-                          className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]"
+                          className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-medium"
                         />
                       </div>
 
@@ -3756,9 +3783,11 @@ export default function HomePage() {
                         <input
                           type="tel"
                           required
+                          inputMode="tel"
+                          maxLength={12}
                           placeholder="08X-XXX-XXXX"
                           value={newBookingForm.guestPhone}
-                          onChange={(e) => setNewBookingForm({ ...newBookingForm, guestPhone: e.target.value })}
+                          onChange={(e) => setNewBookingForm({ ...newBookingForm, guestPhone: formatThaiPhone(e.target.value) })}
                           className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
                         />
                       </div>
@@ -3773,10 +3802,11 @@ export default function HomePage() {
                         <input
                           type="text"
                           required
+                          inputMode="numeric"
                           maxLength={17}
-                          placeholder="เช่น 1100200300400"
+                          placeholder="1-XXXX-XXXXX-XX-X"
                           value={newBookingForm.idCard}
-                          onChange={(e) => setNewBookingForm({ ...newBookingForm, idCard: e.target.value })}
+                          onChange={(e) => setNewBookingForm({ ...newBookingForm, idCard: formatThaiIdCard(e.target.value) })}
                           className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
                         />
                       </div>
@@ -3787,6 +3817,7 @@ export default function HomePage() {
                         </label>
                         <input
                           type="text"
+                          maxLength={20}
                           placeholder="เช่น 1กข 1234 กทม."
                           value={newBookingForm.vehiclePlate}
                           onChange={(e) => setNewBookingForm({ ...newBookingForm, vehiclePlate: e.target.value })}

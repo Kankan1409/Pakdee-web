@@ -34,6 +34,14 @@ import {
   HelpCircle,
   FileSignature,
 } from "lucide-react";
+import {
+  isValidThaiIdCard,
+  formatThaiIdCard,
+  isValidThaiPhone,
+  formatThaiPhone,
+  isValidEmail,
+  isDateAfter,
+} from "@/lib/validators";
 
 // Standard 14 Legal Clauses (ข้อสัญญามาตรฐาน 14 ข้อ)
 const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
@@ -157,6 +165,7 @@ interface TenantRegistrationViewProps {
     additionalRules?: string[];
     clauses?: ContractClause[];
   }) => Promise<void> | void;
+  existingTenants?: Tenant[];
 }
 
 export function TenantRegistrationView({
@@ -164,6 +173,7 @@ export function TenantRegistrationView({
   initialRoomId,
   onBack,
   onSubmit,
+  existingTenants,
 }: TenantRegistrationViewProps) {
   // Vacant rooms only
   const vacantRooms = rooms.filter((r) => r.status === "vacant" && !r.currentTenant);
@@ -404,8 +414,35 @@ export function TenantRegistrationView({
       setErrorMessage("กรุณาระบุเบอร์โทรศัพท์ติดต่อของผู้เช่า");
       return;
     }
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (!isValidThaiPhone(cleanPhone)) {
+      setErrorMessage("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
+      return;
+    }
     if (!idCard.trim()) {
       setErrorMessage("กรุณาระบุเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
+      return;
+    }
+    const cleanId = idCard.replace(/\D/g, "");
+    if (!isValidThaiIdCard(cleanId)) {
+      setErrorMessage("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)");
+      return;
+    }
+    // ตรวจสอบเลขบัตรประชาชนซ้ำกับผู้เช่าปัจจุบันในระบบ
+    if (existingTenants && existingTenants.some((t) => t.idCard && t.idCard.replace(/\D/g, "") === cleanId)) {
+      setErrorMessage("มีผู้เช่าที่ใช้เลขประจำตัวประชาชนนี้อยู่ในระบบแล้ว (ไม่สามารถลงทะเบียนซ้ำได้)");
+      return;
+    }
+    if (email.trim() && !isValidEmail(email)) {
+      setErrorMessage("รูปแบบอีเมลไม่ถูกต้อง (เช่น example@gmail.com)");
+      return;
+    }
+    if (age && (Number(age) < 1 || Number(age) > 120)) {
+      setErrorMessage("กรุณาระบุอายุที่ถูกต้อง (1 - 120 ปี)");
+      return;
+    }
+    if (!isContinuous && !isDateAfter(endDate, startDate)) {
+      setErrorMessage("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
       return;
     }
 
@@ -705,6 +742,7 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  maxLength={100}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="เช่น คุณนวรัตน์ มงคลสุข"
@@ -719,10 +757,12 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="tel"
+                  inputMode="tel"
+                  maxLength={12}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(formatThaiPhone(e.target.value))}
                   placeholder="08X-XXX-XXXX"
-                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500"
+                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500 font-mono"
                   required
                 />
               </div>
@@ -733,10 +773,12 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  maxLength={17}
                   value={idCard}
-                  onChange={(e) => setIdCard(e.target.value)}
+                  onChange={(e) => setIdCard(formatThaiIdCard(e.target.value))}
                   placeholder="1-XXXX-XXXXX-XX-X"
-                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500"
+                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500 font-mono"
                   required
                 />
               </div>
@@ -758,10 +800,12 @@ export function TenantRegistrationView({
                 <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">อายุ (ปี)</label>
                 <input
                   type="number"
+                  min={1}
+                  max={120}
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
                   placeholder="เช่น 28"
-                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500"
+                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500 font-mono"
                 />
               </div>
 
@@ -769,6 +813,7 @@ export function TenantRegistrationView({
                 <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">LINE ID</label>
                 <input
                   type="text"
+                  maxLength={50}
                   value={lineId}
                   onChange={(e) => setLineId(e.target.value)}
                   placeholder="เช่น somchai_line"
@@ -780,6 +825,7 @@ export function TenantRegistrationView({
                 <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">อีเมล (Email)</label>
                 <input
                   type="email"
+                  maxLength={100}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="tenant@email.com"
@@ -793,6 +839,7 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  maxLength={20}
                   value={vehiclePlate}
                   onChange={(e) => setVehiclePlate(e.target.value)}
                   placeholder="เช่น 1กก 9999 กทม."
@@ -806,6 +853,7 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  maxLength={300}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="บ้านเลขที่ หมู่ ซอย ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
@@ -819,6 +867,7 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  maxLength={100}
                   value={emergencyContact}
                   onChange={(e) => setEmergencyContact(e.target.value)}
                   placeholder="เช่น มารดา 081-234-5678"
@@ -832,10 +881,12 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  maxLength={13}
                   value={taxId}
-                  onChange={(e) => setTaxId(e.target.value)}
+                  onChange={(e) => setTaxId(e.target.value.replace(/\D/g, "").slice(0, 13))}
                   placeholder="ระบุเฉพาะกรณีนิติบุคคล/หัก ณ ที่จ่าย"
-                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500"
+                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500 font-mono"
                 />
               </div>
 
@@ -859,6 +910,7 @@ export function TenantRegistrationView({
                 </label>
                 <input
                   type="text"
+                  maxLength={500}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="เช่น ขอโต๊ะทำงานเพิ่ม, เข้าพัก 2 คน, มีสัตว์เลี้ยงขนาดเล็ก ฯลฯ"
