@@ -1,0 +1,278 @@
+import { NextRequest, NextResponse } from "next/server";
+import { DatabaseService } from "@/lib/database.service";
+import {
+  verifyLineSignature,
+  replyLineMessage,
+  getLineMessageContent,
+} from "@/lib/line/line-client";
+import {
+  buildInvoiceFlexMessage,
+  buildReceiptFlexMessage,
+  buildRepairTicketFlexMessage,
+  buildWelcomeFlexMessage,
+} from "@/lib/line/flex-templates";
+import { generatePromptPayQRCode } from "@/lib/promptpay";
+
+// Force Node.js runtime for crypto & buffer compatibility
+export const runtime = "nodejs";
+
+/**
+ * GET: Webhook Health Check (สำหรับทดสอบในเบราว์เซอร์หรือตรวจสอบสถานะ)
+ */
+export async function GET() {
+  return NextResponse.json({
+    status: "ok",
+    service: "PAKDEE LINE Messaging Gateway",
+    endpoint: "/api/line/webhook",
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * POST: LINE Webhook Receiver (รับ Event จาก LINE Platform)
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const rawBody = await req.text();
+    const signature = req.headers.get("x-line-signature") || "";
+
+    // 1. ดึงการตั้งค่าของสาขาปัจจุบัน (รวม Token และ Secret)
+    const activePropId = DatabaseService.getActivePropertyId() || "prop-1";
+    const property = await DatabaseService.getProperty(activePropId);
+    const settings = await DatabaseService.getBranchSettings(property, activePropId);
+
+    const channelSecret = settings?.lineChannelSecret || process.env.LINE_CHANNEL_SECRET || "";
+    const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    const branchName = settings?.branchName || property?.name || "พักดี แมนชั่น";
+    const promptpayNumber = settings?.promptpayNumber || "0812345678";
+
+    // 2. ตรวจสอบ Signature เมื่อมีการตั้งค่า Channel Secret (ป้องกัน Spoofing)
+    if (channelSecret && channelSecret.trim() !== "") {
+      const isValid = verifyLineSignature(rawBody, signature, channelSecret);
+      if (!isValid) {
+        console.warn("[LINE-WEBHOOK] Unauthorized: Invalid HMAC-SHA256 signature");
+        return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
+      }
+    }
+
+    const payload = JSON.parse(rawBody || "{}");
+    const events: any[] = payload.events || [];
+
+    console.log(`[LINE-WEBHOOK] Received ${events.length} event(s)`);
+
+    // 3. วนลูปประมวลผลแต่ละ Event
+    for (const event of events) {
+      const replyToken = event.replyToken;
+      const userId = event.source?.userId;
+
+      // Ignore verify probes without replyToken
+      if (!replyToken || replyToken === "00000000000000000000000000000000") {
+        continue;
+      }
+
+      // Event: Follow (ผู้เช่าแอดไลน์เข้ามาใหม่)
+      if (event.type === "follow") {
+        const welcomeFlex = buildWelcomeFlexMessage(branchName);
+        await replyLineMessage(channelAccessToken, replyToken, [welcomeFlex]);
+        continue;
+      }
+
+      // Event: Message
+      if (event.type === "message") {
+        const message = event.message;
+
+        // -------------------------------------------------------------
+        // A. ข้อความประเภทข้อความ (Text)
+        // -------------------------------------------------------------
+        if (message.type === "text") {
+          const userText = (message.text || "").trim();
+
+          // 1. ตรวจสอบการผูกห้องพัก (เช่น "ห้อง 101", "101", "ผูกห้อง 101")
+          const roomMatch = userText.match(/^(?:ห้อง|room)?\s*([a-zA-Z0-9]+)$/i);
+          const isExplicitBind = userText.startsWith("ผูกห้อง") || userText.startsWith("ห้อง");
+
+          // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง
+          if (roomMatch && (isExplicitBind || /^\d{2,4}$/.test(userText))) {
+            const requestedRoom = roomMatch[1];
+            const boundTenant = await DatabaseService.bindTenantLineUser(
+              activePropId,
+              requestedRoom,
+              userId,
+              "ผู้เช่าห้อง " + requestedRoom
+            );
+
+            if (boundTenant) {
+              const invoices = await DatabaseService.getInvoices(activePropId);
+              const unpaidForRoom = invoices.filter(
+                (i) => i.roomNumber === requestedRoom && i.status !== "paid"
+              );
+
+              const replyTexts = [
+                {
+                  type: "text",
+                  text: `🎉 ผูกบัญชี LINE กับห้อง ${requestedRoom} (${boundTenant.fullName}) สำเร็จเรียบร้อยแล้วครับ!\n\nจากนี้ระบบจะส่งบิลแจ้งหนี้ค่าเช่าและค่าน้ำค่าไฟเข้าไลน์นี้ทุกเดือนครับ ✨`,
+                },
+              ];
+
+              // หากมีบิลค้างอยู่ ส่งการ์ดบิลแจ้งหนี้พร้อม PromptPay QR ให้ทันที
+              if (unpaidForRoom.length > 0) {
+                const latestInv = unpaidForRoom[0];
+                let qrDataUrl = "";
+                try {
+                  qrDataUrl = await generatePromptPayQRCode(promptpayNumber, latestInv.totalAmount);
+                } catch (e) {}
+
+                const flexInvoice = buildInvoiceFlexMessage(latestInv, property, settings, qrDataUrl);
+                replyTexts.push(flexInvoice as any);
+              }
+
+              await replyLineMessage(channelAccessToken, replyToken, replyTexts);
+              continue;
+            } else {
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: `⚠️ ไม่พบข้อมูลผู้เช่าห้อง "${requestedRoom}" ในระบบทะเบียนหอพักครับ\nกรุณาตรวจสอบหมายเลขห้องอีกครั้ง หรือติดต่อผู้จัดการหอพักครับ`,
+                },
+              ]);
+              continue;
+            }
+          }
+
+          // 2. คำสั่ง: ขอบิล / เช็คยอดค้างชำระ
+          if (/ขอบิล|เช็คยอด|ยอดค้าง|บิล|ค่าน้ำค่าไฟ|ชำระเงิน/i.test(userText)) {
+            const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
+            if (!tenant || !tenant.roomNumber) {
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: "🏢 คุณยังไม่ได้ผูกห้องพักกับระบบครับ\nกรุณาพิมพ์หมายเลขห้องพัก เช่น 'ห้อง 101' หรือ '101' เพื่อผูกข้อมูลก่อนครับ",
+                },
+              ]);
+              continue;
+            }
+
+            const invoices = await DatabaseService.getInvoices(activePropId);
+            const unpaid = invoices.find(
+              (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+            );
+
+            if (unpaid) {
+              let qrUrl = "";
+              try {
+                qrUrl = await generatePromptPayQRCode(promptpayNumber, unpaid.totalAmount);
+              } catch (e) {}
+
+              const invFlex = buildInvoiceFlexMessage(unpaid, property, settings, qrUrl);
+              await replyLineMessage(channelAccessToken, replyToken, [invFlex]);
+            } else {
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: `✨ ยอดเยี่ยมครับ! ห้อง ${tenant.roomNumber} (${tenant.fullName}) ไม่มีบิลค้างชำระในระบบแล้วครับ ขอบคุณครับ`,
+                },
+              ]);
+            }
+            continue;
+          }
+
+          // 3. คำสั่ง: แจ้งซ่อม (เช่น "แจ้งซ่อม แอร์ไม่เย็น", "แจ้งซ่อม ท่อน้ำรั่ว")
+          if (/^แจ้งซ่อม\s*(.*)/i.test(userText)) {
+            const repairDetail = userText.replace(/^แจ้งซ่อม\s*/i, "").trim() || "แจ้งซ่อมบำรุงทั่วไป";
+            const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
+            const targetRoom = tenant?.roomNumber || "ไม่ระบุห้อง";
+
+            let category: "air" | "plumbing" | "electric" | "furniture" | "other" = "other";
+            if (/แอร์|ความเย็น|น้ำหยด/i.test(repairDetail)) category = "air";
+            else if (/น้ำ|ท่อ|ก๊อก|ชักโครก/i.test(repairDetail)) category = "plumbing";
+            else if (/ไฟ|หลอดไฟ|ปลั๊ก|สวิตช์/i.test(repairDetail)) category = "electric";
+            else if (/เตียง|ตู้|โต๊ะ|เก้าอี้|ประตู|หน้าต่าง/i.test(repairDetail)) category = "furniture";
+
+            const newRepair = await DatabaseService.addRepair({
+              propertyId: activePropId,
+              roomNumber: targetRoom,
+              title: repairDetail,
+              description: `แจ้งผ่าน LINE OA โดย ${tenant?.fullName || "ผู้พักอาศัย"}`,
+              category,
+              priority: "normal",
+              status: "pending",
+              cost: 0,
+            });
+
+            const repairFlex = buildRepairTicketFlexMessage(newRepair, branchName);
+            await replyLineMessage(channelAccessToken, replyToken, [repairFlex]);
+            continue;
+          }
+
+          // 4. Default Fallback Help Menu
+          await replyLineMessage(channelAccessToken, replyToken, [
+            {
+              type: "text",
+              text: `สวัสดีครับ 🙏 ${branchName} ยินดีให้บริการครับ\n\nคำสั่งที่สามารถพิมพ์ได้ 24 ชม.:\n• พิมพ์เลขห้อง (เช่น 'ห้อง 101') เพื่อผูกข้อมูลห้อง\n• พิมพ์ 'ขอบิล' เพื่อดูยอดค่าใช้จ่ายและ QR สแกนจ่าย\n• พิมพ์ 'แจ้งซ่อม [รายละเอียด]' เพื่อแจ้งปัญหาห้องพัก\n• ส่งรูปภาพสลิปโอนเงิน เพื่อตรวจสอบยอดและรับใบเสร็จ`,
+            },
+          ]);
+          continue;
+        }
+
+        // -------------------------------------------------------------
+        // B. ข้อความประเภทรูปภาพ (Image) — ตรวจสลิปโอนเงินอัตโนมัติ
+        // -------------------------------------------------------------
+        if (message.type === "image") {
+          const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
+          if (!tenant || !tenant.roomNumber) {
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: "⚠️ ได้รับรูปภาพสลิปแล้ว แต่บัญชี LINE ของคุณยังไม่ได้ผูกกับห้องพัก\nกรุณาพิมพ์หมายเลขห้อง เช่น 'ห้อง 101' เพื่อให้ระบบตัดยอดบิลได้ถูกต้องครับ",
+              },
+            ]);
+            continue;
+          }
+
+          // ค้นหาบิลค้างชำระของห้องนี้
+          const invoices = await DatabaseService.getInvoices(activePropId);
+          const unpaid = invoices.find(
+            (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+          );
+
+          if (unpaid) {
+            // ทำเครื่องหมายว่าชำระแล้วผ่านระบบ Slip Matching
+            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid");
+
+            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
+            const receiptFlex = buildReceiptFlexMessage(
+              unpaid,
+              receiptNo,
+              unpaid.totalAmount,
+              branchName
+            );
+
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: "🤖 AI ตรวจสอบสลิปโอนเงินเรียบร้อยแล้ว: ยอดเงินถูกต้อง 100%! ออกใบเสร็จรับเงินให้อัตโนมัติครับ",
+              },
+              receiptFlex,
+            ]);
+          } else {
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: `ขอบคุณครับ ห้อง ${tenant.roomNumber} ไม่มีบิลค้างชำระในระบบขณะนี้ หากต้องการติดต่อเจ้าหน้าที่กรุณาโทร ${settings?.phone || "เบอร์สำนักงานหอพัก"} ครับ`,
+              },
+            ]);
+          }
+          continue;
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, processedEvents: events.length });
+  } catch (error: any) {
+    console.error("[LINE-WEBHOOK-FATAL]", error);
+    return NextResponse.json(
+      { error: "Webhook processing error", details: error.message },
+      { status: 500 }
+    );
+  }
+}

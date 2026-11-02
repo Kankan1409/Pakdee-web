@@ -5,6 +5,7 @@ import { Room, Property, ContractItem, DailyBooking } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
 import { initialProperty } from "@/lib/mock-data";
 import { DocumentViewerModal, DocumentType } from "@/components/documents/document-viewer-modal";
+import { globalPopup } from "@/lib/popup-context";
 import {
   X,
   User,
@@ -599,10 +600,15 @@ export function RoomDetailModal({
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`คุณต้องการลบห้อง ${room.roomNumber} ออกจากระบบใช่หรือไม่?`)) {
-                    onDeleteRoom(room.id);
-                    onClose();
-                  }
+                  globalPopup.warning(
+                    `ยืนยันการลบห้อง ${room.roomNumber}`,
+                    `คุณต้องการลบห้อง ${room.roomNumber} ออกจากระบบใช่หรือไม่? ข้อมูลประวัติการใช้งานห้องนี้จะไม่สามารถกู้คืนได้`,
+                    () => {
+                      onDeleteRoom(room.id);
+                      onClose();
+                    },
+                    "ยกเลิก"
+                  );
                 }}
                 className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5"
                 title="ลบห้องนี้ออกจากระบบ"

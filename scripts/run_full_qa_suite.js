@@ -10,14 +10,18 @@ async function runComprehensiveAudit() {
   console.log('⏰ Timestamp:', new Date().toLocaleString('th-TH'));
   console.log('========================================================================\n');
 
-  const tempDir = path.join(os.tmpdir(), 'chrome_final_audit_' + Date.now());
-  fs.mkdirSync(tempDir, { recursive: true });
+  const uniqueDir = path.join(os.tmpdir(), 'puppeteer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
+  fs.mkdirSync(uniqueDir, { recursive: true });
 
   const browser = await puppeteer.launch({
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     headless: true,
-    userDataDir: tempDir,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1440,900']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--window-size=1440,900',
+      `--user-data-dir=${uniqueDir}`
+    ]
   });
 
   const page = await browser.newPage();
@@ -85,7 +89,7 @@ async function runComprehensiveAudit() {
   console.log('   -> หน้าตั้งค่าเปิดได้สมบูรณ์: PASS');
 
   await browser.close();
-  try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e){}
+  try { fs.rmSync(uniqueDir, { recursive: true, force: true }); } catch(e){}
 
   console.log('\n========================================================================');
   console.log('📊 สรุปผลการตรวจสอบความเสถียร (Zero-Defect Gate):');

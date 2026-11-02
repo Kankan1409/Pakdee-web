@@ -2,15 +2,22 @@ const fs = require('fs');
 const path = require('path');
 
 const files = [
+  'src/types/dormitory.ts',
+  'src/lib/database.service.ts',
   'src/lib/validators.ts',
   'src/lib/popup-context.tsx',
+  'src/lib/line/flex-templates.ts',
+  'src/lib/line/line-client.ts',
+  'src/app/api/line/webhook/route.ts',
+  'src/app/api/line/send-invoice/route.ts',
+  'src/components/invoice/invoice-preview-modal.tsx',
   'src/components/ui/app-popup-modal.tsx',
   'src/components/tenants/tenant-registration-view.tsx',
   'src/components/tenants/add-tenant-modal.tsx',
-  'src/app/page.tsx',
   'src/components/settings/branch-settings-view.tsx',
   'src/components/contracts/contract-management-view.tsx',
-  'src/components/rooms/add-room-modal.tsx'
+  'src/components/rooms/add-room-modal.tsx',
+  'src/app/page.tsx'
 ];
 
 const srcBase = 'D:/DESKTOP/Pakdee';

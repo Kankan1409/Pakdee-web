@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Property } from "@/types/dormitory";
 import { PakdeeLogo } from "@/components/ui/pakdee-logo";
 import { useAuth } from "@/lib/auth-context";
+import { globalPopup } from "@/lib/popup-context";
 import {
   Building2,
   Plus,
@@ -118,7 +119,10 @@ export function BranchSelectorView({
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("ขนาดไฟล์รูปภาพเกิน 5MB กรุณาเลือกไฟล์รูปภาพที่มีขนาดไม่เกิน 5MB");
+      globalPopup.error(
+        "ขนาดไฟล์เกินกำหนด",
+        "ขนาดไฟล์รูปภาพเกิน 5MB กรุณาเลือกไฟล์รูปภาพที่มีขนาดไม่เกิน 5MB"
+      );
       return;
     }
 

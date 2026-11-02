@@ -50,6 +50,9 @@ export interface Tenant {
   idCard: string;
   emergencyContact?: string;
   lineId?: string;
+  lineUserId?: string;
+  lineDisplayName?: string;
+  lineLinkedAt?: string;
   vehiclePlate?: string;
   gender?: "MALE" | "FEMALE" | "OTHER";
   age?: number;
@@ -173,6 +176,8 @@ export interface Invoice {
   qrCodeUrl?: string;
   invoiceType?: "monthly" | "move_in" | "custom";
   slipStatus?: "passed" | "action_needed" | "retrying" | "none";
+  lineSentAt?: string;
+  lineDeliveryStatus?: "sent" | "failed" | "not_sent";
   payments?: Payment[];
   version?: number;
 }

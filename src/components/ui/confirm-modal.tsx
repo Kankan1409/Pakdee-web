@@ -96,6 +96,29 @@ export function ConfirmModal({
     }
   };
 
+  const getBadgeInfo = () => {
+    switch (variant) {
+      case "danger":
+        return {
+          text: "แจ้งเตือนผิดพลาด",
+          className: "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
+        };
+      case "warning":
+        return {
+          text: "แจ้งเตือนแก้ไข / ยืนยัน",
+          className: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+        };
+      case "primary":
+      default:
+        return {
+          text: "แจ้งเตือนทั่วไป",
+          className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
+        };
+    }
+  };
+
+  const badge = getBadgeInfo();
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop with smooth blur */}
@@ -106,13 +129,23 @@ export function ConfirmModal({
 
       {/* Bento Modal Container */}
       <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl z-10 animate-in zoom-in-95 duration-150">
-        {/* Close X button */}
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {/* Top Header Row: 3-Level Badge & Close Button */}
+        <div className="flex items-center justify-between mb-4">
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${badge.className}`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+            <span>{badge.text}</span>
+          </span>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="ปิดหน้าต่าง (Esc)"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
         <div className="flex items-start gap-4">
           {renderIcon()}

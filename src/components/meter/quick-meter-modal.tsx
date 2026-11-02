@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Room } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
+import { globalPopup } from "@/lib/popup-context";
 import { X, Zap, Droplets, ArrowRight, ArrowLeft, Check } from "lucide-react";
 
 interface QuickMeterModalProps {
@@ -66,7 +67,7 @@ export function QuickMeterModal({
     if (currentIndex < activeRooms.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      alert("บันทึกมิเตอร์ครบทุกห้องเรียบร้อยแล้ว!");
+      globalPopup.info("บันทึกสำเร็จ", "บันทึกมิเตอร์ครบทุกห้องเรียบร้อยแล้ว!");
       onClose();
     }
   };

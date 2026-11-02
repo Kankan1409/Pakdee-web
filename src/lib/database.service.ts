@@ -827,6 +827,80 @@ export const DatabaseService = {
     return newTenant;
   },
 
+  async bindTenantLineUser(
+    propertyId: string,
+    roomNumber: string,
+    lineUserId: string,
+    lineDisplayName?: string
+  ): Promise<Tenant | null> {
+    const propId = propertyId || this.getActivePropertyId();
+    const cleanRoom = roomNumber.trim();
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    
+    // Find tenant by roomNumber in this property
+    const targetIdx = allTenants.findIndex(
+      (t) => (t.propertyId || "prop-1") === propId && t.roomNumber === cleanRoom
+    );
+
+    if (targetIdx !== -1) {
+      allTenants[targetIdx] = {
+        ...allTenants[targetIdx],
+        lineUserId,
+        lineDisplayName: lineDisplayName || allTenants[targetIdx].lineDisplayName,
+        lineLinkedAt: new Date().toISOString(),
+      };
+      setLocal(KEYS.TENANTS, allTenants);
+
+      // Also update Room.currentTenant if exists
+      const allRooms = this.getAllRawRooms();
+      const updatedRooms = allRooms.map((r) => {
+        if ((r.propertyId || "prop-1") === propId && r.roomNumber === cleanRoom && r.currentTenant) {
+          return {
+            ...r,
+            currentTenant: {
+              ...r.currentTenant,
+              lineUserId,
+              lineDisplayName: lineDisplayName || r.currentTenant.lineDisplayName,
+              lineLinkedAt: new Date().toISOString(),
+            },
+          };
+        }
+        return r;
+      });
+      setLocal(KEYS.ROOMS, updatedRooms);
+
+      await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${lineDisplayName || lineUserId})`, propId);
+      return allTenants[targetIdx];
+    }
+    return null;
+  },
+
+  async getTenantByLineUser(lineUserId: string, propertyId?: string): Promise<Tenant | null> {
+    if (!lineUserId) return null;
+    const propId = propertyId || this.getActivePropertyId();
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    return allTenants.find((t) => (t.propertyId || "prop-1") === propId && t.lineUserId === lineUserId) || null;
+  },
+
+  async updateInvoiceLineStatus(
+    invoiceId: string,
+    status: "sent" | "failed",
+    timestamp?: string
+  ): Promise<Invoice | null> {
+    const all = this.getAllRawInvoices();
+    const idx = all.findIndex((i) => i.id === invoiceId);
+    if (idx === -1) return null;
+
+    const timeStr = timestamp || new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) + " น.";
+    all[idx] = {
+      ...all[idx],
+      lineDeliveryStatus: status,
+      lineSentAt: status === "sent" ? timeStr : all[idx].lineSentAt,
+    };
+    setLocal(KEYS.INVOICES, all);
+    return all[idx];
+  },
+
   async assignTenantToRoom(tenantId: string, roomId: string, leaseEndDate?: string): Promise<boolean> {
     const tenants = await this.getTenants();
     const tenant = tenants.find((t) => t.id === tenantId);

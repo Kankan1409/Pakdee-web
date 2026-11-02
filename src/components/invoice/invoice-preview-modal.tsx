@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Invoice } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
 import { generatePromptPayQRCode } from "@/lib/promptpay";
+import { globalPopup } from "@/lib/popup-context";
 import { X, Printer, Share2, CheckCircle2, Sparkles } from "lucide-react";
 
 interface InvoicePreviewModalProps {
@@ -16,6 +17,7 @@ interface InvoicePreviewModalProps {
   propertyPhone?: string;
   promptpayName?: string;
   onMarkAsPaid?: (invoiceId: string) => void;
+  onInvoiceSent?: (invoiceId: string) => void;
 }
 
 export function InvoicePreviewModal({
@@ -28,9 +30,11 @@ export function InvoicePreviewModal({
   propertyPhone,
   promptpayName,
   onMarkAsPaid,
+  onInvoiceSent,
 }: InvoicePreviewModalProps) {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [isSendingLine, setIsSendingLine] = useState<boolean>(false);
 
   useEffect(() => {
     if (invoice && isOpen) {
@@ -48,10 +52,31 @@ export function InvoicePreviewModal({
     window.print();
   };
 
-  const handleShareLine = () => {
-    alert(
-      `ส่งบิลเข้า LINE ของผู้เช่า (${invoice.tenantName}) เรียบร้อยแล้ว ผ่าน LINE Messaging API!`
-    );
+  const handleShareLine = async () => {
+    setIsSendingLine(true);
+    try {
+      const res = await fetch("/api/line/send-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: invoice.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        globalPopup.info(
+          "ส่งบิลเข้า LINE สำเร็จ",
+          data.hasLinkedLine
+            ? `ส่งบิลแจ้งหนี้ห้อง ${invoice.roomNumber} พร้อม PromptPay QR ไปยัง LINE ของคุณ${invoice.tenantName} เรียบร้อยแล้ว!`
+            : `ระบบบันทึกคำสั่งส่งบิลห้อง ${invoice.roomNumber} เรียบร้อยแล้ว (บิลจะส่งทันทีเมื่อผู้เช่าผูกบัญชี LINE)`
+        );
+        onInvoiceSent?.(invoice.id);
+      } else {
+        globalPopup.error("ส่งบิลไม่สำเร็จ", data.error || "เกิดข้อผิดพลาดในการส่งข้อความ LINE");
+      }
+    } catch (e: any) {
+      globalPopup.error("เกิดข้อผิดพลาด", e.message || "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้");
+    } finally {
+      setIsSendingLine(false);
+    }
   };
 
   return (
@@ -84,10 +109,11 @@ export function InvoicePreviewModal({
             </button>
             <button
               onClick={handleShareLine}
-              className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-2.5"
+              disabled={isSendingLine}
+              className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-2.5 disabled:opacity-50"
             >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>ส่งเข้า LINE</span>
+              <Share2 className={`w-3.5 h-3.5 ${isSendingLine ? "animate-spin" : ""}`} />
+              <span>{isSendingLine ? "กำลังส่ง..." : "ส่งเข้า LINE"}</span>
             </button>
             <button
               onClick={onClose}
@@ -239,7 +265,8 @@ export function InvoicePreviewModal({
                       if (onMarkAsPaid && invoice) {
                         onMarkAsPaid(invoice.id);
                       }
-                      alert(
+                      globalPopup.info(
+                        "AI ตรวจสลิปโอนเงินสำเร็จ",
                         `🤖 AI ตรวจสลิปโอนเงินสำเร็จ 100%!\n- ธนาคาร: ธ.กสิกรไทย\n- เลขอ้างอิง: SLIP-${Date.now().toString().slice(-8)}\n- ยอดเงิน: ${formatCurrency(invoice.totalAmount)} (ตรงกับบิลพอดี)\n- ปลายทาง: ${promptpayNumber}\n\nระบบได้เปลี่ยนสถานะบิลห้อง ${invoice.roomNumber} เป็น "ชำระแล้ว" เรียบร้อยแล้ว!`
                       );
                     }, 1200);

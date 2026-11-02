@@ -28,7 +28,7 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "vacant",
+      "status": "daily",
       "currentElectricMeter": 25,
       "currentWaterMeter": 4,
       "version": 1
@@ -63,6 +63,18 @@
     }
   ],
   "pakdee_dev_tenants": [
+    {
+      "id": "t-1793603547034",
+      "propertyId": "prop-1793250152420",
+      "fullName": "สมควร",
+      "phone": "012-355-5781",
+      "idCard": "1-5133-24653-11-1",
+      "vehiclePlate": "",
+      "roomNumber": "101",
+      "roomId": "room-prop-1793250152420-101-1793589427856",
+      "notes": "[ผู้เข้าพักรายวัน] ห้อง 101 (2026-11-02 ถึง 2026-11-03)",
+      "depositAmount": 1000
+    },
     {
       "id": "t-1793591893841",
       "propertyId": "prop-1793250152420",
@@ -530,6 +542,42 @@
   ],
   "pakdee_dev_activity_logs": [
     {
+      "id": "log-1793603547035",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "TENANT",
+      "description": "ลงทะเบียนผู้เช่าใหม่: สมควร (012-355-5781)",
+      "createdAt": "2/11/69 14:12 น."
+    },
+    {
+      "id": "log-1793603547029",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "บันทึกการจองรายวันห้อง 101 (สมควร)",
+      "createdAt": "2/11/69 14:12 น."
+    },
+    {
+      "id": "log-1793595510540",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตการตั้งค่าสาขา: วิภาวรรณ 1 (ไฟ 15 บ., น้ำ 25 บ.)",
+      "createdAt": "2/11/69 11:58 น."
+    },
+    {
+      "id": "log-1793595510269",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตข้อมูลสาขาหอพัก: วิภาวรรณ 1",
+      "createdAt": "2/11/69 11:58 น."
+    },
+    {
       "id": "log-1793593999394",
       "propertyId": "prop-1793250152420",
       "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
@@ -942,42 +990,6 @@
       "entity": "METER",
       "description": "จดมิเตอร์ห้อง 104: ไฟ 1410, น้ำ 288",
       "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266321528",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 103: ไฟ 1395, น้ำ 283",
-      "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266321527",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 2525, น้ำ 304",
-      "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266321508",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 1370, น้ำ 273",
-      "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266133185",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "อัปเดตสถานะบิล ID inv-prop-1-1793266123300-102 เป็น \"paid\"",
-      "createdAt": "29/10/69 16:28 น."
     }
   ],
   "pakdee_dev_meter_readings": [
@@ -1684,6 +1696,25 @@
   ],
   "pakdee_dev_daily_bookings": [
     {
+      "id": "b-1793603546892",
+      "propertyId": "prop-1793250152420",
+      "roomNumber": "101",
+      "guestName": "สมควร",
+      "guestPhone": "012-355-5781",
+      "idCard": "1-5133-24653-11-1",
+      "vehiclePlate": "",
+      "checkInDate": "2026-11-02",
+      "checkInTime": "14:00",
+      "checkOutDate": "2026-11-03",
+      "checkOutTime": "12:00",
+      "nights": 1,
+      "dailyRate": 650,
+      "totalRoomPrice": 650,
+      "keyDeposit": 500,
+      "roomDeposit": 500,
+      "status": "confirmed"
+    },
+    {
       "id": "b-auto-201-1793587294954",
       "propertyId": "prop-1",
       "roomNumber": "201",
@@ -1711,7 +1742,7 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "vacant",
+      "status": "daily",
       "currentElectricMeter": 25,
       "currentWaterMeter": 4,
       "version": 1
@@ -1746,6 +1777,42 @@
     }
   ],
   "activity_logs": [
+    {
+      "id": "log-1793603547035",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "TENANT",
+      "description": "ลงทะเบียนผู้เช่าใหม่: สมควร (012-355-5781)",
+      "createdAt": "2/11/69 14:12 น."
+    },
+    {
+      "id": "log-1793603547029",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "บันทึกการจองรายวันห้อง 101 (สมควร)",
+      "createdAt": "2/11/69 14:12 น."
+    },
+    {
+      "id": "log-1793595510540",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตการตั้งค่าสาขา: วิภาวรรณ 1 (ไฟ 15 บ., น้ำ 25 บ.)",
+      "createdAt": "2/11/69 11:58 น."
+    },
+    {
+      "id": "log-1793595510269",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "SETTINGS",
+      "description": "อัปเดตข้อมูลสาขาหอพัก: วิภาวรรณ 1",
+      "createdAt": "2/11/69 11:58 น."
+    },
     {
       "id": "log-1793593999394",
       "propertyId": "prop-1793250152420",
@@ -2159,42 +2226,6 @@
       "entity": "METER",
       "description": "จดมิเตอร์ห้อง 104: ไฟ 1410, น้ำ 288",
       "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266321528",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 103: ไฟ 1395, น้ำ 283",
-      "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266321527",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 2525, น้ำ 304",
-      "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266321508",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 1370, น้ำ 273",
-      "createdAt": "29/10/69 16:32 น."
-    },
-    {
-      "id": "log-1793266133185",
-      "propertyId": "prop-1",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "อัปเดตสถานะบิล ID inv-prop-1-1793266123300-102 เป็น \"paid\"",
-      "createdAt": "29/10/69 16:28 น."
     }
   ],
   "properties": [
@@ -2281,6 +2312,25 @@
   },
   "daily_bookings": [
     {
+      "id": "b-1793603546892",
+      "propertyId": "prop-1793250152420",
+      "roomNumber": "101",
+      "guestName": "สมควร",
+      "guestPhone": "012-355-5781",
+      "idCard": "1-5133-24653-11-1",
+      "vehiclePlate": "",
+      "checkInDate": "2026-11-02",
+      "checkInTime": "14:00",
+      "checkOutDate": "2026-11-03",
+      "checkOutTime": "12:00",
+      "nights": 1,
+      "dailyRate": 650,
+      "totalRoomPrice": 650,
+      "keyDeposit": 500,
+      "roomDeposit": 500,
+      "status": "confirmed"
+    },
+    {
       "id": "b-auto-201-1793587294954",
       "propertyId": "prop-1",
       "roomNumber": "201",
@@ -2298,6 +2348,18 @@
     }
   ],
   "tenants": [
+    {
+      "id": "t-1793603547034",
+      "propertyId": "prop-1793250152420",
+      "fullName": "สมควร",
+      "phone": "012-355-5781",
+      "idCard": "1-5133-24653-11-1",
+      "vehiclePlate": "",
+      "roomNumber": "101",
+      "roomId": "room-prop-1793250152420-101-1793589427856",
+      "notes": "[ผู้เข้าพักรายวัน] ห้อง 101 (2026-11-02 ถึง 2026-11-03)",
+      "depositAmount": 1000
+    },
     {
       "id": "t-1793591893841",
       "propertyId": "prop-1793250152420",

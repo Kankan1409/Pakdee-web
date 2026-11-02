@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
+import { PopupProvider } from "@/lib/popup-context";
 
 export const metadata: Metadata = {
   title: "PAKDEE (พักดี) - ระบบบริหารจัดการหอพักและอพาร์ตเมนต์",
@@ -34,7 +35,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <PopupProvider>{children}</PopupProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

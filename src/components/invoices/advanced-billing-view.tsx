@@ -21,6 +21,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { formatCurrency, formatDateThai } from "@/lib/utils";
+import { globalPopup } from "@/lib/popup-context";
 
 interface AdvancedBillingViewProps {
   invoices: Invoice[];
@@ -174,7 +175,7 @@ export function AdvancedBillingView({
                 <button
                   onClick={() => {
                     setIsDropdownOpen(false);
-                    alert("ระบบได้คำนวณมิเตอร์และสร้างบิลรายเดือนให้ครบทุกห้องเรียบร้อยแล้ว!");
+                    globalPopup.info("ออกบิลสำเร็จ", "ระบบได้คำนวณมิเตอร์และสร้างบิลรายเดือนให้ครบทุกห้องเรียบร้อยแล้ว!");
                   }}
                   className="w-full text-left p-2.5 rounded-xl hover:bg-[var(--subtle)] transition cursor-pointer"
                 >

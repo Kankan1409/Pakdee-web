@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { PlanType } from "@/types/dormitory";
+import { globalPopup } from "@/lib/popup-context";
 import { X, ShieldCheck, Plus, Check, Eye } from "lucide-react";
 
 interface SuperAdminModalProps {
@@ -23,7 +24,10 @@ export function SuperAdminModal({
 
   const handleSave = () => {
     onChangePlan(selectedPlan);
-    alert(`เปลี่ยนแพ็กเกจเป็น ${selectedPlan.toUpperCase()} เรียบร้อยแล้ว! ฟีเจอร์จะปลดล็อกตามระดับทันที`);
+    globalPopup.info(
+      "อัปเดตแพ็กเกจสำเร็จ",
+      `เปลี่ยนแพ็กเกจเป็น ${selectedPlan.toUpperCase()} เรียบร้อยแล้ว! ฟีเจอร์จะปลดล็อกตามระดับทันที`
+    );
     onClose();
   };
 
@@ -131,7 +135,7 @@ export function SuperAdminModal({
             <div className="flex items-center justify-between text-xs font-bold text-[var(--foreground)]">
               <span>📋 รายชื่อหอพักลูกค้าทั้งหมดในความดูแลของคุณ</span>
               <button
-                onClick={() => alert("เปิดตัวช่วยสร้างหอพักใหม่ (Setup Wizard) ใน 2 นาที!")}
+                onClick={() => globalPopup.info("ตัวช่วยสร้างหอพักใหม่", "เปิดตัวช่วยสร้างหอพักใหม่ (Setup Wizard) ภายใน 2 นาที!")}
                 className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold hover:underline cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -180,7 +184,7 @@ export function SuperAdminModal({
                     </td>
                     <td className="py-2.5 px-3 text-right">
                       <button
-                        onClick={() => alert("สลับไปหน้าจอหอพัก ศิริสุข เพลส")}
+                        onClick={() => globalPopup.info("สลับหอพัก", "สลับไปหน้าจอหอพัก ศิริสุข เพลส")}
                         className="bg-blue-600 text-white px-2 py-1 rounded text-[11px] font-medium hover:bg-blue-500 transition cursor-pointer"
                       >
                         👁️ เข้าดูระบบ

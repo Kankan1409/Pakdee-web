@@ -1152,6 +1152,37 @@ export default function HomePage() {
     setInvoices(updatedInvs);
   };
 
+  // Handler: Batch Send LINE Invoices
+  const [isSendingLineBatch, setIsSendingLineBatch] = useState<boolean>(false);
+  const handleSendLineAllInvoices = async () => {
+    const unpaid = invoices.filter((i) => i.status !== "paid");
+    if (unpaid.length === 0) {
+      showToast("ไม่มีบิลค้างชำระที่ต้องส่งเข้า LINE ในขณะนี้", "info");
+      return;
+    }
+
+    setIsSendingLineBatch(true);
+    try {
+      const res = await fetch("/api/line/send-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "batch", propertyId: property.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`📱 ${data.message} (${data.deliveredRooms?.join(", ") || ""})`, "success");
+        const freshInvs = await DatabaseService.getInvoices(property.id);
+        setInvoices(freshInvs);
+      } else {
+        showToast("เกิดข้อผิดพลาดในการส่ง LINE: " + (data.error || "ไม่ทราบสาเหตุ"), "error");
+      }
+    } catch (e: any) {
+      showToast("ไม่สามารถส่ง LINE ได้: " + e.message, "error");
+    } finally {
+      setIsSendingLineBatch(false);
+    }
+  };
+
   // Handler: Mark invoice as paid
   const handleMarkAsPaid = async (invoiceId: string) => {
     const success = await DatabaseService.updateInvoiceStatus(invoiceId, "paid");
@@ -2765,6 +2796,16 @@ export default function HomePage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
+                        onClick={handleSendLineAllInvoices}
+                        disabled={isSendingLineBatch}
+                        className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                        title="ส่งบิลแจ้งหนี้พร้อม Dynamic PromptPay QR Code เข้า LINE ผู้เช่าทุกห้องที่มีบิลค้าง"
+                      >
+                        <Send className={`w-3.5 h-3.5 ${isSendingLineBatch ? "animate-spin" : ""}`} />
+                        <span>{isSendingLineBatch ? "กำลังส่ง LINE..." : "📱 ส่ง LINE ทุกห้องที่มีบิลค้าง"}</span>
+                      </button>
+                      <button
                         onClick={handleGenerateMonthlyInvoices}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
                       >
@@ -2842,8 +2883,22 @@ export default function HomePage() {
                                 - {inv.tenantName}
                               </span>
                             </div>
-                            <div className="text-[11px] text-[var(--muted)] mt-0.5">
-                              ยอดรวม: <span className="font-semibold text-[var(--foreground)]">{formatCurrency(inv.totalAmount)}</span> | กำหนดชำระ: {inv.dueDate || "5 ของเดือน"} | รอบบิล: {inv.billingDate || "-"}
+                            <div className="text-[11px] text-[var(--muted)] mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span>ยอดรวม: <span className="font-semibold text-[var(--foreground)]">{formatCurrency(inv.totalAmount)}</span></span>
+                              <span>|</span>
+                              <span>กำหนดชำระ: {inv.dueDate || "5 ของเดือน"}</span>
+                              <span>|</span>
+                              <span>รอบบิล: {inv.billingDate || "-"}</span>
+                              <span>|</span>
+                              {inv.lineDeliveryStatus === "sent" ? (
+                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                  ✓ ส่ง LINE แล้ว {inv.lineSentAt ? `(${inv.lineSentAt})` : ""}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-full">
+                                  ยังไม่ได้ส่ง LINE
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -3625,6 +3680,19 @@ export default function HomePage() {
         propertyPhone={property.phone}
         promptpayName={property.promptpayName}
         onMarkAsPaid={handleMarkAsPaid}
+        onInvoiceSent={(invId) => {
+          setInvoices((prev) =>
+            prev.map((i) =>
+              i.id === invId
+                ? {
+                    ...i,
+                    lineDeliveryStatus: "sent",
+                    lineSentAt: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) + " น.",
+                  }
+                : i
+            )
+          );
+        }}
       />
 
       <SuperAdminModal
