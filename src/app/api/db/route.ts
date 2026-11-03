@@ -105,10 +105,10 @@ function getInitialSeedData(): Record<string, any> {
     taxId: "0105566012345",
     waterRate: 18,
     electricRate: 8,
-    useMinWater: true,
+    useMinWater: false,
     minWaterUnits: 3,
     minWaterFee: 100,
-    useMinElectric: true,
+    useMinElectric: false,
     minElectricUnits: 3,
     minElectricFee: 100,
     commonFee: 100,
@@ -313,19 +313,17 @@ function saveDbFile(data: Record<string, any>): void {
       fs.mkdirSync(dataDir, { recursive: true });
     } catch {}
   }
-  const randomSuffix = Math.random().toString(36).substring(2, 9);
-  const tempFile = `${dbFile}.tmp.${Date.now()}_${randomSuffix}`;
-  try {
-    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), "utf8");
-    fs.renameSync(tempFile, dbFile);
-  } catch {
+  const payload = JSON.stringify(data, null, 2);
+  let attempts = 0;
+  while (attempts < 3) {
     try {
-      fs.writeFileSync(dbFile, JSON.stringify(data, null, 2), "utf8");
-      if (fs.existsSync(tempFile)) {
-        try { fs.unlinkSync(tempFile); } catch {}
-      }
+      fs.writeFileSync(dbFile, payload, "utf8");
+      return;
     } catch (e) {
-      console.error("[HostDB] Failed to save DB file:", e);
+      attempts++;
+      if (attempts >= 3) {
+        console.error("[HostDB] Failed to save DB file after 3 attempts:", e);
+      }
     }
   }
 }
@@ -357,6 +355,7 @@ export async function POST(req: NextRequest) {
 
     await new Promise<void>((resolve, reject) => {
       writeLock = writeLock
+        .catch(() => {})
         .then(() => {
           const db = ensureDbFile();
 

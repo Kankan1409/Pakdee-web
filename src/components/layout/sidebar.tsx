@@ -181,7 +181,7 @@ export function Sidebar({
       items: [
         {
           id: "reports",
-          label: "สรุปรายรับ & Export Excel",
+          label: "บัญชีรายรับ-รายจ่าย & กำไรขาดทุน",
           icon: BarChart3,
         },
         {

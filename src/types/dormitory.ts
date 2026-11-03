@@ -200,6 +200,12 @@ export interface DailyBooking {
   keyDeposit: number;
   roomDeposit?: number;
   status: "confirmed" | "checked_in" | "checked_out" | "cancelled";
+  electricCheckIn?: number;
+  electricCheckOut?: number;
+  waterCheckIn?: number;
+  waterCheckOut?: number;
+  electricUnitsUsed?: number;
+  waterUnitsUsed?: number;
 }
 
 // 1. Repair / Maintenance Request

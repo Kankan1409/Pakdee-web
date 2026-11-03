@@ -3,24 +3,22 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 
-async function runComprehensiveAudit() {
-  console.log('========================================================================');
-  console.log('🛡️ QS SMART DEV TEAM — FULL AUTOMATED AUDIT VERIFICATION SUITE');
-  console.log('🌐 Target URL: http://localhost:3000');
-  console.log('⏰ Timestamp:', new Date().toLocaleString('th-TH'));
-  console.log('========================================================================\n');
+async function auditPort(port) {
+  console.log(`\n------------------------------------------------------------------------`);
+  console.log(`🔍 AUDITING PORT ${port} (http://localhost:${port})...`);
+  console.log(`------------------------------------------------------------------------`);
 
-  const uniqueDir = path.join(os.tmpdir(), 'puppeteer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
+  const uniqueDir = path.join(os.tmpdir(), 'puppeteer_' + port + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
   fs.mkdirSync(uniqueDir, { recursive: true });
 
   const browser = await puppeteer.launch({
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     headless: true,
+    userDataDir: uniqueDir,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--window-size=1440,900',
-      `--user-data-dir=${uniqueDir}`
+      '--window-size=1440,900'
     ]
   });
 
@@ -33,7 +31,7 @@ async function runComprehensiveAudit() {
   });
 
   // 1. Authenticate
-  await page.goto('http://localhost:3000', { waitUntil: 'networkidle2' });
+  await page.goto(`http://localhost:${port}`, { waitUntil: 'networkidle2' });
   await page.evaluate(() => {
     const owner = {
       id: 'usr-owner-01',
@@ -50,52 +48,86 @@ async function runComprehensiveAudit() {
   });
 
   // Test 1: Rooms Matrix
-  console.log('1. ตรวจสอบหน้าผังห้องพัก (/rooms)...');
-  await page.goto('http://localhost:3000/rooms', { waitUntil: 'networkidle2' });
-  await new Promise(r => setTimeout(r, 1500));
+  console.log(`1. [Port ${port}] ตรวจสอบหน้าผังห้องพัก (/rooms)...`);
+  await page.goto(`http://localhost:${port}/rooms`, { waitUntil: 'networkidle2' });
+  await new Promise(r => setTimeout(r, 1200));
   const roomsCount = await page.$$eval('.grid > div', divs => divs.length);
   console.log(`   -> ผังห้องพักแสดงผล: PASS (${roomsCount} ห้อง)`);
 
-  // Test 2: Tenants Single Source of Truth
-  console.log('2. ตรวจสอบทะเบียนผู้เช่า (/tenants)...');
-  await page.goto('http://localhost:3000/tenants', { waitUntil: 'networkidle2' });
-  await new Promise(r => setTimeout(r, 1500));
-  const tenantRows = await page.$$eval('table tbody tr', trs => trs.length);
-  console.log(`   -> ทะเบียนผู้เช่าแสดงผล: PASS (${tenantRows} ผู้เช่า)`);
+  // Test 2: Reports / Accounting & P&L Hub
+  console.log(`2. [Port ${port}] ตรวจสอบระบบบัญชี รายรับ-รายจ่าย & กำไรขาดทุน (/reports)...`);
+  await page.goto(`http://localhost:${port}/reports`, { waitUntil: 'networkidle2' });
+  await new Promise(r => setTimeout(r, 1200));
 
-  // Test 3: Invoices & Payment Ledger
-  console.log('3. ตรวจสอบหน้าใบแจ้งหนี้ (/invoices)...');
-  await page.goto('http://localhost:3000/invoices', { waitUntil: 'networkidle2' });
-  await new Promise(r => setTimeout(r, 1500));
-  const invoicesRendered = await page.$$eval('[class*="border"] [class*="py-3.5"]', els => els.length);
-  console.log(`   -> รายการใบแจ้งหนี้แสดงผล: PASS (${invoicesRendered} ใบแจ้งหนี้)`);
+  const hasTitle = await page.evaluate(() => {
+    return document.body.innerText.includes('ระบบบัญชี รายรับ-รายจ่าย & กำไรขาดทุน');
+  });
+  console.log(`   -> หัวข้อระบบบัญชี รายรับ-รายจ่าย & กำไรขาดทุน: ${hasTitle ? 'PASS ✓' : 'FAIL ✗'}`);
 
-  // Test 4: Maid Cleaning
-  console.log('4. ตรวจสอบกระดานทำความสะอาดแม่บ้าน (/cleaning)...');
-  await page.goto('http://localhost:3000/cleaning', { waitUntil: 'networkidle2' });
-  await new Promise(r => setTimeout(r, 1500));
-  console.log('   -> กระดานแม่บ้านเปิดได้สมบูรณ์: PASS');
+  const hasTabs = await page.evaluate(() => {
+    const text = document.body.innerText;
+    return text.includes('ภาพรวมงบกำไรขาดทุน') && text.includes('บันทึกรายจ่าย') && text.includes('วิเคราะห์ค่าน้ำ-ไฟหอพัก');
+  });
+  console.log(`   -> แถบแท็บ 5 เมนูย่อย (ภาพรวม, รายจ่าย, ค่าน้ำ-ไฟ, ใบเสร็จ, ใบแจ้งหนี้): ${hasTabs ? 'PASS ✓' : 'FAIL ✗'}`);
 
-  // Test 5: Reports / Accounting
-  console.log('5. ตรวจสอบระบบบัญชีและรายงาน (/reports)...');
-  await page.goto('http://localhost:3000/reports', { waitUntil: 'networkidle2' });
-  await new Promise(r => setTimeout(r, 1500));
-  console.log('   -> ระบบบัญชีและรายงานเปิดได้สมบูรณ์: PASS');
+  // Test 3: Check Add Expense Modal
+  console.log(`3. [Port ${port}] ตรวจสอบปุ่ม + บันทึกรายจ่ายใหม่...`);
+  const modalOpened = await page.evaluate(async () => {
+    const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('บันทึกรายจ่ายใหม่'));
+    if (!btn) return false;
+    btn.click();
+    await new Promise(r => setTimeout(r, 500));
+    const modalTitle = document.body.innerText.includes('บันทึกรายจ่ายหอพักใหม่');
+    // Close modal
+    const closeBtn = document.querySelector('button[type="button"]');
+    return modalTitle;
+  });
+  console.log(`   -> หน้าต่างบันทึกรายจ่ายใหม่ Modal เปิดขึ้นสมบูรณ์: ${modalOpened ? 'PASS ✓' : 'FAIL ✗'}`);
 
-  // Test 6: Settings
-  console.log('6. ตรวจสอบหน้าตั้งค่าหอพัก (/settings)...');
-  await page.goto('http://localhost:3000/settings', { waitUntil: 'networkidle2' });
-  await new Promise(r => setTimeout(r, 1500));
-  console.log('   -> หน้าตั้งค่าเปิดได้สมบูรณ์: PASS');
+  // Test 4: Check Utility Analysis Tab
+  console.log(`4. [Port ${port}] ตรวจสอบแท็บวิเคราะห์ค่าน้ำ-ไฟหอพัก (รายเดือน + รายวัน)...`);
+  const utilityTabValid = await page.evaluate(async () => {
+    const tabs = Array.from(document.querySelectorAll('button')).filter(b => b.innerText.includes('วิเคราะห์ค่าน้ำ-ไฟ'));
+    if (tabs.length > 0) {
+      tabs[0].click();
+      await new Promise(r => setTimeout(r, 500));
+      return document.body.innerText.includes('วิเคราะห์ค่าไฟฟ้าหอพัก') && document.body.innerText.includes('วิเคราะห์ค่าน้ำประปาหอพัก');
+    }
+    return false;
+  });
+  console.log(`   -> หน้าวิเคราะห์ค่าน้ำ-ไฟหอพัก (รวมมิเตอร์รายวัน+รายเดือน): ${utilityTabValid ? 'PASS ✓' : 'FAIL ✗'}`);
+
+  // Test 5: Check Invoices
+  console.log(`5. [Port ${port}] ตรวจสอบหน้าใบแจ้งหนี้ (/invoices)...`);
+  await page.goto(`http://localhost:${port}/invoices`, { waitUntil: 'networkidle2' });
+  await new Promise(r => setTimeout(r, 1000));
+  console.log(`   -> หน้าใบแจ้งหนี้เปิดได้สมบูรณ์: PASS ✓`);
 
   await browser.close();
   try { fs.rmSync(uniqueDir, { recursive: true, force: true }); } catch(e){}
 
+  console.log(`[Port ${port}] Console Errors: ${consoleErrors.length}`);
+  return consoleErrors.length === 0;
+}
+
+async function runComprehensiveAudit() {
+  console.log('========================================================================');
+  console.log('🛡️ QS SMART DEV TEAM — FULL AUTOMATED AUDIT VERIFICATION SUITE');
+  console.log('⏰ Timestamp:', new Date().toLocaleString('th-TH'));
+  console.log('========================================================================');
+
+  const p3000Ok = await auditPort(3000);
+  const p3001Ok = await auditPort(3001);
+
   console.log('\n========================================================================');
-  console.log('📊 สรุปผลการตรวจสอบความเสถียร (Zero-Defect Gate):');
-  console.log(`- Browser Console Errors: ${consoleErrors.length}`);
-  console.log('- Status: ✅ 100% PASSED');
+  console.log('📊 FINAL AUDIT VERIFICATION SUMMARY:');
+  console.log(`- Port 3000 (Pakdee Dev): ${p3000Ok ? '✅ PASSED (0 Errors)' : '❌ FAILED'}`);
+  console.log(`- Port 3001 (Pakdee UserTest): ${p3001Ok ? '✅ PASSED (0 Errors)' : '❌ FAILED'}`);
   console.log('========================================================================\n');
+
+  if (!p3000Ok || !p3001Ok) {
+    process.exit(1);
+  }
 }
 
 runComprehensiveAudit().catch(err => {

@@ -14,16 +14,25 @@ interface AddRoomModalProps {
     monthlyRate: number;
     dailyRate?: number;
     status: RoomStatus;
-  }) => void;
+  }) => Promise<void> | void;
+  onAddBatchRooms?: (roomsList: {
+    roomNumber: string;
+    floor: number;
+    type: string;
+    monthlyRate: number;
+    dailyRate?: number;
+    status: RoomStatus;
+  }[]) => Promise<void> | void;
 }
 
-export function AddRoomModal({ isOpen, onClose, onAddRoom }: AddRoomModalProps) {
+export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms }: AddRoomModalProps) {
   const [mode, setMode] = useState<"single" | "batch">("single");
   const [roomNumber, setRoomNumber] = useState<string>("");
   const [floor, setFloor] = useState<number>(1);
   const [type, setType] = useState<string>("ห้องแอร์");
   const [monthlyRate, setMonthlyRate] = useState<number>(4000);
   const [dailyRate, setDailyRate] = useState<number>(650);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Batch Mode
   const [batchPrefix, setBatchPrefix] = useState<string>("10");
@@ -32,32 +41,64 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom }: AddRoomModalProps) 
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (mode === "single") {
       if (!roomNumber.trim()) return;
-      onAddRoom({
-        roomNumber: roomNumber.trim(),
-        floor,
-        type,
-        monthlyRate,
-        dailyRate,
-        status: "vacant",
-      });
-    } else {
-      for (let i = batchStart; i <= batchEnd; i++) {
-        const num = `${batchPrefix}${i < 10 ? i : i}`;
-        onAddRoom({
-          roomNumber: num,
+      setIsSubmitting(true);
+      try {
+        await onAddRoom({
+          roomNumber: roomNumber.trim(),
           floor,
           type,
           monthlyRate,
           dailyRate,
           status: "vacant",
         });
+        onClose();
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      const batchList: {
+        roomNumber: string;
+        floor: number;
+        type: string;
+        monthlyRate: number;
+        dailyRate?: number;
+        status: RoomStatus;
+      }[] = [];
+
+      for (let i = batchStart; i <= batchEnd; i++) {
+        const num = `${batchPrefix}${i < 10 ? i : i}`;
+        batchList.push({
+          roomNumber: num,
+          floor,
+          type,
+          monthlyRate,
+          dailyRate,
+          status: "vacant" as RoomStatus,
+        });
+      }
+
+      if (batchList.length === 0) return;
+
+      setIsSubmitting(true);
+      try {
+        if (onAddBatchRooms) {
+          await onAddBatchRooms(batchList);
+        } else {
+          for (const item of batchList) {
+            await onAddRoom(item);
+          }
+        }
+        onClose();
+      } finally {
+        setIsSubmitting(false);
       }
     }
-    onClose();
   };
 
   return (
@@ -230,9 +271,14 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom }: AddRoomModalProps) 
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20"
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
             >
-              บันทึกห้องพัก
+              {isSubmitting
+                ? "กำลังบันทึก..."
+                : mode === "batch"
+                ? `บันทึกห้องพัก ${Math.max(0, batchEnd - batchStart + 1)} ห้อง`
+                : "บันทึกห้องพัก"}
             </button>
           </div>
         </form>

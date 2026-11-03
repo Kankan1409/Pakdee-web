@@ -25,6 +25,7 @@ import { DailyCheckoutModal } from "@/components/dashboard/daily-checkout-modal"
 import { DatabaseInspectorModal } from "@/components/admin/database-inspector-modal";
 import { ConfirmModal, ConfirmVariant, ConfirmIconType } from "@/components/ui/confirm-modal";
 import { DatabaseService } from "@/lib/database.service";
+import { globalPopup } from "@/lib/popup-context";
 import {
   isValidThaiIdCard,
   formatThaiIdCard,
@@ -151,6 +152,25 @@ export default function HomePage() {
     setTimeout(() => {
       setToast(null);
     }, 4000);
+
+    // ป๊อปอัปแจ้งเตือนลอยข้างหน้า (Center Floating Modal) เมื่อมี Error หรือ Warning ตาม Requirement 2
+    if (type === "warning") {
+      globalPopup.show({
+        level: "warning",
+        title: "ข้อความแจ้งเตือน (กรุณาตรวจสอบข้อมูล)",
+        message,
+        confirmText: "เข้าใจแล้ว",
+        hideCancel: true,
+      });
+    } else if (type === "error") {
+      globalPopup.show({
+        level: "error",
+        title: "เกิดข้อผิดพลาดในการทำรายการ",
+        message,
+        confirmText: "ตกลง",
+        hideCancel: true,
+      });
+    }
   };
 
   // Form states
@@ -164,15 +184,28 @@ export default function HomePage() {
     roomId: "",
   });
 
-  const [newBookingForm, setNewBookingForm] = useState({
-    bookingType: "daily" as "daily" | "monthly",
+  const [newBookingForm, setNewBookingForm] = useState<{
+    bookingType: "daily" | "monthly";
+    roomNumber: string;
+    guestName: string;
+    guestPhone: string;
+    idCard: string;
+    vehiclePlate: string;
+    checkInDate: string;
+    checkOutDate: string;
+    nightlyRate: number | "";
+    monthlyRate?: number | "";
+    depositAmount: number | "";
+    roomDeposit: number | "";
+  }>({
+    bookingType: "daily",
     roomNumber: "102",
     guestName: "",
     guestPhone: "",
     idCard: "",
     vehiclePlate: "",
-    checkInDate: "2026-10-26",
-    checkOutDate: "2026-10-27",
+    checkInDate: new Date().toISOString().slice(0, 10),
+    checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
     nightlyRate: 650,
     monthlyRate: 4000,
     depositAmount: 500,
@@ -189,13 +222,15 @@ export default function HomePage() {
     waterRate: 18,
   });
 
-  // Checkout settlement state
+  // Checkout settlement state (รองรับค่าว่าง "" เพื่อให้ลบเลข 0 ได้หมดจดตาม Requirement 3 & 5)
   const [checkoutRoomId, setCheckoutRoomId] = useState<string>("");
-  const [checkoutElecCurr, setCheckoutElecCurr] = useState<number>(0);
-  const [checkoutWaterCurr, setCheckoutWaterCurr] = useState<number>(0);
-  const [checkoutCleaningFee, setCheckoutCleaningFee] = useState<number>(500);
-  const [checkoutDamageFee, setCheckoutDamageFee] = useState<number>(0);
-  const [checkoutDepositAmount, setCheckoutDepositAmount] = useState<number>(8000);
+  const [checkoutElecPrev, setCheckoutElecPrev] = useState<number | "">(0);
+  const [checkoutElecCurr, setCheckoutElecCurr] = useState<number | "">(0);
+  const [checkoutWaterPrev, setCheckoutWaterPrev] = useState<number | "">(0);
+  const [checkoutWaterCurr, setCheckoutWaterCurr] = useState<number | "">(0);
+  const [checkoutCleaningFee, setCheckoutCleaningFee] = useState<number | "">(500);
+  const [checkoutDamageFee, setCheckoutDamageFee] = useState<number | "">(0);
+  const [checkoutDepositAmount, setCheckoutDepositAmount] = useState<number | "">(8000);
   const [initialAddTenantRoomId, setInitialAddTenantRoomId] = useState<string | undefined>(undefined);
 
   // Global Styled Confirmation Modal State (No native popups)
@@ -414,19 +449,49 @@ export default function HomePage() {
 
         setRooms(finalRooms);
         if (!checkoutRoomId && finalRooms.length > 0) {
-          const occ = finalRooms.find((r) => r.status === "occupied" || r.status === "overdue");
+          const occ = finalRooms.find((r) => (r.status === "occupied" || r.status === "overdue") && !r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]"));
           if (occ) {
             setCheckoutRoomId(occ.id);
-            setCheckoutElecCurr(occ.currentElectricMeter + 20);
-            setCheckoutWaterCurr(occ.currentWaterMeter + 3);
+            // ดึงเลขมิเตอร์จริงของห้องพักตั้งต้น ไม่บวกตัวเลขจำลอง
+            setCheckoutElecPrev(occ.currentElectricMeter);
+            setCheckoutElecCurr(occ.currentElectricMeter);
+            setCheckoutWaterPrev(occ.currentWaterMeter);
+            setCheckoutWaterCurr(occ.currentWaterMeter);
+            const activeCt = (contractsData || []).find((c) => c.roomNumber === occ.roomNumber && c.status === "active");
+            const dep = activeCt?.depositAmount || (occ as any).depositAmount || occ.currentTenant?.depositAmount || (occ.monthlyRate * 2) || 8000;
+            setCheckoutDepositAmount(dep);
           }
         }
       }
 
       if (invsData) {
-        setInvoices(invsData);
-        if (invsData.length > 0) {
-          setActiveInvoice(invsData[0]);
+        // Defensive fix: ตรวจสอบและแก้ไขบิลที่มียูนิตไฟ/น้ำเป็น 0 แต่คิดเงิน 100 บาท ให้กลายเป็น 0 บาท
+        const sanitizedInvs = invsData.map((inv) => {
+          let modified = false;
+          const newItems = (inv.items || []).map((item) => {
+            const isZeroUnits = item.units === 0 || (item.meterPrev !== undefined && item.meterCurr !== undefined && item.meterPrev === item.meterCurr);
+            const isUtility = item.name.includes("ค่าไฟ") || item.name.includes("ค่าน้ำ");
+            if (isZeroUnits && isUtility && item.amount > 0) {
+              modified = true;
+              return { ...item, amount: 0 };
+            }
+            return item;
+          });
+          if (modified) {
+            const newTotal = newItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+            return {
+              ...inv,
+              items: newItems,
+              totalAmount: newTotal,
+              remainingAmount: inv.status === "paid" ? 0 : newTotal - (inv.paidAmount || 0),
+            };
+          }
+          return inv;
+        });
+
+        setInvoices(sanitizedInvs);
+        if (sanitizedInvs.length > 0) {
+          setActiveInvoice(sanitizedInvs[0]);
         } else {
           setActiveInvoice(null);
         }
@@ -476,7 +541,7 @@ export default function HomePage() {
     checkout: { path: "/checkout", title: "ระบบสรุปย้ายออก & คืนเงินประกัน" },
     cleaning: { path: "/cleaning", title: "งานแม่บ้านทำความสะอาด" },
     repairs: { path: "/repairs", title: "ระบบแจ้งซ่อมบำรุงห้องพัก" },
-    reports: { path: "/reports", title: "สรุปรายงาน & Export Excel" },
+    reports: { path: "/reports", title: "บัญชีรายรับ-รายจ่าย & กำไรขาดทุน" },
     broadcast: { path: "/broadcast", title: "บรอดแคสต์ LINE OA & แชร์ QR Code" },
     settings: { path: "/settings", title: "ตั้งค่าหอพัก & LINE OA" },
   };
@@ -692,6 +757,63 @@ export default function HomePage() {
     } catch (err) {
       console.error("Error adding room:", err);
       showToast("เกิดข้อผิดพลาดในการเพิ่มห้อง", "error");
+    }
+  };
+
+  // Handler: Add Rooms in Batch (Atomic Persistence - Guaranteed 0 lost rooms)
+  const handleAddBatchRooms = async (roomsDataList: {
+    roomNumber: string;
+    floor: number;
+    type: string;
+    monthlyRate: number;
+    dailyRate?: number;
+    status: RoomStatus;
+  }[]) => {
+    // Enforce Starter limits if applicable
+    if (property.plan === "starter" && rooms.length + roomsDataList.length > 30) {
+      setConfirmDialog({
+        isOpen: true,
+        title: "ครบขีดจำกัด 30 ห้องของแพ็กเกจ Starter",
+        description: `แพ็กเกจ Starter รองรับสูงสุด 30 ห้อง (ปัจจุบันมี ${rooms.length} ห้อง และกำลังเพิ่มอีก ${roomsDataList.length} ห้อง รวมเป็น ${rooms.length + roomsDataList.length} ห้อง) หากต้องการเพิ่มห้องพักไม่จำกัด กรุณาอัปเกรดเป็นแพ็กเกจ Pro`,
+        confirmText: "อัปเกรดเป็น Pro",
+        cancelText: "เข้าใจแล้ว",
+        variant: "warning",
+        iconType: "question",
+        onConfirm: () => {
+          handleChangePlan("pro");
+        },
+      });
+      return;
+    }
+
+    try {
+      const createdRooms = await DatabaseService.addRoomsBatch(
+        roomsDataList.map((r) => ({ ...r, propertyId: property.id })),
+        property.id
+      );
+
+      setRooms((prev) => {
+        const existingNumbers = new Set(prev.map((r) => r.roomNumber));
+        const updated = [...prev];
+        createdRooms.forEach((cr) => {
+          if (existingNumbers.has(cr.roomNumber)) {
+            const idx = updated.findIndex((r) => r.roomNumber === cr.roomNumber);
+            if (idx >= 0) updated[idx] = cr;
+          } else {
+            updated.push(cr);
+          }
+        });
+        return updated.sort((a, b) =>
+          a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true })
+        );
+      });
+
+      const freshProps = await DatabaseService.getAllProperties();
+      setBranches(freshProps);
+      showToast(`เพิ่มห้องพักเป็นชุด ${createdRooms.length} ห้อง เรียบร้อยแล้ว (บันทึกลงฐานข้อมูลถาวร) ✓`, "success");
+    } catch (err) {
+      console.error("Error adding batch rooms:", err);
+      showToast("เกิดข้อผิดพลาดในการเพิ่มห้องพักเป็นชุด", "error");
     }
   };
 
@@ -930,6 +1052,49 @@ export default function HomePage() {
 
   // Handler: Update room status
   const handleUpdateStatus = async (roomId: string, newStatus: RoomStatus) => {
+    const targetRoom = rooms.find((r) => r.id === roomId);
+
+    // Safeguard: ป้องกันการกดเปลี่ยนสถานะเป็น cleaning หรือ vacant โดยตรง หากห้องยังมีผู้เช่า/ผู้เข้าพักอยู่
+    if (
+      targetRoom &&
+      (targetRoom.status === "occupied" || targetRoom.status === "overdue" || targetRoom.status === "daily" || !!targetRoom.currentTenant) &&
+      (newStatus === "cleaning" || newStatus === "vacant")
+    ) {
+      const isDailyRoom =
+        targetRoom.status === "daily" ||
+        dailyBookings.some((b) => b.roomNumber === targetRoom.roomNumber && (b.status === "confirmed" || b.status === "checked_in")) ||
+        targetRoom.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]");
+
+      if (isDailyRoom) {
+        // รายวัน: ให้เปิดหน้าต่างเช็คเอาท์รายวัน (รูปที่ 2) โดยตรง ไม่ไปหน้าย้ายออกรายเดือน!
+        const booking = dailyBookings.find((b) => b.roomNumber === targetRoom.roomNumber && (b.status === "confirmed" || b.status === "checked_in"));
+        const bookingId = booking?.id || `b-${targetRoom.roomNumber}`;
+        const keyDeposit = booking?.keyDeposit || 500;
+        setSelectedRoom(null);
+        handleDailyCheckOut(bookingId, targetRoom.roomNumber, keyDeposit);
+        return;
+      }
+
+      globalPopup.warning(
+        "ไม่สามารถส่งห้องทำความสะอาดได้",
+        `ห้อง ${targetRoom.roomNumber} กำลังมีผู้เช่ารายเดือนอยู่ (${targetRoom.currentTenant?.fullName || "ผู้เช่า"})\n\nไม่สามารถปรับเป็นสถานะทำความสะอาดได้ทันที เพราะจะทำให้ข้อมูลผู้เช่าและยอดค้างชำระถูกล้างออก\n\nกรุณาใช้ฟังก์ชัน "แจ้งย้ายออก / คืนห้อง" เพื่อคิดเงินค่าน้ำไฟงวดสุดท้ายและตัดเงินประกันให้เสร็จสิ้นก่อน`,
+        () => {
+          setCheckoutRoomId(targetRoom.id);
+          setCheckoutElecPrev(targetRoom.currentElectricMeter);
+          setCheckoutElecCurr(targetRoom.currentElectricMeter);
+          setCheckoutWaterPrev(targetRoom.currentWaterMeter);
+          setCheckoutWaterCurr(targetRoom.currentWaterMeter);
+          const act = contracts.find((c) => c.roomNumber === targetRoom.roomNumber && c.status === "active");
+          const dep = act?.depositAmount || (targetRoom as any).depositAmount || targetRoom.currentTenant?.depositAmount || (targetRoom.monthlyRate * 2) || 8000;
+          setCheckoutDepositAmount(dep);
+          setSelectedRoom(null);
+          handleTabChange("checkout");
+        },
+        "ปิด"
+      );
+      return;
+    }
+
     setRooms((prev) =>
       prev.map((r) => {
         if (r.id === roomId) {
@@ -955,7 +1120,6 @@ export default function HomePage() {
     }
 
     const success = await DatabaseService.updateRoomStatus(roomId, newStatus);
-    const targetRoom = rooms.find((r) => r.id === roomId);
     if (newStatus === "vacant" || newStatus === "cleaning") {
       if (targetRoom) {
         setContracts((prev) =>
@@ -1069,25 +1233,31 @@ export default function HomePage() {
       return;
     }
 
-    const currentMonth = new Date().toISOString().slice(0, 7); // e.g. "2026-10"
+    // ถ้าระบุตัวกรองเดือนอยู่ ให้ออกบิลของรอบเดือนนั้น หากไม่ได้เลือกให้ใช้เดือนปัจจุบัน
+    const currentMonth = invoiceMonthFilter !== "all" ? invoiceMonthFilter : new Date().toISOString().slice(0, 7);
     let successCount = 0;
 
     for (const room of activeRooms) {
       // Pull actual meter reading if already recorded for this month
       const latestReading = await DatabaseService.getLatestMeterReading(room.id, currentMonth);
-      const electricUnits = latestReading?.electric_units !== undefined ? latestReading.electric_units : 55;
-      const waterUnits = latestReading?.water_units !== undefined ? latestReading.water_units : 7;
+      const electricUnits = latestReading?.electric_units !== undefined ? latestReading.electric_units : 0;
+      const waterUnits = latestReading?.water_units !== undefined ? latestReading.water_units : 0;
       const elecPrev = latestReading?.electric_prev !== undefined ? latestReading.electric_prev : room.currentElectricMeter;
       const elecCurr = latestReading?.electric_curr !== undefined ? latestReading.electric_curr : room.currentElectricMeter + electricUnits;
       const waterPrev = latestReading?.water_prev !== undefined ? latestReading.water_prev : room.currentWaterMeter;
       const waterCurr = latestReading?.water_curr !== undefined ? latestReading.water_curr : room.currentWaterMeter + waterUnits;
 
-      const electricAmount = branchSettings.useMinElectric
-        ? Math.max(branchSettings.minElectricFee, electricUnits * property.electricRate)
-        : electricUnits * property.electricRate;
-      const waterAmount = branchSettings.useMinWater
-        ? Math.max(branchSettings.minWaterFee, waterUnits * property.waterRate)
-        : waterUnits * property.waterRate;
+      // กฎการเงิน: หากไม่มีการใช้งาน หรือมิเตอร์ไม่ขยับ (units <= 0) จะคิดค่าไฟและค่าน้ำเป็น 0 บาทเสมอ (ไม่คิดขั้นต่ำ)
+      const electricAmount = electricUnits <= 0
+        ? 0
+        : (branchSettings.useMinElectric
+            ? Math.max(branchSettings.minElectricFee, electricUnits * property.electricRate)
+            : electricUnits * property.electricRate);
+      const waterAmount = waterUnits <= 0
+        ? 0
+        : (branchSettings.useMinWater
+            ? Math.max(branchSettings.minWaterFee, waterUnits * property.waterRate)
+            : waterUnits * property.waterRate);
       const commonFee = branchSettings.commonFee !== undefined ? branchSettings.commonFee : 300;
       let totalAmount = room.monthlyRate + electricAmount + waterAmount + commonFee;
 
@@ -1325,69 +1495,7 @@ export default function HomePage() {
       return;
     }
 
-    if (newBookingForm.bookingType === "monthly") {
-      // 1. บันทึกการจองห้องพักรายเดือน (User Requirement 3)
-      const monthlyTenant = await DatabaseService.createTenant({
-        fullName: newBookingForm.guestName.trim(),
-        phone: newBookingForm.guestPhone.trim(),
-        idCard: newBookingForm.idCard.trim(),
-        vehiclePlate: newBookingForm.vehiclePlate?.trim() || "",
-        roomNumber: newBookingForm.roomNumber,
-        roomId: targetRoom.id,
-        notes: `[จองห้องพักรายเดือน] เข้าพักวันที่ ${formatDateThai(newBookingForm.checkInDate)} (ค่าเช่า ฿${(newBookingForm.monthlyRate || targetRoom.monthlyRate || 4000).toLocaleString()}/ด. มัดจำ ฿${(newBookingForm.roomDeposit || 0).toLocaleString()})`,
-        depositAmount: newBookingForm.roomDeposit || 0,
-      });
-
-      if (monthlyTenant) {
-        await DatabaseService.assignTenantToRoom(monthlyTenant.id, targetRoom.id);
-        setTenants((prev) => [monthlyTenant, ...prev]);
-      }
-
-      setRooms((prev) =>
-        prev.map((r) =>
-          r.roomNumber === newBookingForm.roomNumber
-            ? {
-                ...r,
-                status: "occupied",
-                monthlyRate: newBookingForm.monthlyRate || r.monthlyRate,
-                currentTenant: monthlyTenant || {
-                  id: `t-${Date.now()}`,
-                  fullName: newBookingForm.guestName.trim(),
-                  phone: newBookingForm.guestPhone.trim(),
-                  idCard: newBookingForm.idCard.trim(),
-                  vehiclePlate: newBookingForm.vehiclePlate?.trim() || "",
-                  roomNumber: newBookingForm.roomNumber,
-                  roomId: targetRoom.id,
-                },
-              }
-            : r
-        )
-      );
-
-      const freshProps = await DatabaseService.getAllProperties();
-      setBranches(freshProps);
-
-      setNewBookingForm({
-        bookingType: "daily",
-        roomNumber: "",
-        guestName: "",
-        guestPhone: "",
-        idCard: "",
-        vehiclePlate: "",
-        checkInDate: new Date().toISOString().slice(0, 10),
-        checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-        nightlyRate: 650,
-        monthlyRate: 4000,
-        depositAmount: 500,
-        roomDeposit: 500,
-      });
-
-      setIsNewBookingOpen(false);
-      showToast(`บันทึกการจองห้องพักรายเดือน ห้อง ${newBookingForm.roomNumber} เรียบร้อยแล้ว (อัปเดตสถานะห้องเป็น "มีผู้เช่ารายเดือน")`, "success");
-      return;
-    }
-
-    // 2. บันทึกการจองห้องพักรายวัน (Daily Booking)
+    // บันทึกการจองห้องพักรายวัน (Daily Booking) ตาม Requirement 1
     const checkIn = new Date(newBookingForm.checkInDate);
     const checkOut = new Date(newBookingForm.checkOutDate);
     if (checkOut.getTime() <= checkIn.getTime()) {
@@ -1395,26 +1503,31 @@ export default function HomePage() {
       return;
     }
     const diffTime = checkOut.getTime() - checkIn.getTime();
-    const totalNights = Math.round(diffTime / (1000 * 60 * 60 * 24));
-    const totalAmount = totalNights * newBookingForm.nightlyRate;
+    const totalNights = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+    const nightlyRateVal = Number(newBookingForm.nightlyRate) || 650;
+    const keyDepositVal = Number(newBookingForm.depositAmount) || 0;
+    const roomDepositVal = Number(newBookingForm.roomDeposit) || 0;
+    const totalAmount = totalNights * nightlyRateVal;
 
     const newBooking: DailyBooking = {
       id: `b-${Date.now()}`,
       propertyId: property.id,
       roomNumber: newBookingForm.roomNumber,
-      guestName: newBookingForm.guestName,
-      guestPhone: newBookingForm.guestPhone,
-      idCard: newBookingForm.idCard || "",
-      vehiclePlate: newBookingForm.vehiclePlate || "",
+      guestName: newBookingForm.guestName.trim(),
+      guestPhone: newBookingForm.guestPhone.trim(),
+      idCard: newBookingForm.idCard.trim(),
+      vehiclePlate: newBookingForm.vehiclePlate?.trim() || "",
       checkInDate: newBookingForm.checkInDate,
       checkInTime: "14:00",
       checkOutDate: newBookingForm.checkOutDate,
       checkOutTime: "12:00",
       nights: totalNights,
-      dailyRate: newBookingForm.nightlyRate,
+      dailyRate: nightlyRateVal,
       totalRoomPrice: totalAmount,
-      keyDeposit: newBookingForm.depositAmount,
-      roomDeposit: newBookingForm.roomDeposit,
+      keyDeposit: keyDepositVal,
+      roomDeposit: roomDepositVal,
+      electricCheckIn: targetRoom.currentElectricMeter,
+      waterCheckIn: targetRoom.currentWaterMeter,
       status: "confirmed",
     };
 
@@ -1475,7 +1588,6 @@ export default function HomePage() {
       checkInDate: new Date().toISOString().slice(0, 10),
       checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
       nightlyRate: 650,
-      monthlyRate: 4000,
       depositAmount: 500,
       roomDeposit: 500,
     });
@@ -1486,13 +1598,26 @@ export default function HomePage() {
 
   const handleDailyCheckIn = async (bookingId: string, roomNumber: string) => {
     try {
-      await DatabaseService.updateDailyBooking(bookingId, { status: "checked_in" });
       const targetRoom = rooms.find((r) => r.roomNumber === roomNumber);
+      await DatabaseService.updateDailyBooking(bookingId, {
+        status: "checked_in",
+        electricCheckIn: targetRoom?.currentElectricMeter,
+        waterCheckIn: targetRoom?.currentWaterMeter,
+      });
       if (targetRoom) {
         await DatabaseService.updateRoomStatus(targetRoom.id, "daily");
       }
       setDailyBookings((prev) =>
-        prev.map((item) => (item.id === bookingId ? { ...item, status: "checked_in" } : item))
+        prev.map((item) =>
+          item.id === bookingId
+            ? {
+                ...item,
+                status: "checked_in",
+                electricCheckIn: targetRoom?.currentElectricMeter,
+                waterCheckIn: targetRoom?.currentWaterMeter,
+              }
+            : item
+        )
       );
       setRooms((prev) =>
         prev.map((r) => (r.roomNumber === roomNumber ? { ...r, status: "daily" } : r))
@@ -1507,21 +1632,27 @@ export default function HomePage() {
   };
 
   const handleDailyCheckOut = (bookingId: string, roomNumber: string, keyDeposit: number) => {
-    const booking = dailyBookings.find((b) => b.id === bookingId) || {
-      id: bookingId,
+    const targetRoom = rooms.find((r) => r.roomNumber === roomNumber);
+    const existing = dailyBookings.find((b) => b.id === bookingId || b.roomNumber === roomNumber);
+    const booking: DailyBooking = existing || {
+      id: bookingId || `b-${roomNumber}-${Date.now()}`,
       roomNumber,
-      guestName: "ลูกค้าห้อง " + roomNumber,
-      guestPhone: "-",
+      guestName: targetRoom?.currentTenant?.fullName || "ลูกค้าห้อง " + roomNumber,
+      guestPhone: targetRoom?.currentTenant?.phone || "-",
       checkInDate: new Date().toISOString().slice(0, 10),
       checkInTime: "14:00",
       checkOutDate: new Date().toISOString().slice(0, 10),
       checkOutTime: "12:00",
       nights: 1,
-      dailyRate: 650,
-      totalRoomPrice: 650,
+      dailyRate: targetRoom?.dailyRate || 650,
+      totalRoomPrice: targetRoom?.dailyRate || 650,
       keyDeposit: keyDeposit || 500,
+      roomDeposit: 500,
+      electricCheckIn: targetRoom?.currentElectricMeter ?? 0,
+      waterCheckIn: targetRoom?.currentWaterMeter ?? 0,
       status: "checked_in" as const,
     };
+    setSelectedRoom(null);
     setDailyCheckoutBooking(booking);
   };
 
@@ -1530,16 +1661,39 @@ export default function HomePage() {
     extraCharges,
     extraNote,
     paymentMethod,
+    electricPrev,
+    electricCurr,
+    waterPrev,
+    waterCurr,
+    chargeUtilities,
+    electricCost,
+    waterCost,
+    elecUnits: passedElecUnits,
+    waterUnits: passedWaterUnits,
   }: {
     booking: DailyBooking;
     extraCharges: number;
     extraNote: string;
     paymentMethod: "promptpay" | "cash";
+    electricPrev?: number;
+    electricCurr?: number;
+    waterPrev?: number;
+    waterCurr?: number;
+    chargeUtilities?: boolean;
+    electricCost?: number;
+    waterCost?: number;
+    elecUnits?: number;
+    waterUnits?: number;
   }) => {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const invoiceNumber = `INV-D-${dateStr.replace(/-/g, "")}-${booking.roomNumber}`;
-    const totalAmount = (booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 650) + (extraCharges || 0);
+    const utilityAmount = chargeUtilities ? ((electricCost || 0) + (waterCost || 0)) : 0;
+    const totalAmount = (booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 650) + (extraCharges || 0) + utilityAmount;
+
+    const targetRoom = rooms.find((r) => r.roomNumber === booking.roomNumber);
+    const elecUnits = passedElecUnits !== undefined ? passedElecUnits : Math.max(0, (electricCurr ?? 0) - (electricPrev ?? 0));
+    const waterUnits = passedWaterUnits !== undefined ? passedWaterUnits : Math.max(0, (waterCurr ?? 0) - (waterPrev ?? 0));
 
     const items: InvoiceItem[] = [
       {
@@ -1552,6 +1706,30 @@ export default function HomePage() {
       items.push({
         name: extraNote.trim() || "ค่าบริการเพิ่มเติม / เครื่องดื่ม / ค่าปรับ",
         amount: extraCharges,
+      });
+    }
+
+    // เมื่อมิเตอร์เปลี่ยน นำข้อมูลมาคิดคำนวณ: หากเลือกคิดในบิลจะเพิ่มยอดเงิน หากไม่เลือกจะแสดงเป็นข้อมูลต้นทุนรวมในค่าห้อง
+    if (electricCurr !== undefined) {
+      const isCharged = chargeUtilities && (electricCost || 0) > 0;
+      items.push({
+        name: `ค่าไฟฟ้า (${electricPrev ?? targetRoom?.currentElectricMeter ?? 0} -> ${electricCurr} ขยับไป ${elecUnits} หน่วย @ ฿${property.electricRate}${isCharged ? "" : " - รวมในค่าห้องแล้ว"})`,
+        units: elecUnits,
+        rate: property.electricRate,
+        amount: isCharged ? (electricCost || 0) : 0,
+        meterPrev: electricPrev ?? targetRoom?.currentElectricMeter ?? 0,
+        meterCurr: electricCurr,
+      });
+    }
+    if (waterCurr !== undefined) {
+      const isCharged = chargeUtilities && (waterCost || 0) > 0;
+      items.push({
+        name: `ค่าน้ำประปา (${waterPrev ?? targetRoom?.currentWaterMeter ?? 0} -> ${waterCurr} ขยับไป ${waterUnits} หน่วย @ ฿${property.waterRate}${isCharged ? "" : " - รวมในค่าห้องแล้ว"})`,
+        units: waterUnits,
+        rate: property.waterRate,
+        amount: isCharged ? (waterCost || 0) : 0,
+        meterPrev: waterPrev ?? targetRoom?.currentWaterMeter ?? 0,
+        meterCurr: waterCurr,
       });
     }
 
@@ -1578,17 +1756,36 @@ export default function HomePage() {
       // 2. ปลดสถานะการจองรายวัน
       await DatabaseService.removeDailyBooking(booking.id, booking.roomNumber);
 
-      // 3. ปรับสถานะห้องเป็น "รอทำความสะอาด" (cleaning) ทั้งใน Database และ State
-      const targetRoom = rooms.find((r) => r.roomNumber === booking.roomNumber);
+      // 3. ปรับสถานะห้องเป็น "รอทำความสะอาด" (cleaning) พร้อมบันทึกมิเตอร์จริงที่ขยับลงในฐานข้อมูล
       if (targetRoom) {
         await DatabaseService.updateRoomStatus(targetRoom.id, "cleaning");
+        if (electricCurr !== undefined && waterCurr !== undefined) {
+          await DatabaseService.saveMeterReading(
+            targetRoom.id,
+            electricCurr,
+            waterCurr,
+            electricPrev ?? targetRoom.currentElectricMeter,
+            waterPrev ?? targetRoom.currentWaterMeter,
+            dateStr.slice(0, 7),
+            property.id
+          );
+        }
       }
 
       // 4. อัปเดต Local State ทั้งหมดแบบทันที (Fast UX)
       setInvoices((prev) => [newInvoice, ...prev]);
       setDailyBookings((prev) => prev.filter((item) => item.id !== booking.id));
       setRooms((prev) =>
-        prev.map((r) => (r.roomNumber === booking.roomNumber ? { ...r, status: "cleaning" } : r))
+        prev.map((r) =>
+          r.roomNumber === booking.roomNumber
+            ? {
+                ...r,
+                status: "cleaning",
+                currentElectricMeter: electricCurr !== undefined ? electricCurr : r.currentElectricMeter,
+                currentWaterMeter: waterCurr !== undefined ? waterCurr : r.currentWaterMeter,
+              }
+            : r
+        )
       );
 
       // Refresh branch room counts
@@ -1599,7 +1796,7 @@ export default function HomePage() {
       setDailyCheckoutBooking(null);
 
       showToast(
-        `เช็คเอาท์ห้อง ${booking.roomNumber} เรียบร้อยแล้ว! บันทึกรับชำระ ฿${totalAmount.toLocaleString()} ในหน้าใบแจ้งหนี้แล้ว`,
+        `เช็คเอาท์ห้อง ${booking.roomNumber} เรียบร้อยแล้ว! บันทึกรับชำระ ฿${totalAmount.toLocaleString()} และบันทึกมิเตอร์ขยับ (ไฟ +${elecUnits} หน่วย, น้ำ +${waterUnits} หน่วย) เรียบร้อยแล้ว`,
         "success"
       );
     } catch (err) {
@@ -1858,7 +2055,7 @@ export default function HomePage() {
     showToast(`ลงทะเบียนผู้เช่า ${finalTenant.fullName} และสร้างสัญญาเช่าดิจิทัลสำเร็จ นำท่านสู่หน้าตรวจสอบสัญญาเช่า ✓`, "success");
   };
 
-  // Handler: Checkout Settlement with Auto Closing Invoice/Receipt Generation
+  // Handler: Checkout Settlement with Auto Closing Invoice/Receipt Generation (Requirement 5)
   const handleExecuteCheckout = async () => {
     const targetRoom = rooms.find((r) => r.id === checkoutRoomId);
     if (!targetRoom) {
@@ -1866,19 +2063,39 @@ export default function HomePage() {
       return;
     }
 
-    const elecUnits = Math.max(0, checkoutElecCurr - targetRoom.currentElectricMeter);
-    const waterUnits = Math.max(0, checkoutWaterCurr - targetRoom.currentWaterMeter);
+    const elecPrev = checkoutElecPrev === "" ? targetRoom.currentElectricMeter : Number(checkoutElecPrev);
+    const elecCurr = checkoutElecCurr === "" ? targetRoom.currentElectricMeter : Number(checkoutElecCurr);
+    const waterPrev = checkoutWaterPrev === "" ? targetRoom.currentWaterMeter : Number(checkoutWaterPrev);
+    const waterCurr = checkoutWaterCurr === "" ? targetRoom.currentWaterMeter : Number(checkoutWaterCurr);
+    const cleaningFee = checkoutCleaningFee === "" ? 0 : Number(checkoutCleaningFee);
+    const damageFee = checkoutDamageFee === "" ? 0 : Number(checkoutDamageFee);
+
+    const elecUnits = Math.max(0, elecCurr - elecPrev);
+    const waterUnits = Math.max(0, waterCurr - waterPrev);
     const elecCost = elecUnits * property.electricRate;
     const waterCost = waterUnits * property.waterRate;
-    const totalDeductions = elecCost + waterCost + checkoutCleaningFee + checkoutDamageFee;
-    // Data Coherence: ใช้เงินประกันจริงที่ดึงมาจากสัญญาเช่า หรือยอดที่ผู้จัดการตรวจสอบ/แก้ไข
-    const deposit = checkoutDepositAmount > 0 ? checkoutDepositAmount : (targetRoom.monthlyRate * 2 || 8000);
-    const netRefund = Math.max(0, deposit - totalDeductions);
+
+    // บิลค้างชำระจริงของห้องนี้
+    const roomUnpaidInvs = invoices.filter(
+      (i) => i.roomNumber === targetRoom.roomNumber && i.status !== "paid"
+    );
+    const unpaidBillsAmount = roomUnpaidInvs.reduce(
+      (acc, i) => acc + (i.remainingAmount ?? i.totalAmount),
+      0
+    );
+
+    const totalDeductions = elecCost + waterCost + cleaningFee + damageFee + unpaidBillsAmount;
+    const deposit = checkoutDepositAmount !== "" ? Number(checkoutDepositAmount) : (targetRoom.monthlyRate * 2 || 8000);
+    const netRefund = deposit - totalDeductions;
 
     setConfirmDialog({
       isOpen: true,
       title: `ยืนยันการย้ายออก ห้อง ${targetRoom.roomNumber}`,
-      description: `ยอดหักค่าน้ำ-ไฟ และค่าทำความสะอาดรวม ${formatCurrency(totalDeductions)} • เงินประกันสุทธิคืนผู้เช่า ${formatCurrency(netRefund)} โดยระบบจะปรับสถานะห้องเป็น "รอทำความสะอาด (cleaning)" และออกใบเสร็จสรุปยอดหักเงินประกันเข้าสู่ระบบบัญชี`,
+      description: `ยอดหักค่าน้ำ-ไฟ บิลค้าง และค่าบริการรวม ${formatCurrency(totalDeductions)} • ${
+        netRefund >= 0
+          ? `เงินประกันสุทธิคืนผู้เช่า ${formatCurrency(netRefund)}`
+          : `ผู้เช่ามียอดค้างชำระเพิ่ม ${formatCurrency(Math.abs(netRefund))}`
+      } โดยระบบจะปรับสถานะห้องเป็น "รอทำความสะอาด (cleaning)" และออกใบเสร็จสรุปยอดหักเงินประกันเข้าสู่ระบบบัญชี`,
       confirmText: "ยืนยันทำเรื่องย้ายออก",
       cancelText: "ยกเลิก",
       variant: "warning",
@@ -1888,36 +2105,46 @@ export default function HomePage() {
         if (ok) {
           // Construct closing settlement invoice/receipt
           const invoiceItems: InvoiceItem[] = [];
+
+          if (unpaidBillsAmount > 0) {
+            for (const inv of roomUnpaidInvs) {
+              invoiceItems.push({
+                name: `หักชำระบิลค้างรอบเดือน (${inv.invoiceNumber})`,
+                amount: inv.remainingAmount ?? inv.totalAmount,
+              });
+            }
+          }
+
           if (elecCost > 0) {
             invoiceItems.push({
-              name: `ค่าไฟฟ้า (${targetRoom.currentElectricMeter} -> ${checkoutElecCurr} หน่วย)`,
+              name: `ค่าไฟฟ้า (${elecPrev} -> ${elecCurr} หน่วย)`,
               units: elecUnits,
               rate: property.electricRate,
               amount: elecCost,
-              meterPrev: targetRoom.currentElectricMeter,
-              meterCurr: checkoutElecCurr,
+              meterPrev: elecPrev,
+              meterCurr: elecCurr,
             });
           }
           if (waterCost > 0) {
             invoiceItems.push({
-              name: `ค่าน้ำประปา (${targetRoom.currentWaterMeter} -> ${checkoutWaterCurr} หน่วย)`,
+              name: `ค่าน้ำประปา (${waterPrev} -> ${waterCurr} หน่วย)`,
               units: waterUnits,
               rate: property.waterRate,
               amount: waterCost,
-              meterPrev: targetRoom.currentWaterMeter,
-              meterCurr: checkoutWaterCurr,
+              meterPrev: waterPrev,
+              meterCurr: waterCurr,
             });
           }
-          if (checkoutCleaningFee > 0) {
+          if (cleaningFee > 0) {
             invoiceItems.push({
               name: "ค่าบริการทำความสะอาดห้องพัก (ย้ายออก)",
-              amount: checkoutCleaningFee,
+              amount: cleaningFee,
             });
           }
-          if (checkoutDamageFee > 0) {
+          if (damageFee > 0) {
             invoiceItems.push({
               name: "ค่าชดเชยความเสียหาย/ซ่อมแซมห้องพัก",
-              amount: checkoutDamageFee,
+              amount: damageFee,
             });
           }
           if (invoiceItems.length === 0) {
@@ -1945,12 +2172,31 @@ export default function HomePage() {
           };
 
           await DatabaseService.createDirectInvoice(closingInvoice);
-          setInvoices((prev) => [closingInvoice, ...prev]);
+
+          // ถ้าเงินประกันพอหัก ให้ตัดยอดบิลค้างเดิมเป็นชำระแล้วด้วย
+          if (isCoveredByDeposit) {
+            for (const inv of roomUnpaidInvs) {
+              await DatabaseService.updateInvoiceStatus(inv.id, "paid");
+            }
+          }
+
+          // บันทึกเลขมิเตอร์ล่าสุด ณ วันย้ายออก
+          await DatabaseService.saveMeterReading(targetRoom.id, elecCurr, waterCurr, elecPrev, waterPrev);
+
+          const freshInvs = await DatabaseService.getInvoices(property.id);
+          setInvoices(freshInvs);
 
           setRooms((prev) =>
             prev.map((r) =>
               r.id === targetRoom.id
-                ? { ...r, status: "cleaning", currentTenant: undefined, leaseEndDate: undefined }
+                ? {
+                    ...r,
+                    status: "cleaning",
+                    currentElectricMeter: elecCurr,
+                    currentWaterMeter: waterCurr,
+                    currentTenant: undefined,
+                    leaseEndDate: undefined,
+                  }
                 : r
             )
           );
@@ -1989,6 +2235,30 @@ export default function HomePage() {
     link.click();
     document.body.removeChild(link);
     showToast("ดาวน์โหลดรายงาน Excel (CSV) เรียบร้อยแล้ว", "success");
+  };
+
+  // Handler: Add Expense
+  const handleAddExpense = async (expData: Omit<ExpenseItem, "id">) => {
+    try {
+      const created = await DatabaseService.addExpense({ ...expData, propertyId: property.id });
+      setExpenses((prev) => [created, ...prev]);
+      showToast(`บันทึกรายจ่าย "${created.title}" เรียบร้อยแล้ว ✓`, "success");
+    } catch (err) {
+      console.error(err);
+      showToast("เกิดข้อผิดพลาดในการบันทึกรายจ่าย", "error");
+    }
+  };
+
+  // Handler: Delete Expense
+  const handleDeleteExpense = async (id: string) => {
+    try {
+      await DatabaseService.deleteExpense(id, property.id);
+      setExpenses((prev) => prev.filter((e) => e.id !== id));
+      showToast("ลบรายการรายจ่ายเรียบร้อยแล้ว", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("เกิดข้อผิดพลาดในการลบรายจ่าย", "error");
+    }
   };
 
   // Handler: Save Settings
@@ -2248,7 +2518,7 @@ export default function HomePage() {
       case "repairs":
         return "ระบบแจ้งซ่อมบำรุงห้องพัก";
       case "reports":
-        return "สรุปรายงาน & Export Excel";
+        return "บัญชีรายรับ-รายจ่าย & กำไรขาดทุน";
       case "settings":
         return "ตั้งค่าหอพัก & LINE OA";
       case "branches":
@@ -2553,7 +2823,6 @@ export default function HomePage() {
                         checkInDate: new Date().toISOString().slice(0, 10),
                         checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
                         nightlyRate: firstVacant?.dailyRate || 650,
-                        monthlyRate: firstVacant?.monthlyRate || 4000,
                         depositAmount: 500,
                         roomDeposit: 500,
                       });
@@ -3342,21 +3611,62 @@ export default function HomePage() {
           )}
 
           {/* VIEW: Checkout & Deposit Refund */}
-          {currentTab === "checkout" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-6 max-w-3xl">
-              <div>
-                <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                  <DoorOpen className="w-4 h-4 text-rose-500" />
-                  <span>ระบบสรุปย้ายออก & คืนเงินประกัน (Move-out Settlement)</span>
-                </h3>
-                <p className="text-xs text-[var(--muted)]">
-                  คำนวณค่าน้ำ-ไฟวันย้ายออก หักค่าทำความสะอาด และคำนวณเงินประกันคืนผู้เช่า
-                </p>
-              </div>
+          {currentTab === "checkout" && (() => {
+            const selectedRoom = rooms.find((rm) => rm.id === checkoutRoomId);
+            const activeCt = contracts.find(
+              (c) => c.roomNumber === selectedRoom?.roomNumber && c.status === "active"
+            );
+            const unpaidInvs = invoices.filter(
+              (i) => i.roomNumber === selectedRoom?.roomNumber && i.status !== "paid"
+            );
+            const unpaidBillsTotal = unpaidInvs.reduce(
+              (acc, i) => acc + (i.remainingAmount ?? i.totalAmount),
+              0
+            );
 
-              <div className="space-y-4 text-xs">
-                <div>
-                  <label className="block font-semibold mb-1">เลือกห้องที่ต้องการย้ายออก</label>
+            const elecPrevVal = checkoutElecPrev === "" ? (selectedRoom?.currentElectricMeter ?? 0) : Number(checkoutElecPrev);
+            const elecCurrVal = checkoutElecCurr === "" ? (selectedRoom?.currentElectricMeter ?? 0) : Number(checkoutElecCurr);
+            const elecUnits = Math.max(0, elecCurrVal - elecPrevVal);
+            const elecCost = elecUnits * property.electricRate;
+
+            const waterPrevVal = checkoutWaterPrev === "" ? (selectedRoom?.currentWaterMeter ?? 0) : Number(checkoutWaterPrev);
+            const waterCurrVal = checkoutWaterCurr === "" ? (selectedRoom?.currentWaterMeter ?? 0) : Number(checkoutWaterCurr);
+            const waterUnits = Math.max(0, waterCurrVal - waterPrevVal);
+            const waterCost = waterUnits * property.waterRate;
+
+            const cleanFeeVal = checkoutCleaningFee === "" ? 0 : Number(checkoutCleaningFee);
+            const dmgFeeVal = checkoutDamageFee === "" ? 0 : Number(checkoutDamageFee);
+            const depositVal = checkoutDepositAmount === "" ? 0 : Number(checkoutDepositAmount);
+
+            const totalDeductions = elecCost + waterCost + cleanFeeVal + dmgFeeVal + unpaidBillsTotal;
+            const netRefund = depositVal - totalDeductions;
+
+            return (
+              <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-6 max-w-4xl">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-[var(--foreground)] flex items-center gap-2">
+                      <DoorOpen className="w-5 h-5 text-rose-500" />
+                      <span>ระบบสรุปย้ายออก & คืนเงินประกัน (Move-out Settlement)</span>
+                    </h3>
+                    <p className="text-xs text-[var(--muted)] mt-0.5">
+                      คำนวณค่าน้ำ-ไฟวันย้ายออก หักบิลค้างชำระ ค่าทำความสะอาด และคำนวณเงินประกันคืนผู้เช่าตามจริง
+                    </p>
+                  </div>
+                  {selectedRoom && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 border border-rose-500/20 self-start sm:self-auto">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                      ห้อง {selectedRoom.roomNumber} (ชั้น {selectedRoom.floor})
+                    </span>
+                  )}
+                </div>
+
+                {/* Step 1: Select Room */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-[var(--foreground)]">
+                    1. เลือกห้องที่ต้องการทำเรื่องย้ายออก
+                  </label>
                   <select
                     value={checkoutRoomId}
                     onChange={(e) => {
@@ -3364,149 +3674,402 @@ export default function HomePage() {
                       setCheckoutRoomId(selId);
                       const r = rooms.find((rm) => rm.id === selId);
                       if (r) {
-                        setCheckoutElecCurr(r.currentElectricMeter + 20);
-                        setCheckoutWaterCurr(r.currentWaterMeter + 3);
-                        // ดึงเงินมัดจำจริงจากสัญญาเช่าที่ active หรือจากข้อมูลห้องพัก
-                        const activeCt = contracts.find((c) => c.roomNumber === r.roomNumber && c.status === "active");
-                        const dep = activeCt?.depositAmount || (r as any).depositAmount || r.currentTenant?.depositAmount || (r.monthlyRate * 2) || 8000;
+                        setCheckoutElecPrev(r.currentElectricMeter);
+                        setCheckoutElecCurr(r.currentElectricMeter);
+                        setCheckoutWaterPrev(r.currentWaterMeter);
+                        setCheckoutWaterCurr(r.currentWaterMeter);
+                        const act = contracts.find((c) => c.roomNumber === r.roomNumber && c.status === "active");
+                        const dep = act?.depositAmount || (r as any).depositAmount || r.currentTenant?.depositAmount || (r.monthlyRate * 2) || 8000;
                         setCheckoutDepositAmount(dep);
                       }
                     }}
-                    className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] focus:outline-emerald-500"
+                    className="w-full p-3 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-sm font-semibold focus:outline-emerald-500"
                   >
-                    <option value="">-- เลือกห้องพัก --</option>
-                    {rooms.filter((r) => r.status === "occupied" || r.status === "overdue").map((r) => (
+                    <option value="">-- กรุณาเลือกห้องพักที่ต้องการย้ายออก --</option>
+                    {rooms.filter((r) => (r.status === "occupied" || r.status === "overdue") && !r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]")).map((r) => (
                       <option key={r.id} value={r.id}>
-                        ห้อง {r.roomNumber} - {r.currentTenant?.fullName || "ไม่มีชื่อ"}
+                        ห้อง {r.roomNumber} - {r.currentTenant?.fullName || "ไม่มีชื่อ"} (ค่าเช่า ฿{(r.monthlyRate || 0).toLocaleString()}/เดือน) {r.status === "overdue" ? " [มียอดค้างชำระ]" : ""}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold mb-1">
-                      เงินประกันมัดจำเดิม (ตามสัญญาเช่า) *
-                    </label>
-                    <input
-                      type="number"
-                      value={checkoutDepositAmount}
-                      onChange={(e) => setCheckoutDepositAmount(Number(e.target.value))}
-                      className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono font-bold text-emerald-600 dark:text-emerald-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold mb-1">สถานะสัญญาเช่าปัจจุบัน</label>
-                    <div className="p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--muted)]">
-                      {(() => {
-                        const r = rooms.find((rm) => rm.id === checkoutRoomId);
-                        const actCt = contracts.find((c) => c.roomNumber === r?.roomNumber && c.status === "active");
-                        return actCt ? `สัญญาเลขที่ ${actCt.contractNumber} (มัดจำ ฿${(actCt.depositAmount || 0).toLocaleString()})` : "คำนวณตามอัตราค่าเช่า 2 เดือน";
-                      })()}
+                {selectedRoom && (
+                  <div className="space-y-5 text-xs">
+                    {/* Bento Row 1: Tenant Information & Lease Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-1">
+                        <div className="text-[var(--muted)] flex items-center gap-1.5 font-medium">
+                          <Users className="w-3.5 h-3.5 text-blue-500" />
+                          <span>ข้อมูลผู้เช่าห้องพัก</span>
+                        </div>
+                        <div className="font-bold text-sm text-[var(--foreground)]">
+                          {selectedRoom.currentTenant?.fullName || "-"}
+                        </div>
+                        <div className="text-[var(--muted)]">
+                          โทร: {selectedRoom.currentTenant?.phone || "-"}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-1">
+                        <div className="text-[var(--muted)] flex items-center gap-1.5 font-medium">
+                          <FileSignature className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>สัญญาเช่าที่เปิดใช้งาน</span>
+                        </div>
+                        <div className="font-bold text-sm text-[var(--foreground)]">
+                          {activeCt ? `สัญญาเลขที่ ${activeCt.contractNumber}` : "ไม่มีบันทึกสัญญา (ยึดตามเรทห้อง)"}
+                        </div>
+                        <div className="text-[var(--muted)]">
+                          {activeCt ? `เริ่ม ${activeCt.startDate} ถึง ${activeCt.endDate}` : "-"}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-1">
+                        <div className="text-[var(--muted)] flex items-center gap-1.5 font-medium">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>เงินประกันมัดจำเดิม (ตามสัญญา)</span>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={checkoutDepositAmount}
+                            onChange={(e) => setCheckoutDepositAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="0"
+                            className="w-full p-1.5 px-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400 focus:outline-emerald-500"
+                          />
+                        </div>
+                        <div className="text-[11px] text-[var(--muted)]">
+                          {activeCt ? `สัญญาบันทึกไว้ ฿${(activeCt.depositAmount || 0).toLocaleString()}` : "แก้ไขจำนวนเงินได้หากมีการเปลี่ยนแปลง"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bento Row 2: Unpaid Invoices Deduction Alert */}
+                    <div className="p-4 rounded-xl border transition-all bg-[var(--card)]">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-bold text-xs flex items-center gap-1.5 text-[var(--foreground)]">
+                          <Receipt className="w-4 h-4 text-amber-500" />
+                          <span>2. ตรวจสอบบิลค้างชำระของห้องพักนี้ (Unpaid Monthly Invoices)</span>
+                        </div>
+                        {unpaidInvs.length === 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            ไม่มีบิลค้างชำระ
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            พบบิลค้าง {unpaidInvs.length} ใบ (รวม {formatCurrency(unpaidBillsTotal)})
+                          </span>
+                        )}
+                      </div>
+
+                      {unpaidInvs.length > 0 ? (
+                        <div className="space-y-2 mt-3">
+                          <div className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--subtle)] overflow-hidden">
+                            {unpaidInvs.map((inv) => (
+                              <div key={inv.id} className="p-2.5 px-3 flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <div className="font-semibold text-xs text-[var(--foreground)] flex items-center gap-2">
+                                    <span>{inv.invoiceNumber}</span>
+                                    <span className="text-[11px] text-[var(--muted)]">รอบ {(inv as any).billingMonth || (inv as any).month || "-"}</span>
+                                  </div>
+                                  <div className="text-[11px] text-[var(--muted)]">
+                                    ยอดเรียกเก็บ ฿{(inv.totalAmount || 0).toLocaleString()} • ชำระแล้ว ฿{(inv.paidAmount || 0).toLocaleString()}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-xs font-bold text-rose-600">
+                                    ค้างชำระ ฿{((inv.remainingAmount ?? inv.totalAmount) || 0).toLocaleString()}
+                                  </div>
+                                  <div className="text-[10px] text-amber-600 dark:text-amber-400">
+                                    (จะถูกนำไปหักจากเงินประกัน)
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-[var(--muted)]">
+                          ผู้เช่าชำระค่าเช่าและค่าน้ำ-ไฟตามรอบบิลที่ผ่านมาครบถ้วนแล้ว ไม่มียอดค้างชำระยกมา
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Bento Row 3: Move-out Meter Readings */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-[var(--foreground)]">
+                        3. บันทึกเลขมิเตอร์วันย้ายออก (Move-out Meter Readings)
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Electric Card */}
+                        <div className="p-4 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-3">
+                          <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+                            <span className="font-bold text-xs flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                              <Zap className="w-4 h-4" />
+                              <span>มิเตอร์ไฟฟ้า (฿{property.electricRate}/หน่วย)</span>
+                            </span>
+                            <span className="font-mono text-xs font-bold text-[var(--foreground)]">
+                              ใช้ไป {elecUnits} หน่วย
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] text-[var(--muted)] mb-1">
+                                เลขมิเตอร์เดิม (จากระบบ)
+                              </label>
+                              <input
+                                type="number"
+                                value={checkoutElecPrev}
+                                onChange={(e) => setCheckoutElecPrev(e.target.value === "" ? "" : Number(e.target.value))}
+                                placeholder="0"
+                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-[var(--foreground)] font-semibold mb-1">
+                                เลขวันย้ายออก *
+                              </label>
+                              <input
+                                type="number"
+                                value={checkoutElecCurr}
+                                onChange={(e) => setCheckoutElecCurr(e.target.value === "" ? "" : Number(e.target.value))}
+                                placeholder="0"
+                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-amber-500/50 font-mono text-xs font-bold text-amber-600 dark:text-amber-400 focus:outline-amber-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center text-xs pt-1 text-[var(--muted)] border-t border-[var(--border)]">
+                            <span>คิดเป็นค่าไฟฟ้า:</span>
+                            <span className="font-bold text-[var(--foreground)] font-mono">
+                              {formatCurrency(elecCost)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Water Card */}
+                        <div className="p-4 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-3">
+                          <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+                            <span className="font-bold text-xs flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                              <Sparkles className="w-4 h-4" />
+                              <span>มิเตอร์น้ำประปา (฿{property.waterRate}/หน่วย)</span>
+                            </span>
+                            <span className="font-mono text-xs font-bold text-[var(--foreground)]">
+                              ใช้ไป {waterUnits} หน่วย
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] text-[var(--muted)] mb-1">
+                                เลขมิเตอร์เดิม (จากระบบ)
+                              </label>
+                              <input
+                                type="number"
+                                value={checkoutWaterPrev}
+                                onChange={(e) => setCheckoutWaterPrev(e.target.value === "" ? "" : Number(e.target.value))}
+                                placeholder="0"
+                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-[var(--foreground)] font-semibold mb-1">
+                                เลขวันย้ายออก *
+                              </label>
+                              <input
+                                type="number"
+                                value={checkoutWaterCurr}
+                                onChange={(e) => setCheckoutWaterCurr(e.target.value === "" ? "" : Number(e.target.value))}
+                                placeholder="0"
+                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-blue-500/50 font-mono text-xs font-bold text-blue-600 dark:text-blue-400 focus:outline-blue-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center text-xs pt-1 text-[var(--muted)] border-t border-[var(--border)]">
+                            <span>คิดเป็นค่าน้ำประปา:</span>
+                            <span className="font-bold text-[var(--foreground)] font-mono">
+                              {formatCurrency(waterCost)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bento Row 4: Additional Fees */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-[var(--foreground)]">
+                        4. ค่าบริการทำความสะอาดและค่าความเสียหาย
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="font-semibold text-xs text-[var(--foreground)]">
+                              ค่าทำความสะอาดห้องพัก (บาท)
+                            </label>
+                            <div className="flex gap-1">
+                              {[0, 300, 500, 800].map((amt) => (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => setCheckoutCleaningFee(amt)}
+                                  className={cn(
+                                    "px-1.5 py-0.5 rounded text-[10px] font-mono border transition cursor-pointer",
+                                    checkoutCleaningFee === amt
+                                      ? "bg-emerald-600 text-white border-emerald-600"
+                                      : "bg-[var(--card)] border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
+                                  )}
+                                >
+                                  {amt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <input
+                            type="number"
+                            value={checkoutCleaningFee}
+                            onChange={(e) => setCheckoutCleaningFee(e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="0"
+                            className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
+                          />
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
+                          <label className="block font-semibold text-xs text-[var(--foreground)]">
+                            ค่าเสียหาย / ค่าซ่อมแซมอุปกรณ์ (บาท)
+                          </label>
+                          <input
+                            type="number"
+                            value={checkoutDamageFee}
+                            onChange={(e) => setCheckoutDamageFee(e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="0"
+                            className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bento Row 5: Settlement Summary Breakdown */}
+                    <div className="p-5 rounded-2xl bg-[var(--subtle)] border border-[var(--border)] space-y-3.5">
+                      <div className="flex items-center justify-between border-b border-[var(--border)] pb-2.5">
+                        <span className="font-bold text-sm text-[var(--foreground)] flex items-center gap-2">
+                          <Receipt className="w-4 h-4 text-emerald-500" />
+                          <span>5. สรุปรายละเอียดการหักเงินประกันและยอดสุทธิ</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--muted)]">
+                          คำนวณแบบเรียลไทม์
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between py-1">
+                          <span className="text-[var(--muted)]">เงินประกันห้องพักเดิม (ตามสัญญา):</span>
+                          <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                            +{formatCurrency(depositVal)}
+                          </span>
+                        </div>
+
+                        {unpaidBillsTotal > 0 && (
+                          <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
+                            <span>หักบิลค้างชำระ ({unpaidInvs.length} ใบ):</span>
+                            <span className="font-bold font-mono">
+                              -{formatCurrency(unpaidBillsTotal)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
+                          <span>หักค่าไฟฟ้าวันย้ายออก ({elecUnits} หน่วย @ ฿{property.electricRate}):</span>
+                          <span className="font-bold font-mono">
+                            -{formatCurrency(elecCost)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
+                          <span>หักค่าน้ำประปาวันย้ายออก ({waterUnits} หน่วย @ ฿{property.waterRate}):</span>
+                          <span className="font-bold font-mono">
+                            -{formatCurrency(waterCost)}
+                          </span>
+                        </div>
+
+                        {cleanFeeVal > 0 && (
+                          <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
+                            <span>หักค่าบริการทำความสะอาดห้องพัก:</span>
+                            <span className="font-bold font-mono">
+                              -{formatCurrency(cleanFeeVal)}
+                            </span>
+                          </div>
+                        )}
+
+                        {dmgFeeVal > 0 && (
+                          <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
+                            <span>หักค่าเสียหาย / ค่าซ่อมแซม:</span>
+                            <span className="font-bold font-mono">
+                              -{formatCurrency(dmgFeeVal)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between py-1.5 border-t border-[var(--border)] text-[var(--muted)] font-semibold">
+                          <span>รวมรายการหักทั้งหมด:</span>
+                          <span className="font-bold font-mono text-rose-600 dark:text-rose-400">
+                            -{formatCurrency(totalDeductions)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Net Result Bento Box */}
+                      <div
+                        className={cn(
+                          "p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+                          netRefund >= 0
+                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+                            : "bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300"
+                        )}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-sm flex items-center gap-1.5">
+                            {netRefund >= 0 ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                            ) : (
+                              <AlertCircle className="w-5 h-5 text-rose-600" />
+                            )}
+                            <span>
+                              {netRefund >= 0
+                                ? "เงินประกันสุทธิที่ต้องคืนผู้เช่า (Refund to Tenant)"
+                                : "เงินประกันไม่พอหัก! ผู้เช่ามียอดค้างชำระเพิ่ม (Shortfall)"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] opacity-80">
+                            {netRefund >= 0
+                              ? "ระบบจะตัดรอบสัญญาและออกใบสรุปเงินประกันเพื่อโอนคืนผู้เช่า"
+                              : "ผู้เช่าต้องชำระส่วนต่างเพิ่มเติมก่อนการย้ายออกเสร็จสมบูรณ์"}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-2xl font-black font-mono">
+                            {formatCurrency(Math.abs(netRefund))}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Submit Button */}
+                    <div className="pt-2">
+                      <button
+                        onClick={handleExecuteCheckout}
+                        disabled={!checkoutRoomId}
+                        className="w-full sm:w-auto bg-rose-600 hover:bg-rose-500 active:scale-98 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 text-sm"
+                      >
+                        <DoorOpen className="w-4 h-4" />
+                        <span>ยืนยันการย้ายออกและส่งต่องานแม่บ้าน</span>
+                      </button>
                     </div>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold mb-1">เลขมิเตอร์ไฟวันย้ายออก</label>
-                    <input
-                      type="number"
-                      value={checkoutElecCurr}
-                      onChange={(e) => setCheckoutElecCurr(Number(e.target.value))}
-                      className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold mb-1">เลขมิเตอร์น้ำวันย้ายออก</label>
-                    <input
-                      type="number"
-                      value={checkoutWaterCurr}
-                      onChange={(e) => setCheckoutWaterCurr(Number(e.target.value))}
-                      className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold mb-1">ค่าทำความสะอาดห้องพัก (บาท)</label>
-                    <input
-                      type="number"
-                      value={checkoutCleaningFee}
-                      onChange={(e) => setCheckoutCleaningFee(Number(e.target.value))}
-                      className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold mb-1">ค่าเสียหาย / ค่าซ่อม (บาท)</label>
-                    <input
-                      type="number"
-                      value={checkoutDamageFee}
-                      onChange={(e) => setCheckoutDamageFee(Number(e.target.value))}
-                      className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
-                  <div className="font-bold text-sm text-[var(--foreground)]">สรุปยอดเงินคืนประกัน</div>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--muted)]">เงินประกันห้องพัก:</span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(checkoutDepositAmount)}</span>
-                  </div>
-                  <div className="flex justify-between text-rose-600">
-                    <span>หักค่าน้ำ-ไฟ และค่าบริการ:</span>
-                    <span>
-                      -
-                      {formatCurrency(
-                        Math.max(
-                          0,
-                          (checkoutElecCurr - (rooms.find((r) => r.id === checkoutRoomId)?.currentElectricMeter || 0)) * property.electricRate
-                        ) +
-                          Math.max(
-                            0,
-                            (checkoutWaterCurr - (rooms.find((r) => r.id === checkoutRoomId)?.currentWaterMeter || 0)) * property.waterRate
-                          ) +
-                          checkoutCleaningFee +
-                          checkoutDamageFee
-                      )}
-                    </span>
-                  </div>
-                  <div className="border-t border-[var(--border)] pt-2 flex justify-between font-bold text-base text-emerald-600">
-                    <span>เงินประกันสุทธิที่ต้องคืนผู้เช่า:</span>
-                    <span>
-                      {formatCurrency(
-                        Math.max(
-                          0,
-                          checkoutDepositAmount -
-                            (Math.max(
-                              0,
-                              (checkoutElecCurr - (rooms.find((r) => r.id === checkoutRoomId)?.currentElectricMeter || 0)) * property.electricRate
-                            ) +
-                              Math.max(
-                                0,
-                                (checkoutWaterCurr - (rooms.find((r) => r.id === checkoutRoomId)?.currentWaterMeter || 0)) * property.waterRate
-                              ) +
-                              checkoutCleaningFee +
-                              checkoutDamageFee)
-                        )
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleExecuteCheckout}
-                  disabled={!checkoutRoomId}
-                  className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-2"
-                >
-                  <DoorOpen className="w-4 h-4" />
-                  <span>ยืนยันการย้ายออกและส่งต่องานแม่บ้าน</span>
-                </button>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* VIEW: Cleaning & Maintenance */}
           {currentTab === "cleaning" && (
@@ -3576,6 +4139,10 @@ export default function HomePage() {
             <AccountingExportView
               invoices={invoices}
               expenses={expenses}
+              electricRate={property.electricRate}
+              waterRate={property.waterRate}
+              onAddExpense={handleAddExpense}
+              onDeleteExpense={handleDeleteExpense}
             />
           )}
 
@@ -3640,7 +4207,7 @@ export default function HomePage() {
           }
           setSelectedRoom(null);
           setNewBookingForm({
-            bookingType: bookingType || "daily",
+            bookingType: "daily",
             roomNumber: targetRoomNumber,
             guestName: "",
             guestPhone: "",
@@ -3649,11 +4216,38 @@ export default function HomePage() {
             checkInDate: new Date().toISOString().slice(0, 10),
             checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
             nightlyRate: sel?.dailyRate || 650,
-            monthlyRate: sel?.monthlyRate || 4000,
             depositAmount: 500,
-            roomDeposit: bookingType === "monthly" ? (sel?.monthlyRate || 4000) : 500,
+            roomDeposit: 500,
           });
           setIsNewBookingOpen(true);
+        }}
+        onOpenCheckout={(targetRoomId) => {
+          const r = rooms.find((rm) => rm.id === targetRoomId);
+          if (r) {
+            // Guard: หากเป็นห้องพักรายวัน ให้เปิดหน้าต่างเช็คเอาท์รายวัน (DailyCheckoutModal - รูปที่ 2) เสมอ! ห้ามไปหน้าระบบสรุปย้ายออก
+            const isDailyRoom =
+              r.status === "daily" ||
+              dailyBookings.some((b) => b.roomNumber === r.roomNumber && (b.status === "confirmed" || b.status === "checked_in")) ||
+              r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]");
+
+            if (isDailyRoom) {
+              const b = dailyBookings.find((item) => item.roomNumber === r.roomNumber && (item.status === "confirmed" || item.status === "checked_in"));
+              setSelectedRoom(null);
+              handleDailyCheckOut(b?.id || `b-${r.roomNumber}`, r.roomNumber, b?.keyDeposit || 500);
+              return;
+            }
+
+            setCheckoutRoomId(r.id);
+            setCheckoutElecPrev(r.currentElectricMeter);
+            setCheckoutElecCurr(r.currentElectricMeter);
+            setCheckoutWaterPrev(r.currentWaterMeter);
+            setCheckoutWaterCurr(r.currentWaterMeter);
+            const act = contracts.find((c) => c.roomNumber === r.roomNumber && c.status === "active");
+            const dep = act?.depositAmount || (r as any).depositAmount || r.currentTenant?.depositAmount || (r.monthlyRate * 2) || 8000;
+            setCheckoutDepositAmount(dep);
+          }
+          setSelectedRoom(null);
+          handleTabChange("checkout");
         }}
         onUpdateStatus={handleUpdateStatus}
         onDeleteRoom={handleDeleteRoom}
@@ -3720,6 +4314,7 @@ export default function HomePage() {
         isOpen={isAddRoomOpen}
         onClose={() => setIsAddRoomOpen(false)}
         onAddRoom={handleAddRoom}
+        onAddBatchRooms={handleAddBatchRooms}
       />
 
       {/* Database Inspector Modal (ดูข้อมูลจริงใน Supabase Cloud) */}
@@ -3728,19 +4323,19 @@ export default function HomePage() {
         onClose={() => setIsDbInspectorOpen(false)}
       />
 
-      {/* New Booking Modal (รองรับทั้ง จองห้องพักรายวัน และ จองห้องพักรายเดือน - User Requirement 3) */}
+      {/* New Booking Modal (บันทึกการจองห้องพักรายวัน - Requirement 1) */}
       {isNewBookingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-[var(--card)] border border-[var(--border)] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-            {/* Header with Type Selector */}
+            {/* Header: Daily Room Reservation Only */}
             <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-base text-[var(--foreground)] flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  <span>บันทึกการจองห้องพัก (Room Reservation)</span>
+                  <span>บันทึกการจองห้องพักรายวัน (Daily Room Reservation)</span>
                 </h3>
                 <p className="text-xs text-[var(--muted)] mt-0.5">
-                  รองรับทั้งการจองห้องพักรายวันและจองห้องพักรายเดือน พร้อมบันทึกบัตรประชาชนและทะเบียนรถ
+                  บันทึกข้อมูลผู้เข้าพักรายวัน กำหนดวันเช็คอิน-เช็คเอาท์ ค่ามัดจำ และทะเบียนรถ
                 </p>
               </div>
               <button
@@ -3748,42 +4343,6 @@ export default function HomePage() {
                 className="text-[var(--muted)] hover:text-[var(--foreground)] cursor-pointer text-base"
               >
                 ✕
-              </button>
-            </div>
-
-            {/* Type Switcher Tabs */}
-            <div className="p-3 bg-[var(--subtle)] border-b border-[var(--border)] flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setNewBookingForm((prev) => ({ ...prev, bookingType: "daily" }))}
-                className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                  newBookingForm.bookingType === "daily"
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "bg-[var(--card)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>จองห้องพักรายวัน</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const targetRoom = rooms.find((r) => r.roomNumber === newBookingForm.roomNumber);
-                  setNewBookingForm((prev) => ({
-                    ...prev,
-                    bookingType: "monthly",
-                    monthlyRate: targetRoom?.monthlyRate || prev.monthlyRate || 4000,
-                    roomDeposit: prev.roomDeposit || targetRoom?.monthlyRate || 4000,
-                  }));
-                }}
-                className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                  newBookingForm.bookingType === "monthly"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-[var(--card)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>จองห้องพักรายเดือน</span>
               </button>
             </div>
 
@@ -3814,8 +4373,7 @@ export default function HomePage() {
                             setNewBookingForm({
                               ...newBookingForm,
                               roomNumber: e.target.value,
-                              nightlyRate: selRoom?.dailyRate || newBookingForm.nightlyRate || 650,
-                              monthlyRate: selRoom?.monthlyRate || newBookingForm.monthlyRate || 4000,
+                              nightlyRate: selRoom?.dailyRate || 650,
                             });
                           }}
                           className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-medium"
@@ -3823,7 +4381,7 @@ export default function HomePage() {
                           <option value="">-- กรุณาเลือกห้องพักว่าง --</option>
                           {availableRooms.map((r) => (
                             <option key={r.id} value={r.roomNumber}>
-                              ห้อง {r.roomNumber} ({r.type}) • {newBookingForm.bookingType === "monthly" ? `รายเดือน ฿${(r.monthlyRate || 4000).toLocaleString()}/ด.` : `รายวัน ${formatCurrency(r.dailyRate || 650)}/คืน`} — [ห้องว่าง ✨]
+                              ห้อง {r.roomNumber} ({r.type}) • รายวัน {formatCurrency(r.dailyRate || 650)}/คืน — [ห้องว่าง ✨]
                             </option>
                           ))}
                         </select>
@@ -3833,7 +4391,7 @@ export default function HomePage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block font-semibold mb-1">
-                          {newBookingForm.bookingType === "monthly" ? "ชื่อผู้เช่า / ผู้จอง *" : "ชื่อผู้เข้าพัก *"}
+                          ชื่อผู้เข้าพัก <span className="text-rose-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -3895,30 +4453,9 @@ export default function HomePage() {
                     </div>
 
                     {/* Date Pickers */}
-                    {newBookingForm.bookingType === "daily" ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block font-semibold mb-1">วันเช็คอิน</label>
-                          <input
-                            type="date"
-                            value={newBookingForm.checkInDate}
-                            onChange={(e) => setNewBookingForm({ ...newBookingForm, checkInDate: e.target.value })}
-                            className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-semibold mb-1">วันเช็คเอาท์</label>
-                          <input
-                            type="date"
-                            value={newBookingForm.checkOutDate}
-                            onChange={(e) => setNewBookingForm({ ...newBookingForm, checkOutDate: e.target.value })}
-                            className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]"
-                          />
-                        </div>
-                      </div>
-                    ) : (
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block font-semibold mb-1">วันเริ่มเข้าพัก / เริ่มสัญญา</label>
+                        <label className="block font-semibold mb-1">วันเช็คอิน</label>
                         <input
                           type="date"
                           value={newBookingForm.checkInDate}
@@ -3926,182 +4463,123 @@ export default function HomePage() {
                           className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]"
                         />
                       </div>
-                    )}
+                      <div>
+                        <label className="block font-semibold mb-1">วันเช็คเอาท์</label>
+                        <input
+                          type="date"
+                          value={newBookingForm.checkOutDate}
+                          onChange={(e) => setNewBookingForm({ ...newBookingForm, checkOutDate: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]"
+                        />
+                      </div>
+                    </div>
 
-                    {/* Rates & Deposits */}
-                    {newBookingForm.bookingType === "daily" ? (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block font-semibold mb-1">ราคาต่อคืน (บาท)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="50"
-                              value={newBookingForm.nightlyRate}
-                              onChange={(e) => setNewBookingForm({ ...newBookingForm, nightlyRate: Number(e.target.value) })}
-                              className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-semibold mb-1">มัดจำคีย์การ์ด (บาท)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="50"
-                              value={newBookingForm.depositAmount}
-                              onChange={(e) => setNewBookingForm({ ...newBookingForm, depositAmount: Number(e.target.value) })}
-                              className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                            />
-                          </div>
+                    {/* Rates & Deposits (สามารถลบเลข 0 ออกได้ ไม่ค้าง) */}
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold mb-1">ราคาต่อคืน (บาท)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="50"
+                            value={newBookingForm.nightlyRate}
+                            placeholder="650"
+                            onChange={(e) => setNewBookingForm({ ...newBookingForm, nightlyRate: e.target.value === "" ? "" : Number(e.target.value) })}
+                            className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
+                          />
                         </div>
-
-                        {/* ค่ามัดจำห้องพัก (สามารถเพิ่มจำนวนได้) */}
-                        <div className="p-3 rounded-2xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="block font-semibold text-xs text-[var(--foreground)]">
-                              ค่ามัดจำห้องพักรายวัน (บาท)
-                            </label>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: Math.max(0, (prev.roomDeposit || 0) - 100) }))}
-                                className="w-7 h-7 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 font-bold text-xs flex items-center justify-center transition cursor-pointer"
-                                title="ลด 100 บาท"
-                              >
-                                -
-                              </button>
-                              <input
-                                type="number"
-                                min="0"
-                                step="100"
-                                value={newBookingForm.roomDeposit}
-                                onChange={(e) => setNewBookingForm({ ...newBookingForm, roomDeposit: Math.max(0, Number(e.target.value) || 0) })}
-                                className="w-24 px-2 py-1 rounded-lg bg-[var(--card)] border border-[var(--border)] text-center font-bold text-xs text-blue-600 dark:text-blue-400 font-mono focus:border-blue-500"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 100 }))}
-                                className="w-7 h-7 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 font-bold text-xs flex items-center justify-center transition cursor-pointer"
-                                title="เพิ่ม 100 บาท"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Quick Add Pills */}
-                          <div className="flex items-center gap-1.5 pt-0.5 text-[11px]">
-                            <span className="text-[var(--muted)] text-[10px]">เพิ่มด่วน:</span>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 200 }))}
-                              className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-blue-500/10 hover:text-blue-600 text-[10px] font-semibold transition cursor-pointer"
-                            >
-                              +200
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 500 }))}
-                              className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-blue-500/10 hover:text-blue-600 text-[10px] font-semibold transition cursor-pointer"
-                            >
-                              +500
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 1000 }))}
-                              className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-blue-500/10 hover:text-blue-600 text-[10px] font-semibold transition cursor-pointer"
-                            >
-                              +1,000
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: 0 }))}
-                              className="ml-auto px-1.5 py-0.5 rounded-md text-[var(--muted)] hover:text-rose-500 text-[10px] transition cursor-pointer"
-                            >
-                              รีเซ็ต 0
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Summary of Total Deposit */}
-                        <div className="flex items-center justify-between text-xs px-2 py-1 text-[var(--muted)]">
-                          <span>รวมเงินมัดจำทั้งหมด (ห้อง + กุญแจ):</span>
-                          <strong className="text-blue-600 dark:text-blue-400 font-bold font-mono">
-                            {formatCurrency((newBookingForm.roomDeposit || 0) + (newBookingForm.depositAmount || 0))}
-                          </strong>
+                        <div>
+                          <label className="block font-semibold mb-1">มัดจำคีย์การ์ด (บาท)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="50"
+                            value={newBookingForm.depositAmount}
+                            placeholder="500"
+                            onChange={(e) => setNewBookingForm({ ...newBookingForm, depositAmount: e.target.value === "" ? "" : Number(e.target.value) })}
+                            className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
+                          />
                         </div>
                       </div>
-                    ) : (
-                      /* Monthly Booking Pricing & Deposit */
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block font-semibold mb-1">ค่าเช่ารายเดือน (บาท/เดือน)</label>
+
+                      {/* ค่ามัดจำห้องพัก (สามารถพิมพ์ ลบ หรือกดเพิ่มได้) */}
+                      <div className="p-3 rounded-2xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block font-semibold text-xs text-[var(--foreground)]">
+                            ค่ามัดจำห้องพักรายวัน (บาท)
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: Math.max(0, (Number(prev.roomDeposit) || 0) - 100) }))}
+                              className="w-7 h-7 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                              title="ลด 100 บาท"
+                            >
+                              -
+                            </button>
                             <input
                               type="number"
                               min="0"
                               step="100"
-                              value={newBookingForm.monthlyRate}
-                              onChange={(e) => setNewBookingForm({ ...newBookingForm, monthlyRate: Number(e.target.value) })}
-                              className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-semibold mb-1">เงินมัดจำ / ประกันสัญญา (บาท)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="500"
                               value={newBookingForm.roomDeposit}
-                              onChange={(e) => setNewBookingForm({ ...newBookingForm, roomDeposit: Number(e.target.value) })}
-                              className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-mono"
+                              placeholder="0"
+                              onChange={(e) => setNewBookingForm({ ...newBookingForm, roomDeposit: e.target.value === "" ? "" : Number(e.target.value) })}
+                              className="w-24 px-2 py-1 rounded-lg bg-[var(--card)] border border-[var(--border)] text-center font-bold text-xs text-blue-600 dark:text-blue-400 font-mono focus:border-blue-500"
                             />
+                            <button
+                              type="button"
+                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (Number(prev.roomDeposit) || 0) + 100 }))}
+                              className="w-7 h-7 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-blue-500 font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                              title="เพิ่ม 100 บาท"
+                            >
+                              +
+                            </button>
                           </div>
                         </div>
 
-                        {/* Quick Add Pills for Monthly Deposit */}
-                        <div className="p-3 rounded-2xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-[var(--foreground)]">ปรับยอดเงินมัดจำจองห้องรายเดือน</span>
-                            <span className="font-bold font-mono text-indigo-600 dark:text-indigo-400">
-                              {formatCurrency(newBookingForm.roomDeposit || 0)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 pt-0.5 text-[11px]">
-                            <span className="text-[var(--muted)] text-[10px]">เพิ่มด่วน:</span>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 1000 }))}
-                              className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-indigo-500/10 hover:text-indigo-600 text-[10px] font-semibold transition cursor-pointer"
-                            >
-                              +1,000
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 2000 }))}
-                              className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-indigo-500/10 hover:text-indigo-600 text-[10px] font-semibold transition cursor-pointer"
-                            >
-                              +2,000
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (prev.roomDeposit || 0) + 5000 }))}
-                              className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-indigo-500/10 hover:text-indigo-600 text-[10px] font-semibold transition cursor-pointer"
-                            >
-                              +5,000
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: 0 }))}
-                              className="ml-auto px-1.5 py-0.5 rounded-md text-[var(--muted)] hover:text-rose-500 text-[10px] transition cursor-pointer"
-                            >
-                              รีเซ็ต 0
-                            </button>
-                          </div>
+                        {/* Quick Add Pills */}
+                        <div className="flex items-center gap-1.5 pt-0.5 text-[11px]">
+                          <span className="text-[var(--muted)] text-[10px]">เพิ่มด่วน:</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (Number(prev.roomDeposit) || 0) + 200 }))}
+                            className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-blue-500/10 hover:text-blue-600 text-[10px] font-semibold transition cursor-pointer"
+                          >
+                            +200
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (Number(prev.roomDeposit) || 0) + 500 }))}
+                            className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-blue-500/10 hover:text-blue-600 text-[10px] font-semibold transition cursor-pointer"
+                          >
+                            +500
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: (Number(prev.roomDeposit) || 0) + 1000 }))}
+                            className="px-2 py-0.5 rounded-md bg-[var(--card)] border border-[var(--border)] hover:bg-blue-500/10 hover:text-blue-600 text-[10px] font-semibold transition cursor-pointer"
+                          >
+                            +1,000
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewBookingForm((prev) => ({ ...prev, roomDeposit: "" }))}
+                            className="ml-auto px-1.5 py-0.5 rounded-md text-[var(--muted)] hover:text-rose-500 text-[10px] transition cursor-pointer"
+                          >
+                            ลบหมด
+                          </button>
                         </div>
                       </div>
-                    )}
+
+                      {/* Summary of Total Deposit */}
+                      <div className="flex items-center justify-between text-xs px-2 py-1 text-[var(--muted)]">
+                        <span>รวมเงินมัดจำทั้งหมด (ห้อง + กุญแจ):</span>
+                        <strong className="text-blue-600 dark:text-blue-400 font-bold font-mono">
+                          {formatCurrency((Number(newBookingForm.roomDeposit) || 0) + (Number(newBookingForm.depositAmount) || 0))}
+                        </strong>
+                      </div>
+                    </div>
 
                     <div className="pt-2 flex justify-end gap-2 border-t border-[var(--border)]">
                       <button
@@ -4114,13 +4592,9 @@ export default function HomePage() {
                       <button
                         type="submit"
                         disabled={hasNoRooms || !newBookingForm.roomNumber}
-                        className={`px-4 py-2 rounded-xl text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                          newBookingForm.bookingType === "monthly"
-                            ? "bg-indigo-600 hover:bg-indigo-500"
-                            : "bg-blue-600 hover:bg-blue-500"
-                        }`}
+                        className="px-4 py-2 rounded-xl text-white font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-500"
                       >
-                        {newBookingForm.bookingType === "monthly" ? "บันทึกการจองรายเดือน" : "บันทึกการจองรายวัน"}
+                        บันทึกการจองรายวัน
                       </button>
                     </div>
                   </>
@@ -4201,6 +4675,9 @@ export default function HomePage() {
       <DailyCheckoutModal
         isOpen={Boolean(dailyCheckoutBooking)}
         booking={dailyCheckoutBooking}
+        room={rooms.find((r) => r.roomNumber === dailyCheckoutBooking?.roomNumber)}
+        electricRate={property.electricRate}
+        waterRate={property.waterRate}
         onClose={() => setDailyCheckoutBooking(null)}
         onConfirmCheckout={handleConfirmDailyCheckout}
       />

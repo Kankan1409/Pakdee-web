@@ -47,6 +47,7 @@ interface RoomDetailModalProps {
   dailyBookings?: DailyBooking[];
   onDailyCheckIn?: (bookingId: string, roomNumber: string) => void;
   onDailyCheckOut?: (bookingId: string, roomNumber: string, keyDeposit: number) => void;
+  onOpenCheckout?: (roomId: string) => void;
 }
 
 export function RoomDetailModal({
@@ -63,6 +64,7 @@ export function RoomDetailModal({
   dailyBookings = [],
   onDailyCheckIn,
   onDailyCheckOut,
+  onOpenCheckout,
 }: RoomDetailModalProps) {
   const [activeDocType, setActiveDocType] = useState<DocumentType | null>(null);
 
@@ -87,7 +89,24 @@ export function RoomDetailModal({
           b.roomNumber === room.roomNumber &&
           (b.status === "confirmed" || b.status === "checked_in")
       );
-  const isDaily = !isCleaning && (room.status === "daily" || !!activeDailyBooking);
+
+  // A room is strictly DAILY if status is 'daily', has active daily booking, or tenant is tagged as daily guest
+  const isDaily = !isCleaning && (
+    room.status === "daily" ||
+    Boolean(activeDailyBooking) ||
+    Boolean(room.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]"))
+  );
+
+  // A room is strictly MONTHLY if NOT daily, NOT cleaning, and is occupied/overdue or has long-term tenant
+  const isOccupiedMonthly = !isCleaning && !isDaily && (
+    room.status === "occupied" ||
+    room.status === "overdue" ||
+    Boolean(activeContract) ||
+    (Boolean(tenant) && !tenant?.notes?.includes("[ผู้เข้าพักรายวัน]"))
+  );
+
+  const isOccupiedDaily = isDaily;
+  const isOccupied = isOccupiedMonthly || isOccupiedDaily;
 
   const handleOpenDoc = (type: DocumentType) => {
     if (onOpenDocument) {
@@ -269,15 +288,16 @@ export function RoomDetailModal({
 
                 {/* Lease Details */}
                 {(() => {
-                  const countdownDays = room.leaseEndDate
-                    ? Math.ceil((new Date(room.leaseEndDate).getTime() - new Date().setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24))
+                  const hasValidDate = !!room.leaseEndDate && !isNaN(new Date(room.leaseEndDate).getTime());
+                  const countdownDays = hasValidDate
+                    ? Math.ceil((new Date(room.leaseEndDate!).getTime() - new Date().setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24))
                     : null;
                   return (
                     <div className="pt-2.5 border-t border-[var(--border)] grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                       <div className="flex items-center gap-1.5 text-[var(--muted)] flex-wrap">
                         <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                         <span>สิ้นสุดสัญญา: <strong className="text-[var(--foreground)]">{room.leaseEndDate || "-"}</strong></span>
-                        {countdownDays !== null && (
+                        {countdownDays !== null && !isNaN(countdownDays) && (
                           <span
                             className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                               countdownDays <= 0
@@ -580,6 +600,40 @@ export function RoomDetailModal({
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>ยืนยันห้องสะอาดแล้ว</span>
+                  </button>
+                ) : isDaily ? (
+                  // สำหรับห้องพักรายวัน: เปิด DailyCheckoutModal (รูปที่ 2) เสมอ! ห้ามไปหน้าระบบสรุปย้ายออก
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const bookingId = activeDailyBooking?.id || `b-${room.roomNumber}-${Date.now()}`;
+                      const keyDep = activeDailyBooking?.keyDeposit ?? activeDailyBooking?.roomDeposit ?? 500;
+                      if (onDailyCheckOut) {
+                        onDailyCheckOut(bookingId, room.roomNumber, Number(keyDep));
+                      }
+                      onClose();
+                    }}
+                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-sm shadow-emerald-600/20"
+                    title="เช็คเอาท์ & บันทึกรับเงินห้องพักรายวัน (เปิดหน้าต่างรับเงินรายวัน)"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>เช็คเอาท์ & รับเงินรายวัน</span>
+                  </button>
+                ) : isOccupiedMonthly ? (
+                  // สำหรับห้องพักรายเดือน: ไปหน้าระบบสรุปย้ายออก & คืนเงินประกัน
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenCheckout) {
+                        onOpenCheckout(room.id);
+                        onClose();
+                      }
+                    }}
+                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
+                    title="ห้องนี้มีผู้เช่ารายเดือนอยู่ ดำเนินการย้ายออกและเคลียร์บิล"
+                  >
+                    <DoorOpen className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                    <span>แจ้งย้ายออก / คืนห้อง</span>
                   </button>
                 ) : (
                   <button

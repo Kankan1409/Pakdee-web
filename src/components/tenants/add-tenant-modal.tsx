@@ -26,6 +26,7 @@ import {
   isValidEmail,
   isDateAfter,
 } from "@/lib/validators";
+import { globalPopup } from "@/lib/popup-context";
 
 interface AddTenantModalProps {
   isOpen: boolean;
@@ -187,65 +188,72 @@ export function AddTenantModal({
     }
   };
 
+  const reportError = (msg: string) => {
+    setErrorMessage(msg);
+    globalPopup.show({
+      level: "warning",
+      title: "แจ้งเตือนการกรอกข้อมูล (กรุณาตรวจสอบ)",
+      message: msg,
+      confirmText: "เข้าใจแล้ว",
+      hideCancel: true,
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!fullName.trim()) {
-      setErrorMessage("กรุณาระบุชื่อ-นามสกุลของผู้เช่า");
+      reportError("กรุณาระบุชื่อ-นามสกุลของผู้เช่า");
       return;
     }
     if (!phone.trim()) {
-      setErrorMessage("กรุณาระบุเบอร์โทรศัพท์ติดต่อของผู้เช่า");
+      reportError("กรุณาระบุเบอร์โทรศัพท์ติดต่อของผู้เช่า");
       return;
     }
     const cleanPhone = phone.replace(/\D/g, "");
     if (!isValidThaiPhone(cleanPhone)) {
-      setErrorMessage("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
+      reportError("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
       return;
     }
     if (!roomId) {
-      setErrorMessage("กรุณาเลือกห้องพักว่างที่ต้องการเข้าอยู่");
+      reportError("กรุณาเลือกห้องพักว่างที่ต้องการเข้าอยู่");
       return;
     }
     // Defensive check: ห้องพักต้องมีสถานะ "ว่าง" (vacant) เท่านั้น
     const targetRoom = rooms.find((r) => r.id === roomId);
     if (!targetRoom || targetRoom.status !== "vacant" || targetRoom.currentTenant) {
-      setErrorMessage(`ห้องพักที่เลือกไม่ว่าง (สถานะ: ${targetRoom?.status || "ไม่พบห้อง"}) ไม่สามารถลงทะเบียนเข้าพักได้`);
+      reportError(`ห้องพักที่เลือกไม่ว่าง (สถานะ: ${targetRoom?.status || "ไม่พบห้อง"}) ไม่สามารถลงทะเบียนเข้าพักได้`);
       return;
     }
     if (!idCard.trim()) {
-      setErrorMessage("กรุณากรอกเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
+      reportError("กรุณากรอกเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
       return;
     }
     const cleanId = idCard.replace(/\D/g, "");
     if (!isValidThaiIdCard(cleanId)) {
-      setErrorMessage("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)");
+      reportError("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)");
       return;
     }
-    // ตรวจสอบเลขประจำตัวประชาชนซ้ำกับผู้เช่าปัจจุบันในระบบ
-    if (existingTenants && existingTenants.some((t) => t.idCard && t.idCard.replace(/\D/g, "") === cleanId)) {
-      setErrorMessage("มีผู้เช่าที่ใช้เลขประจำตัวประชาชนนี้อยู่ในระบบแล้ว (ไม่สามารถลงทะเบียนซ้ำได้)");
-      return;
-    }
+    // หมายเหตุ: ไม่ตรวจสอบเลขประจำตัวประชาชนซ้ำกับผู้เช่าปัจจุบันหรือผู้ที่เคยเข้าพักแล้ว เพื่อรองรับกรณีผู้เช่าเดิมกลับมาเช่าใหม่ หรือเช่าห้องเพิ่มมากกว่า 1 ห้อง
     if (!address.trim()) {
-      setErrorMessage("กรุณากรอกที่อยู่ตามบัตรประชาชน/ทะเบียนบ้านของผู้เช่า");
+      reportError("กรุณากรอกที่อยู่ตามบัตรประชาชน/ทะเบียนบ้านของผู้เช่า");
       return;
     }
     if (email.trim() && !isValidEmail(email)) {
-      setErrorMessage("รูปแบบอีเมลไม่ถูกต้อง (เช่น example@gmail.com)");
+      reportError("รูปแบบอีเมลไม่ถูกต้อง (เช่น example@gmail.com)");
       return;
     }
     if (age && (Number(age) < 1 || Number(age) > 120)) {
-      setErrorMessage("กรุณาระบุอายุที่ถูกต้อง (1 - 120 ปี)");
+      reportError("กรุณาระบุอายุที่ถูกต้อง (1 - 120 ปี)");
       return;
     }
     if (!isDateAfter(endDate, startDate)) {
-      setErrorMessage("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
+      reportError("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
       return;
     }
     if (depositAmount < 0) {
-      setErrorMessage("จำนวนเงินประกันมัดจำต้องไม่ติดลบ");
+      reportError("จำนวนเงินประกันมัดจำต้องไม่ติดลบ");
       return;
     }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DailyBooking } from "@/types/dormitory";
+import { DailyBooking, Room } from "@/types/dormitory";
 import {
   Receipt,
   DoorOpen,
@@ -16,30 +16,52 @@ import {
   X,
   Sparkles,
   ArrowRight,
+  Zap,
+  Droplets,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 interface DailyCheckoutModalProps {
   isOpen: boolean;
   booking: DailyBooking | null;
+  room?: Room;
+  electricRate?: number;
+  waterRate?: number;
   onClose: () => void;
   onConfirmCheckout: (data: {
     booking: DailyBooking;
     extraCharges: number;
     extraNote: string;
     paymentMethod: "promptpay" | "cash";
+    electricPrev?: number;
+    electricCurr?: number;
+    waterPrev?: number;
+    waterCurr?: number;
+    chargeUtilities?: boolean;
+    electricCost?: number;
+    waterCost?: number;
+    elecUnits?: number;
+    waterUnits?: number;
   }) => Promise<void>;
 }
 
 export function DailyCheckoutModal({
   isOpen,
   booking,
+  room,
+  electricRate = 8,
+  waterRate = 18,
   onClose,
   onConfirmCheckout,
 }: DailyCheckoutModalProps) {
   const [extraCharges, setExtraCharges] = useState<number>(0);
   const [extraNote, setExtraNote] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"promptpay" | "cash">("promptpay");
+  const [elecPrev, setElecPrev] = useState<number | "">(0);
+  const [elecCurr, setElecCurr] = useState<number | "">(0);
+  const [waterPrev, setWaterPrev] = useState<number | "">(0);
+  const [waterCurr, setWaterCurr] = useState<number | "">(0);
+  const [chargeUtilities, setChargeUtilities] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
@@ -47,9 +69,17 @@ export function DailyCheckoutModal({
       setExtraCharges(0);
       setExtraNote("");
       setPaymentMethod("promptpay");
+      setChargeUtilities(true);
       setIsSubmitting(false);
+
+      const baseElec = room?.currentElectricMeter ?? booking.electricCheckIn ?? 0;
+      const baseWater = room?.currentWaterMeter ?? booking.waterCheckIn ?? 0;
+      setElecPrev(baseElec);
+      setElecCurr(baseElec);
+      setWaterPrev(baseWater);
+      setWaterCurr(baseWater);
     }
-  }, [booking]);
+  }, [booking, room]);
 
   if (!isOpen || !booking) return null;
 
@@ -57,7 +87,19 @@ export function DailyCheckoutModal({
   const keyDeposit = Number(booking.keyDeposit || 500);
   const roomDeposit = Number(booking.roomDeposit || 0);
   const totalDeposit = keyDeposit + roomDeposit;
-  const grandTotal = totalRoomPrice + (Number(extraCharges) || 0);
+
+  const elecPrevNum = elecPrev === "" ? 0 : Number(elecPrev);
+  const elecCurrNum = elecCurr === "" ? elecPrevNum : Number(elecCurr);
+  const elecUnitsUsed = Math.max(0, elecCurrNum - elecPrevNum);
+  const elecCost = elecUnitsUsed * electricRate;
+
+  const waterPrevNum = waterPrev === "" ? 0 : Number(waterPrev);
+  const waterCurrNum = waterCurr === "" ? waterPrevNum : Number(waterCurr);
+  const waterUnitsUsed = Math.max(0, waterCurrNum - waterPrevNum);
+  const waterCost = waterUnitsUsed * waterRate;
+
+  const totalUtilityCost = elecCost + waterCost;
+  const grandTotal = totalRoomPrice + (Number(extraCharges) || 0) + (chargeUtilities ? totalUtilityCost : 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +111,15 @@ export function DailyCheckoutModal({
         extraCharges: Number(extraCharges) || 0,
         extraNote,
         paymentMethod,
+        electricPrev: elecPrevNum,
+        electricCurr: elecCurrNum,
+        waterPrev: waterPrevNum,
+        waterCurr: waterCurrNum,
+        chargeUtilities,
+        electricCost: chargeUtilities ? elecCost : 0,
+        waterCost: chargeUtilities ? waterCost : 0,
+        elecUnits: elecUnitsUsed,
+        waterUnits: waterUnitsUsed,
       });
     } finally {
       setIsSubmitting(false);
@@ -183,6 +234,106 @@ export function DailyCheckoutModal({
               )}
             </div>
 
+            {/* Meter Readings Tracking & Calculation Section */}
+            <div className="p-3.5 rounded-2xl bg-[var(--subtle)] border border-[var(--border)] space-y-3">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-[var(--foreground)]">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>บันทึกเลขมิเตอร์วันเช็คเอาท์ & คำนวณค่าน้ำ-ไฟ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[11px] cursor-pointer font-medium text-[var(--foreground)] select-none">
+                    <input
+                      type="checkbox"
+                      checked={chargeUtilities}
+                      onChange={(e) => setChargeUtilities(e.target.checked)}
+                      className="rounded border-[var(--border)] text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                    />
+                    <span>นำมาคิดคำนวณในบิล</span>
+                  </label>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                    chargeUtilities
+                      ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border-emerald-500/30"
+                      : "text-slate-600 dark:text-slate-400 bg-slate-500/10 border-slate-500/20"
+                  }`}>
+                    {chargeUtilities ? `คำนวณเพิ่ม +฿${totalUtilityCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "รวมในค่าห้องแล้ว (฿0.00)"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Electricity */}
+                <div className="p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <Zap className="w-3 h-3" /> มิเตอร์ไฟ (@฿{electricRate}/หน่วย)
+                    </span>
+                    <span className="font-mono font-bold text-[10px] text-amber-700 dark:text-amber-300">
+                      +{elecUnitsUsed} หน่วย {elecUnitsUsed > 0 && `(=฿${elecCost.toFixed(2)})`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div>
+                      <span className="text-[10px] text-[var(--muted)] block">มิเตอร์เดิม:</span>
+                      <input
+                        type="number"
+                        value={elecPrev}
+                        onChange={(e) => setElecPrev(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-full px-2 py-1 rounded-lg bg-[var(--subtle)] border border-[var(--border)] font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-semibold text-[var(--foreground)] block">วันเช็คเอาท์:</span>
+                      <input
+                        type="number"
+                        value={elecCurr}
+                        onChange={(e) => setElecCurr(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="0"
+                        className="w-full px-2 py-1 rounded-lg bg-[var(--subtle)] border border-amber-500/40 font-mono text-xs font-bold text-amber-600 dark:text-amber-400 focus:outline-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Water */}
+                <div className="p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                      <Droplets className="w-3 h-3" /> มิเตอร์น้ำ (@฿{waterRate}/หน่วย)
+                    </span>
+                    <span className="font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300">
+                      +{waterUnitsUsed} หน่วย {waterUnitsUsed > 0 && `(=฿${waterCost.toFixed(2)})`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div>
+                      <span className="text-[10px] text-[var(--muted)] block">มิเตอร์เดิม:</span>
+                      <input
+                        type="number"
+                        value={waterPrev}
+                        onChange={(e) => setWaterPrev(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-full px-2 py-1 rounded-lg bg-[var(--subtle)] border border-[var(--border)] font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-semibold text-[var(--foreground)] block">วันเช็คเอาท์:</span>
+                      <input
+                        type="number"
+                        value={waterCurr}
+                        onChange={(e) => setWaterCurr(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="0"
+                        className="w-full px-2 py-1 rounded-lg bg-[var(--subtle)] border border-blue-500/40 font-mono text-xs font-bold text-blue-600 dark:text-blue-400 focus:outline-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-[var(--muted)] leading-tight">
+                * เมื่อมิเตอร์เปลี่ยน ระบบจะนำหน่วยที่เปลี่ยนมาคำนวณค่าน้ำ-ไฟทันที และอัปเดตลงเลขมิเตอร์ของผังห้องพักพร้อมบันทึกลงระบบบัญชีหอพัก
+              </p>
+            </div>
+
             {/* Deposit Refund Reminder */}
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5">
               <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -196,18 +347,48 @@ export function DailyCheckoutModal({
               </div>
             </div>
 
-            {/* Total Revenue Banner */}
-            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-                  ยอดรวมที่เก็บจากลูกค้า (บันทึกรายรับ)
-                </div>
-                <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                  ลงในหน้าใบแจ้งหนี้เป็นสถานะ "ชำระแล้ว" อัตโนมัติ
-                </div>
+            {/* Total Revenue Banner & Itemized Breakdown */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent border border-emerald-500/30 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[var(--muted)]">ค่าห้องพัก ({booking.nights || 1} คืน)</span>
+                <span className="font-semibold text-[var(--foreground)]">{formatCurrency(totalRoomPrice)}</span>
               </div>
-              <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(grandTotal)}
+              {chargeUtilities && elecUnitsUsed > 0 && (
+                <div className="flex justify-between items-center text-xs text-amber-600 dark:text-amber-400">
+                  <span>ค่าไฟฟ้า ({elecUnitsUsed} หน่วย x ฿{electricRate})</span>
+                  <span className="font-semibold">+{formatCurrency(elecCost)}</span>
+                </div>
+              )}
+              {chargeUtilities && waterUnitsUsed > 0 && (
+                <div className="flex justify-between items-center text-xs text-blue-600 dark:text-blue-400">
+                  <span>ค่าน้ำประปา ({waterUnitsUsed} หน่วย x ฿{waterRate})</span>
+                  <span className="font-semibold">+{formatCurrency(waterCost)}</span>
+                </div>
+              )}
+              {!chargeUtilities && totalUtilityCost > 0 && (
+                <div className="flex justify-between items-center text-xs text-slate-500 italic">
+                  <span>ค่าน้ำ-ไฟที่ใช้จริง ({elecUnitsUsed} หน่วยไฟ, {waterUnitsUsed} หน่วยน้ำ)</span>
+                  <span>รวมในค่าห้อง (ต้นทุนหอ ฿{totalUtilityCost.toFixed(2)})</span>
+                </div>
+              )}
+              {Number(extraCharges) > 0 && (
+                <div className="flex justify-between items-center text-xs text-amber-600 dark:text-amber-400">
+                  <span>ค่าบริการเสริม / ค่าปรับ</span>
+                  <span className="font-semibold">+{formatCurrency(Number(extraCharges))}</span>
+                </div>
+              )}
+              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                    ยอดรวมที่เก็บจากลูกค้า (บันทึกรายรับ)
+                  </div>
+                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                    ลงในหน้าใบแจ้งหนี้เป็นสถานะ "ชำระแล้ว" อัตโนมัติ
+                  </div>
+                </div>
+                <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(grandTotal)}
+                </div>
               </div>
             </div>
           </div>

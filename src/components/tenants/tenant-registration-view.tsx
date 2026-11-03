@@ -42,6 +42,7 @@ import {
   isValidEmail,
   isDateAfter,
 } from "@/lib/validators";
+import { globalPopup } from "@/lib/popup-context";
 
 // Standard 14 Legal Clauses (ข้อสัญญามาตรฐาน 14 ข้อ)
 const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
@@ -398,51 +399,58 @@ export function TenantRegistrationView({
     actualEquipment +
     actualFurniture;
 
+  const reportError = (msg: string) => {
+    setErrorMessage(msg);
+    globalPopup.show({
+      level: "warning",
+      title: "แจ้งเตือนการกรอกข้อมูล (กรุณาตรวจสอบ)",
+      message: msg,
+      confirmText: "เข้าใจแล้ว",
+      hideCancel: true,
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!roomId) {
-      setErrorMessage("กรุณาเลือกห้องพักว่างที่ต้องการทำสัญญา");
+      reportError("กรุณาเลือกห้องพักว่างที่ต้องการทำสัญญา");
       return;
     }
     if (!fullName.trim()) {
-      setErrorMessage("กรุณาระบุชื่อ-นามสกุลของผู้เช่า");
+      reportError("กรุณาระบุชื่อ-นามสกุลของผู้เช่า");
       return;
     }
     if (!phone.trim()) {
-      setErrorMessage("กรุณาระบุเบอร์โทรศัพท์ติดต่อของผู้เช่า");
+      reportError("กรุณาระบุเบอร์โทรศัพท์ติดต่อของผู้เช่า");
       return;
     }
     const cleanPhone = phone.replace(/\D/g, "");
     if (!isValidThaiPhone(cleanPhone)) {
-      setErrorMessage("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
+      reportError("เบอร์โทรศัพท์ไม่ถูกต้อง (ต้องเป็น 10 หลัก ขึ้นต้นด้วย 0)");
       return;
     }
     if (!idCard.trim()) {
-      setErrorMessage("กรุณาระบุเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
+      reportError("กรุณาระบุเลขประจำตัวประชาชน 13 หลักของผู้เช่า");
       return;
     }
     const cleanId = idCard.replace(/\D/g, "");
     if (!isValidThaiIdCard(cleanId)) {
-      setErrorMessage("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)");
+      reportError("เลขประจำตัวประชาชนไม่ถูกต้องตามมาตรฐาน 13 หลัก (กรุณาตรวจสอบความถูกต้องและ Checksum)");
       return;
     }
-    // ตรวจสอบเลขบัตรประชาชนซ้ำกับผู้เช่าปัจจุบันในระบบ
-    if (existingTenants && existingTenants.some((t) => t.idCard && t.idCard.replace(/\D/g, "") === cleanId)) {
-      setErrorMessage("มีผู้เช่าที่ใช้เลขประจำตัวประชาชนนี้อยู่ในระบบแล้ว (ไม่สามารถลงทะเบียนซ้ำได้)");
-      return;
-    }
+    // หมายเหตุ: ไม่ตรวจสอบเลขประจำตัวประชาชนซ้ำกับผู้เช่าปัจจุบันหรือผู้ที่เคยเข้าพักแล้ว เพื่อรองรับกรณีผู้เช่าเดิมกลับมาเช่าใหม่ หรือเช่าห้องเพิ่มมากกว่า 1 ห้อง
     if (email.trim() && !isValidEmail(email)) {
-      setErrorMessage("รูปแบบอีเมลไม่ถูกต้อง (เช่น example@gmail.com)");
+      reportError("รูปแบบอีเมลไม่ถูกต้อง (เช่น example@gmail.com)");
       return;
     }
     if (age && (Number(age) < 1 || Number(age) > 120)) {
-      setErrorMessage("กรุณาระบุอายุที่ถูกต้อง (1 - 120 ปี)");
+      reportError("กรุณาระบุอายุที่ถูกต้อง (1 - 120 ปี)");
       return;
     }
     if (!isContinuous && !isDateAfter(endDate, startDate)) {
-      setErrorMessage("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
+      reportError("วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มต้นสัญญา");
       return;
     }
 
@@ -494,7 +502,7 @@ export function TenantRegistrationView({
       });
     } catch (err) {
       console.error(err);
-      setErrorMessage("เกิดข้อผิดพลาดในการลงทะเบียนผู้เช่า กรุณาลองใหม่อีกครั้ง");
+      reportError("เกิดข้อผิดพลาดในการลงทะเบียนผู้เช่า กรุณาลองใหม่อีกครั้ง");
     } finally {
       setIsSubmitting(false);
     }

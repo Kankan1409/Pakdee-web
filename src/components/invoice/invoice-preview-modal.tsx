@@ -184,10 +184,10 @@ export function InvoicePreviewModal({
                 <tr key={idx}>
                   <td className="py-2.5 font-medium">{item.name}</td>
                   <td className="py-2.5 text-center text-slate-500">
-                    {item.units ? `${item.units}` : "-"}
+                    {item.units !== undefined ? `${item.units}` : "-"}
                   </td>
                   <td className="py-2.5 text-right text-slate-500">
-                    {item.rate ? item.rate.toFixed(2) : "-"}
+                    {item.rate !== undefined && item.rate > 0 ? item.rate.toFixed(2) : "-"}
                   </td>
                   <td className="py-2.5 text-right font-semibold">
                     {item.amount.toLocaleString("th-TH", {

@@ -32,8 +32,8 @@ export function QuickMeterModal({
   );
   const currentRoom = activeRooms[currentIndex] || activeRooms[0];
 
-  const [electricNew, setElectricNew] = useState<number>(0);
-  const [waterNew, setWaterNew] = useState<number>(0);
+  const [electricNew, setElectricNew] = useState<number | "">(0);
+  const [waterNew, setWaterNew] = useState<number | "">(0);
 
   // Sync index when modal opens or initialRoomId changes
   useEffect(() => {
@@ -56,14 +56,17 @@ export function QuickMeterModal({
 
   if (!isOpen || !currentRoom) return null;
 
-  const electricUnits = Math.max(0, electricNew - currentRoom.currentElectricMeter);
+  const elecVal = electricNew === "" ? currentRoom.currentElectricMeter : Number(electricNew);
+  const waterVal = waterNew === "" ? currentRoom.currentWaterMeter : Number(waterNew);
+
+  const electricUnits = Math.max(0, elecVal - currentRoom.currentElectricMeter);
   const electricCost = electricUnits * electricRate;
 
-  const waterUnits = Math.max(0, waterNew - currentRoom.currentWaterMeter);
+  const waterUnits = Math.max(0, waterVal - currentRoom.currentWaterMeter);
   const waterCost = waterUnits * waterRate;
 
   const handleSaveAndNext = () => {
-    onSaveReading(currentRoom.id, electricNew, waterNew);
+    onSaveReading(currentRoom.id, elecVal, waterVal);
     if (currentIndex < activeRooms.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -122,7 +125,8 @@ export function QuickMeterModal({
               <input
                 type="number"
                 value={electricNew}
-                onChange={(e) => setElectricNew(Number(e.target.value))}
+                placeholder={String(currentRoom.currentElectricMeter)}
+                onChange={(e) => setElectricNew(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-2.5 text-center text-xl font-bold text-[var(--foreground)] focus:outline-none focus:border-emerald-500 font-mono"
               />
             </div>
@@ -148,7 +152,8 @@ export function QuickMeterModal({
               <input
                 type="number"
                 value={waterNew}
-                onChange={(e) => setWaterNew(Number(e.target.value))}
+                placeholder={String(currentRoom.currentWaterMeter)}
+                onChange={(e) => setWaterNew(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-2.5 text-center text-xl font-bold text-[var(--foreground)] focus:outline-none focus:border-emerald-500 font-mono"
               />
             </div>

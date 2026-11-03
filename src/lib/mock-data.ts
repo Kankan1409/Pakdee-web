@@ -86,7 +86,48 @@ export const initialRepairs: RepairItem[] = [];
 
 export const initialContracts: ContractItem[] = [];
 
-export const initialExpenses: ExpenseItem[] = [];
+export const initialExpenses: ExpenseItem[] = [
+  {
+    id: "exp-01",
+    propertyId: "prop-1",
+    category: "electric",
+    title: "บิลค่าไฟฟ้าการไฟฟ้านครหลวง (หม้อแปลงหลัก)",
+    amount: 3200,
+    date: "2026-10-25",
+    paidTo: "การไฟฟ้านครหลวง (MEA)",
+    notes: "บิลค่าไฟรอบเดือน ต.ค. 2569",
+  },
+  {
+    id: "exp-02",
+    propertyId: "prop-1",
+    category: "water",
+    title: "บิลค่าน้ำประปาการประปานครหลวง",
+    amount: 850,
+    date: "2026-10-25",
+    paidTo: "การประปานครหลวง (MWA)",
+    notes: "บิลค่าน้ำรอบเดือน ต.ค. 2569",
+  },
+  {
+    id: "exp-03",
+    propertyId: "prop-1",
+    category: "salary",
+    title: "ค่าจ้างแม่บ้านทำความสะอาดส่วนกลางและบันได",
+    amount: 2500,
+    date: "2026-10-28",
+    paidTo: "ป้าสมใจ (แม่บ้าน)",
+    notes: "รอบสิ้นเดือน ต.ค. 2569",
+  },
+  {
+    id: "exp-04",
+    propertyId: "prop-1",
+    category: "repairs",
+    title: "ค่าช่างเปลี่ยนก๊อกน้ำและท่อน้ำทิ้งห้อง 104",
+    amount: 450,
+    date: "2026-10-20",
+    paidTo: "ช่างสมคิด บริการ",
+    notes: "รวมค่าอุปกรณ์และค่าแรง",
+  },
+];
 
 export const initialBroadcasts: BroadcastItem[] = [];
 
@@ -101,10 +142,10 @@ export const initialBranchSettings: BranchSettingsDetail = {
   taxId: "0105566012345",
   waterRate: 18,
   electricRate: 8,
-  useMinWater: true,
+  useMinWater: false,
   minWaterUnits: 3,
   minWaterFee: 100,
-  useMinElectric: true,
+  useMinElectric: false,
   minElectricUnits: 3,
   minElectricFee: 100,
   commonFee: 100,

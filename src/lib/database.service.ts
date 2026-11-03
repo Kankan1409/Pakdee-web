@@ -590,8 +590,96 @@ export const DatabaseService = {
     }
 
     setLocal(KEYS.ROOMS, updatedRooms);
+
+    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page refresh
+    if (typeof window !== "undefined") {
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updatedRooms }),
+          keepalive: true,
+        });
+      } catch (e) {
+        console.warn("[HostDB] Await sync room failed:", e);
+      }
+    }
+
     await this.logActivity("CREATE", "ROOM", `เพิ่มห้องพัก ${newRoom.roomNumber} (ชั้น ${newRoom.floor})`, propId);
     return newRoom;
+  },
+
+  async addRoomsBatch(
+    roomsList: {
+      roomNumber: string;
+      floor: number;
+      type: string;
+      monthlyRate: number;
+      dailyRate?: number;
+      status: RoomStatus;
+      buildingId?: string;
+      propertyId?: string;
+    }[],
+    propertyId?: string
+  ): Promise<Room[]> {
+    const propId = propertyId || this.getActivePropertyId();
+    const allRooms = this.getAllRawRooms();
+    const createdRooms: Room[] = [];
+
+    let currentAll = [...allRooms];
+
+    for (const rData of roomsList) {
+      const existingIdx = currentAll.findIndex(
+        (r) => (r.propertyId || "prop-1") === propId && r.roomNumber === rData.roomNumber
+      );
+
+      const newRoom: Room = {
+        id: existingIdx >= 0 ? currentAll[existingIdx].id : `room-${propId}-${rData.roomNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        propertyId: propId,
+        buildingId: rData.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`),
+        roomNumber: rData.roomNumber,
+        floor: rData.floor,
+        type: rData.type,
+        monthlyRate: rData.monthlyRate,
+        dailyRate: rData.dailyRate || 650,
+        status: rData.status || "vacant",
+        currentElectricMeter: existingIdx >= 0 ? currentAll[existingIdx].currentElectricMeter : 0,
+        currentWaterMeter: existingIdx >= 0 ? currentAll[existingIdx].currentWaterMeter : 0,
+      };
+
+      if (existingIdx >= 0) {
+        currentAll[existingIdx] = newRoom;
+      } else {
+        currentAll.push(newRoom);
+      }
+      createdRooms.push(newRoom);
+    }
+
+    // 1. Immediately update in-memory and localStorage
+    setLocal(KEYS.ROOMS, currentAll);
+
+    // 2. Guaranteed Host Machine Persistence: Explicitly await write in ONE single atomic POST
+    if (typeof window !== "undefined") {
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: KEYS.ROOMS, value: currentAll }),
+          keepalive: true,
+        });
+      } catch (err) {
+        console.warn("[HostDB] Batch sync rooms failed:", err);
+      }
+    }
+
+    await this.logActivity(
+      "CREATE",
+      "ROOM",
+      `เพิ่มห้องพักเป็นชุด ${createdRooms.length} ห้อง (${createdRooms.map((r) => r.roomNumber).join(", ")})`,
+      propId
+    );
+
+    return createdRooms;
   },
 
   async updateRoomStatus(roomId: string, status: RoomStatus): Promise<boolean> {
@@ -984,14 +1072,36 @@ export const DatabaseService = {
       return invoices;
     }
 
-    // Auto migrate any legacy invoices missing propertyId into prop-1
+    // Auto migrate any legacy invoices missing propertyId into prop-1 and sanitize 0-unit charges
     let needsUpdate = false;
     const migrated = invoices.map((inv) => {
+      let updatedInv = inv;
       if (!inv.propertyId) {
         needsUpdate = true;
-        return { ...inv, propertyId: "prop-1" };
+        updatedInv = { ...updatedInv, propertyId: "prop-1" };
       }
-      return inv;
+      // Defensive fix: If meter units is 0 (prev === curr), electric and water amount MUST be 0
+      let itemsChanged = false;
+      const sanitizedItems = (updatedInv.items || []).map((item) => {
+        const isMeterZero = item.units === 0 || (item.meterPrev !== undefined && item.meterCurr !== undefined && item.meterPrev === item.meterCurr);
+        const isUtility = item.name.includes("ค่าไฟ") || item.name.includes("ค่าน้ำ");
+        if (isMeterZero && isUtility && item.amount > 0) {
+          itemsChanged = true;
+          return { ...item, amount: 0 };
+        }
+        return item;
+      });
+      if (itemsChanged) {
+        needsUpdate = true;
+        const newTotal = sanitizedItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+        updatedInv = {
+          ...updatedInv,
+          items: sanitizedItems,
+          totalAmount: newTotal,
+          remainingAmount: updatedInv.status === "paid" ? 0 : newTotal - (updatedInv.paidAmount || 0),
+        };
+      }
+      return updatedInv;
     });
     if (needsUpdate) {
       setLocal(KEYS.INVOICES, migrated);
@@ -1034,13 +1144,27 @@ export const DatabaseService = {
       (i) => (i.propertyId || "prop-1") === propId && i.invoiceNumber === invoiceNumber
     );
 
+    let isOverwrite = false;
+    let finalInvoiceNumber = invoiceNumber;
+
+    if (existingIdx >= 0) {
+      const existing = allInvoices[existingIdx];
+      // กฎการเงิน: หากบิลเดิมชำระแล้ว หรือเป็นของผู้เช่าคนละคน ให้เก็บรักษาไว้ (LOG) ไม่ลบ/ไม่ทับเด็ดขาด
+      if (existing.status === "paid" || existing.status === "partial" || existing.tenantName !== invoiceData.tenantName) {
+        finalInvoiceNumber = `INV-${invoiceData.billingMonth.replace("-", "")}-${invoiceData.roomNumber}-${Date.now().toString().slice(-4)}`;
+        isOverwrite = false;
+      } else {
+        isOverwrite = true;
+      }
+    }
+
     // Newly generated or recalculated bills MUST start as "unpaid" so tenants can pay!
     const targetStatus = invoiceData.status || "unpaid";
 
     const newInvoice: Invoice = {
-      id: existingIdx >= 0 ? allInvoices[existingIdx].id : `inv-${propId}-${Date.now()}-${invoiceData.roomNumber}`,
+      id: isOverwrite ? allInvoices[existingIdx].id : `inv-${propId}-${Date.now()}-${invoiceData.roomNumber}`,
       propertyId: propId,
-      invoiceNumber,
+      invoiceNumber: finalInvoiceNumber,
       roomNumber: invoiceData.roomNumber,
       tenantName: invoiceData.tenantName,
       tenantPhone: invoiceData.tenantPhone,
@@ -1049,11 +1173,11 @@ export const DatabaseService = {
       totalAmount: invoiceData.totalAmount,
       status: targetStatus,
       items: invoiceData.items,
-      paidAt: targetStatus === "paid" ? (existingIdx >= 0 ? allInvoices[existingIdx].paidAt : new Date().toISOString()) : undefined,
+      paidAt: targetStatus === "paid" ? (isOverwrite ? allInvoices[existingIdx].paidAt : new Date().toISOString()) : undefined,
     };
 
     let updated: Invoice[];
-    if (existingIdx >= 0) {
+    if (isOverwrite) {
       updated = allInvoices.map((inv, idx) => (idx === existingIdx ? newInvoice : inv));
     } else {
       updated = [newInvoice, ...allInvoices];
@@ -1531,6 +1655,18 @@ export const DatabaseService = {
     setLocal(KEYS.EXPENSES, [newExpense, ...all]);
     await this.logActivity("CREATE", "SETTINGS", `บันทึกรายจ่าย: ${item.title} (฿${item.amount.toLocaleString()})`, propId);
     return newExpense;
+  },
+
+  async deleteExpense(id: string, propertyId?: string): Promise<boolean> {
+    const propId = propertyId || this.getActivePropertyId();
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
+    const target = all.find((e) => e.id === id);
+    const updated = all.filter((e) => e.id !== id);
+    setLocal(KEYS.EXPENSES, updated);
+    if (target) {
+      await this.logActivity("DELETE", "SETTINGS", `ลบรายการรายจ่าย: ${target.title} (฿${target.amount.toLocaleString()})`, propId);
+    }
+    return true;
   },
 
   // -------------------------------------------------------------

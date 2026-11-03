@@ -34,35 +34,41 @@ export function MeterSpreadsheetView({
       roomNumber: string;
       tenantName: string;
       electricPrev: number;
-      electricCurr: number;
+      electricCurr: number | "";
       waterPrev: number;
-      waterCurr: number;
+      waterCurr: number | "";
     }[]
   >([]);
 
   useEffect(() => {
     setRows(
-      rooms.map((r) => ({
-        roomId: r.id,
-        roomNumber: r.roomNumber,
-        tenantName: r.currentTenant ? r.currentTenant.fullName : "(ห้องว่าง)",
-        electricPrev: r.currentElectricMeter,
-        electricCurr: r.currentElectricMeter + 25, // default simulation increment
-        waterPrev: r.currentWaterMeter,
-        waterCurr: r.currentWaterMeter + 4,
-      }))
+      rooms.map((r) => {
+        const hasTenant = Boolean(r.currentTenant);
+        return {
+          roomId: r.id,
+          roomNumber: r.roomNumber,
+          tenantName: hasTenant ? r.currentTenant!.fullName : "(ห้องว่าง)",
+          electricPrev: r.currentElectricMeter,
+          // ถ้าเป็นห้องว่าง ไม่ใส่หน่วยไฟ/น้ำอัตโนมัติ ให้เป็น 0 (มิเตอร์ปัจจุบัน = มิเตอร์ก่อนหน้า)
+          electricCurr: r.currentElectricMeter + (hasTenant ? 25 : 0),
+          waterPrev: r.currentWaterMeter,
+          waterCurr: r.currentWaterMeter + (hasTenant ? 4 : 0),
+        };
+      })
     );
   }, [rooms]);
 
   const [searchQuery, setSearchQuery] = useState("");
 
-  const handleElectricChange = (roomId: string, val: number) => {
+  const handleElectricChange = (roomId: string, rawVal: string) => {
+    const val = rawVal === "" ? "" : Number(rawVal);
     setRows((prev) =>
       prev.map((r) => (r.roomId === roomId ? { ...r, electricCurr: val } : r))
     );
   };
 
-  const handleWaterChange = (roomId: string, val: number) => {
+  const handleWaterChange = (roomId: string, rawVal: string) => {
+    const val = rawVal === "" ? "" : Number(rawVal);
     setRows((prev) =>
       prev.map((r) => (r.roomId === roomId ? { ...r, waterCurr: val } : r))
     );
@@ -78,22 +84,33 @@ export function MeterSpreadsheetView({
   });
 
   const totalElecUnits = rows.reduce(
-    (acc, r) => acc + Math.max(0, r.electricCurr - r.electricPrev),
+    (acc, r) => acc + Math.max(0, (r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr)) - r.electricPrev),
     0
   );
   const totalWaterUnits = rows.reduce(
-    (acc, r) => acc + Math.max(0, r.waterCurr - r.waterPrev),
+    (acc, r) => acc + Math.max(0, (r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr)) - r.waterPrev),
     0
   );
   const totalEstimatedCost =
     totalElecUnits * electricRate + totalWaterUnits * waterRate;
 
   const recordedCount = rows.filter(
-    (r) => r.electricCurr > r.electricPrev || r.waterCurr > r.waterPrev
+    (r) =>
+      (r.electricCurr !== "" && Number(r.electricCurr) > r.electricPrev) ||
+      (r.waterCurr !== "" && Number(r.waterCurr) > r.waterPrev)
   ).length;
 
   const handleSaveAll = () => {
-    onSaveMeters(rows);
+    onSaveMeters(
+      rows.map((r) => ({
+        roomId: r.roomId,
+        roomNumber: r.roomNumber,
+        electricCurr: r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr),
+        waterCurr: r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr),
+        electricPrev: r.electricPrev,
+        waterPrev: r.waterPrev,
+      }))
+    );
   };
 
   return (
@@ -291,8 +308,10 @@ export function MeterSpreadsheetView({
                 <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
                   {filteredRows.length > 0 ? (
                     filteredRows.map((row) => {
-                      const elecDiff = Math.max(0, row.electricCurr - row.electricPrev);
-                      const waterDiff = Math.max(0, row.waterCurr - row.waterPrev);
+                      const elecVal = row.electricCurr === "" ? row.electricPrev : Number(row.electricCurr);
+                      const waterVal = row.waterCurr === "" ? row.waterPrev : Number(row.waterCurr);
+                      const elecDiff = Math.max(0, elecVal - row.electricPrev);
+                      const waterDiff = Math.max(0, waterVal - row.waterPrev);
                       const cost = elecDiff * electricRate + waterDiff * waterRate;
 
                       return (
@@ -311,7 +330,8 @@ export function MeterSpreadsheetView({
                               type="number"
                               min={row.electricPrev}
                               value={row.electricCurr}
-                              onChange={(e) => handleElectricChange(row.roomId, Number(e.target.value))}
+                              placeholder={String(row.electricPrev)}
+                              onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
                               className="w-24 px-2.5 py-1.5 rounded-lg bg-[var(--card)] border border-amber-300 dark:border-amber-700 text-center font-mono font-bold text-amber-600 dark:text-amber-400 focus:ring-2 focus:ring-amber-500/40 text-xs"
                             />
                           </td>
@@ -326,7 +346,8 @@ export function MeterSpreadsheetView({
                               type="number"
                               min={row.waterPrev}
                               value={row.waterCurr}
-                              onChange={(e) => handleWaterChange(row.roomId, Number(e.target.value))}
+                              placeholder={String(row.waterPrev)}
+                              onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
                               className="w-24 px-2.5 py-1.5 rounded-lg bg-[var(--card)] border border-blue-300 dark:border-blue-700 text-center font-mono font-bold text-blue-600 dark:text-blue-400 focus:ring-2 focus:ring-blue-500/40 text-xs"
                             />
                         </td>
