@@ -66,9 +66,11 @@ export async function POST(req: NextRequest) {
       const userId = event.source?.userId;
 
       // Ignore verify probes without replyToken
-      if (!replyToken || replyToken === "00000000000000000000000000000000") {
+      if (!replyToken || /^[0f]+$/i.test(replyToken)) {
+        console.log(`[LINE-WEBHOOK] Verify probe acknowledged from LINE Platform (Token: ${replyToken})`);
         continue;
       }
+      console.log(`[LINE-WEBHOOK] >>> TRANSACTION RECEIVED: Type=${event.type} User=${userId} Msg=${event.message?.text || event.message?.type}`);
 
       // Event: Follow (ผู้เช่าแอดไลน์เข้ามาใหม่)
       if (event.type === "follow") {
