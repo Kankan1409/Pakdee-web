@@ -30,6 +30,8 @@ const files = [
   'src/components/cleaning/cleaning-board-view.tsx',
   'src/components/tenants/tenants-list-view.tsx',
   'src/components/invoices/invoices-billing-view.tsx',
+  'src/components/invoices/slip-verification-view.tsx',
+  'src/components/invoices/receipts-list-view.tsx',
   'src/components/layout/sidebar.tsx',
   'src/app/page.tsx',
   'data/db_port3000.json'

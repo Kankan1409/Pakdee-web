@@ -13,6 +13,8 @@ import { QuickMeterModal } from "@/components/meter/quick-meter-modal";
 import { MeterSpreadsheetView } from "@/components/meters/meter-spreadsheet-view";
 import { InvoicePreviewModal } from "@/components/invoice/invoice-preview-modal";
 import { InvoicesBillingView } from "@/components/invoices/invoices-billing-view";
+import { SlipVerificationView } from "@/components/invoices/slip-verification-view";
+import { ReceiptsListView } from "@/components/invoices/receipts-list-view";
 import { SuperAdminModal } from "@/components/admin/super-admin-modal";
 import { ContractManagementView } from "@/components/contracts/contract-management-view";
 import { RepairsManagementView } from "@/components/repairs/repairs-management-view";
@@ -2844,84 +2846,17 @@ export default function HomePage() {
           )}
 
           {/* VIEW: Slips (AI Slip Verification) */}
-          {currentTab === "slips" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-blue-500" />
-                    <span>ระบบตรวจสลิปโอนเงิน (AI & PromptPay Slip Verification)</span>
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    ตรวจเช็คความถูกต้องของสลิปโอนเงินอัตโนมัติ ป้องกันสลิปปลอม และสลิปซ้ำ
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--subtle)] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs">สลิปห้อง 101 (รอบ ต.ค. 2026)</span>
-                    <span className="text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold px-2 py-0.5 rounded-full">
-                      ตรวจสอบผ่าน 100%
-                    </span>
-                  </div>
-                  <div className="text-xs space-y-1 text-[var(--muted)]">
-                    <div>ผู้โอน: นายสมชาย สุขสบาย (ธ.กสิกรไทย)</div>
-                    <div>ยอดเงิน: <span className="font-semibold text-emerald-600">5,064.00 บาท</span> (ตรงกับยอดบิล)</div>
-                    <div>เลขอ้างอิง: 2026102609384501</div>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl border border-dashed border-[var(--border)] flex flex-col items-center justify-center text-center p-6 space-y-2">
-                  <CreditCard className="w-8 h-8 text-[var(--muted)]" />
-                  <div className="text-xs font-semibold">รายการสลิปรอตรวจสอบ</div>
-                  <div className="text-[10px] text-[var(--muted)]">
-                    เมื่อผู้เช่าส่งสลิปผ่าน LINE OA ระบบ AI จะอ่านยอดเงินและเวลาเพื่อจับคู่บิลอัตโนมัติ
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {currentTab === "slips" && <SlipVerificationView />}
 
           {/* VIEW: Receipts */}
           {currentTab === "receipts" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                    <Printer className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>ระบบออกใบเสร็จรับเงิน (Official Receipts)</span>
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    รายการบิลที่ชำระแล้ว พร้อมพิมพ์ใบเสร็จหรือส่ง PDF ทาง LINE
-                  </p>
-                </div>
-              </div>
-
-              <div className="divide-y divide-[var(--border)] text-xs">
-                {invoices.filter((i) => i.status === "paid").map((inv) => (
-                  <div key={inv.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-sm">REC-{inv.invoiceNumber.replace("INV-", "")}</span> - ห้อง {inv.roomNumber} ({inv.tenantName})
-                      <div className="text-[11px] text-[var(--muted)]">
-                        ชำระเมื่อ {inv.paidAt ? formatDateThai(inv.paidAt) : "26 ต.ค. 2026"} • ยอดเงิน {formatCurrency(inv.totalAmount)}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setActiveInvoice(inv);
-                        setIsInvoiceModalOpen(true);
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>พิมพ์ใบเสร็จ</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ReceiptsListView
+              invoices={invoices}
+              onOpenReceipt={(inv) => {
+                setActiveInvoice(inv);
+                setIsInvoiceModalOpen(true);
+              }}
+            />
           )}
 
           {/* VIEW: Tenants Directory (รวมทั้งผู้เช่ารายเดือนและผู้เข้าพักรายวัน) */}

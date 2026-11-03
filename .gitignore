@@ -57,3 +57,5 @@ data/*_snapshot*.json
 
 # Excel files in root
 /*.xlsx
+GIT1/
+AGENTS.md
