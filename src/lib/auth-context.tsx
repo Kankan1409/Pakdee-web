@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 
 export type UserRole = "owner" | "manager";
 
@@ -80,7 +80,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const lastActivityRef = React.useRef<number>(Date.now());
+  const lastActivityRef = React.useRef<number>(0);
+
+  const saveUserSession = useCallback((user: AuthUser | null) => {
+    setCurrentUser(user);
+    try {
+      if (user) {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn("Failed to write Pakdee auth session:", e);
+    }
+  }, []);
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -103,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 15-Minute Inactivity Session Monitor
   useEffect(() => {
     if (!currentUser) return;
+    lastActivityRef.current = Date.now();
 
     const updateActivity = () => {
       lastActivityRef.current = Date.now();
@@ -123,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // เช็คทุก 5 วินาที หากไม่มีการขยับเมาส์/กดคีย์บอร์ดเกิน 15 นาที ให้ตัดเซสชันทันที
     const interval = setInterval(() => {
-      if (Date.now() - lastActivityRef.current >= INACTIVITY_TIMEOUT_MS) {
+      if (lastActivityRef.current > 0 && Date.now() - lastActivityRef.current >= INACTIVITY_TIMEOUT_MS) {
         setSessionExpired(true);
         saveUserSession(null);
       }
@@ -134,20 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearInterval(interval);
       if (throttleTimeout) clearTimeout(throttleTimeout);
     };
-  }, [currentUser]);
-
-  const saveUserSession = (user: AuthUser | null) => {
-    setCurrentUser(user);
-    try {
-      if (user) {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-      }
-    } catch (e) {
-      console.warn("Failed to write Pakdee auth session:", e);
-    }
-  };
+  }, [currentUser, saveUserSession]);
 
   const login = async (identifier: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     await new Promise((res) => setTimeout(res, 300));

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { BranchSettingsDetail, Property, Room, RoomTypeConfig, defaultRoomTypes } from "@/types/dormitory";
+import { BranchSettingsDetail, Property } from "@/types/dormitory";
 import { isValidPromptPayTarget } from "@/lib/promptpay";
 import { isValidHttpsUrl, isValidBankAccount } from "@/lib/validators";
 import { globalPopup } from "@/lib/popup-context";
@@ -23,22 +23,11 @@ import {
   Copy,
   QrCode,
   Upload,
-  BedDouble,
-  Plus,
-  Trash2,
-  Edit2,
-  RotateCcw,
-  Star,
-  Check,
-  AlertCircle,
-  X,
-  DoorOpen,
 } from "lucide-react";
 
 interface BranchSettingsViewProps {
   settings: BranchSettingsDetail;
   onSaveSettings: (updated: Partial<BranchSettingsDetail>) => void;
-  rooms?: Room[];
 }
 
 // รายชื่อธนาคารพาณิชย์หลักในประเทศไทย
@@ -63,36 +52,14 @@ const THAI_BANKS = [
 export function BranchSettingsView({
   settings,
   onSaveSettings,
-  rooms = [],
 }: BranchSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<string>("building");
   const [formData, setFormData] = useState<BranchSettingsDetail>(settings);
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const prevBranchIdRef = useRef<string>(settings?.id || "");
 
-  // Room Types State
-  const [isRoomTypeModalOpen, setIsRoomTypeModalOpen] = useState<boolean>(false);
-  const [editingRoomTypeId, setEditingRoomTypeId] = useState<string | null>(null);
-  const [roomTypeForm, setRoomTypeForm] = useState<{
-    name: string;
-    monthlyRate: number;
-    dailyRate: number;
-    description: string;
-    isDefault: boolean;
-  }>({
-    name: "",
-    monthlyRate: 4000,
-    dailyRate: 650,
-    description: "",
-    isDefault: false,
-  });
-
-  // Current room types list
-  const roomTypesList: RoomTypeConfig[] =
-    formData.roomTypes && formData.roomTypes.length > 0 ? formData.roomTypes : defaultRoomTypes;
-
   // Only reset form data if the user switches to a DIFFERENT branch
-  // Navigating between tabs retains all unsaved edits across all tabs
+  // Navigating between tabs (1 to 9) retains all unsaved edits across all tabs
   useEffect(() => {
     if (settings?.id && settings.id !== prevBranchIdRef.current) {
       prevBranchIdRef.current = settings.id;
@@ -102,7 +69,6 @@ export function BranchSettingsView({
 
   const tabs = [
     { id: "building", label: "อาคาร & ทั่วไป", icon: Building },
-    { id: "room-types", label: "ประเภทห้องพัก & ราคา", icon: BedDouble },
     { id: "rates", label: "อัตราค่าน้ำ-ไฟ", icon: Zap },
     { id: "billing", label: "รอบบิล & ค่าปรับ", icon: Receipt },
     { id: "banking", label: "บัญชีธนาคาร & QR", icon: CreditCard },
@@ -140,141 +106,6 @@ export function BranchSettingsView({
 
   const handleChange = (field: keyof BranchSettingsDetail, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  // --------------------------------------------------------------------------
-  // ROOM TYPES HANDLERS
-  // --------------------------------------------------------------------------
-  const getRoomUsageCount = (typeName: string, isDefault?: boolean) => {
-    if (!rooms || rooms.length === 0) return 0;
-    return rooms.filter(
-      (r) => r.type === typeName || (isDefault && (r.type === "Standard" || !r.type))
-    ).length;
-  };
-
-  const handleOpenAddRoomType = () => {
-    setEditingRoomTypeId(null);
-    setRoomTypeForm({
-      name: "",
-      monthlyRate: 4000,
-      dailyRate: 650,
-      description: "",
-      isDefault: roomTypesList.length === 0,
-    });
-    setIsRoomTypeModalOpen(true);
-  };
-
-  const handleOpenEditRoomType = (rt: RoomTypeConfig) => {
-    setEditingRoomTypeId(rt.id);
-    setRoomTypeForm({
-      name: rt.name,
-      monthlyRate: rt.monthlyRate,
-      dailyRate: rt.dailyRate,
-      description: rt.description || "",
-      isDefault: Boolean(rt.isDefault),
-    });
-    setIsRoomTypeModalOpen(true);
-  };
-
-  const handleSaveRoomType = (e: React.FormEvent) => {
-    e.preventDefault();
-    const nameTrimmed = roomTypeForm.name.trim();
-    if (!nameTrimmed) {
-      globalPopup.error("กรุณากรอกชื่อประเภทห้อง", "ชื่อประเภทห้องพักต้องไม่เป็นค่าว่าง");
-      return;
-    }
-
-    const isDuplicate = roomTypesList.some(
-      (rt) => rt.name.toLowerCase() === nameTrimmed.toLowerCase() && rt.id !== editingRoomTypeId
-    );
-    if (isDuplicate) {
-      globalPopup.error("ชื่อประเภทห้องซ้ำ", `มีประเภทห้องชื่อ "${nameTrimmed}" อยู่ในระบบแล้ว`);
-      return;
-    }
-
-    const mRate = Number(roomTypeForm.monthlyRate) || 0;
-    const dRate = Number(roomTypeForm.dailyRate) || 0;
-    if (mRate < 0 || dRate < 0) {
-      globalPopup.error("ราคาไม่ถูกต้อง", "อัตราค่าเช่าต้องไม่ติดลบ (อย่างน้อย 0 บาท)");
-      return;
-    }
-
-    let updatedList: RoomTypeConfig[] = [];
-    if (editingRoomTypeId) {
-      updatedList = roomTypesList.map((rt) => {
-        if (rt.id === editingRoomTypeId) {
-          return {
-            ...rt,
-            name: nameTrimmed,
-            monthlyRate: mRate,
-            dailyRate: dRate,
-            description: roomTypeForm.description.trim(),
-            isDefault: roomTypeForm.isDefault,
-          };
-        }
-        return roomTypeForm.isDefault ? { ...rt, isDefault: false } : rt;
-      });
-    } else {
-      const newRt: RoomTypeConfig = {
-        id: `rt-${Date.now()}`,
-        name: nameTrimmed,
-        monthlyRate: mRate,
-        dailyRate: dRate,
-        description: roomTypeForm.description.trim(),
-        isDefault: roomTypeForm.isDefault,
-      };
-      updatedList = roomTypeForm.isDefault
-        ? [...roomTypesList.map((r) => ({ ...r, isDefault: false })), newRt]
-        : [...roomTypesList, newRt];
-    }
-
-    if (!updatedList.some((r) => r.isDefault) && updatedList.length > 0) {
-      updatedList[0].isDefault = true;
-    }
-
-    handleChange("roomTypes", updatedList);
-    setIsRoomTypeModalOpen(false);
-    globalPopup.info(
-      editingRoomTypeId ? "แก้ไขประเภทห้องสำเร็จ" : "เพิ่มประเภทห้องสำเร็จ",
-      `บันทึกข้อมูลประเภทห้อง "${nameTrimmed}" เรียบร้อยแล้ว (กด "บันทึกการตั้งค่า" เพื่อนำไปใช้ถาวร)`
-    );
-  };
-
-  const handleDeleteRoomType = (rt: RoomTypeConfig) => {
-    if (roomTypesList.length <= 1) {
-      globalPopup.error("ไม่สามารถลบได้", "ระบบต้องมีประเภทห้องพักอย่างน้อย 1 ประเภทเสมอ");
-      return;
-    }
-
-    const assignedCount = getRoomUsageCount(rt.name, rt.isDefault);
-    if (assignedCount > 0) {
-      globalPopup.error(
-        "ไม่สามารถลบประเภทห้องนี้ได้!",
-        `ขณะนี้มีห้องพักจำนวน ${assignedCount} ห้องที่กำลังใช้งานประเภท "${rt.name}" อยู่ กรุณาเปลี่ยนประเภทของห้องเหล่านั้นในหน้าผังห้องพักก่อนทำการลบครับ`
-      );
-      return;
-    }
-
-    const updatedList = roomTypesList.filter((r) => r.id !== rt.id);
-    if (rt.isDefault && updatedList.length > 0) {
-      updatedList[0].isDefault = true;
-    }
-    handleChange("roomTypes", updatedList);
-    globalPopup.info("ลบประเภทห้องแล้ว", `ลบประเภทห้อง "${rt.name}" เรียบร้อยแล้ว`);
-  };
-
-  const handleSetDefaultRoomType = (id: string) => {
-    const updatedList = roomTypesList.map((rt) => ({
-      ...rt,
-      isDefault: rt.id === id,
-    }));
-    handleChange("roomTypes", updatedList);
-    globalPopup.info("เปลี่ยนประเภทห้องเริ่มต้น", "ตั้งค่าประเภทห้องเริ่มต้นสำหรับสร้างห้องพักใหม่เรียบร้อยแล้ว");
-  };
-
-  const handleResetRoomTypesToDefault = () => {
-    handleChange("roomTypes", defaultRoomTypes);
-    globalPopup.info("คืนค่าเริ่มต้นสำเร็จ", "รีเซ็ตประเภทห้องพักเป็นค่ามาตรฐาน 4 ประเภทเรียบร้อยแล้ว");
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -433,201 +264,7 @@ export function BranchSettingsView({
           </div>
         )}
 
-        {/* Tab 2: Room Types & Pricing */}
-        {activeTab === "room-types" && (
-          <div className="space-y-6">
-            {/* Header & Actions */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[var(--border)]">
-              <div>
-                <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                  <BedDouble className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                  จัดการประเภทห้องพัก & อัตราค่าเช่ามาตรฐาน (Room Types)
-                </h3>
-                <p className="text-xs text-[var(--muted)] mt-0.5">
-                  กำหนดประเภทห้องพักและค่าเช่ามาตรฐาน เพื่อให้ระบบดึงไปกรอกให้อัตโนมัติเมื่อสร้างห้องพักใหม่
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleResetRoomTypesToDefault}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--subtle)] hover:bg-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] text-xs font-medium transition cursor-pointer"
-                  title="คืนค่าประเภทห้องมาตรฐาน 4 ประเภท"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>คืนค่าเริ่มต้น</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenAddRoomType}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-500/20 transition cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>เพิ่มประเภทห้องพักใหม่</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Summary Metrics Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]">
-                <div className="text-[11px] text-[var(--muted)] font-medium">ประเภทห้องทั้งหมด</div>
-                <div className="text-lg font-bold text-[var(--foreground)] mt-0.5">
-                  {roomTypesList.length} <span className="text-xs font-normal text-[var(--muted)]">แบบ</span>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]">
-                <div className="text-[11px] text-[var(--muted)] font-medium">ประเภทเริ่มต้น (Default)</div>
-                <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-1 truncate">
-                  {roomTypesList.find((r) => r.isDefault)?.name || "-"}
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]">
-                <div className="text-[11px] text-[var(--muted)] font-medium">ช่วงราคาค่าเช่า</div>
-                <div className="text-sm font-bold text-[var(--foreground)] mt-1">
-                  ฿{Math.min(...roomTypesList.map((r) => r.monthlyRate || 0)).toLocaleString()} - ฿{Math.max(...roomTypesList.map((r) => r.monthlyRate || 0)).toLocaleString()}
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)]">
-                <div className="text-[11px] text-[var(--muted)] font-medium">ห้องพักที่ใช้งานอยู่ในสาขานี้</div>
-                <div className="text-lg font-bold text-teal-600 dark:text-teal-400 mt-0.5">
-                  {rooms.length} <span className="text-xs font-normal text-[var(--muted)]">ห้อง</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Room Types Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {roomTypesList.map((rt) => {
-                const assignedCount = getRoomUsageCount(rt.name, rt.isDefault);
-                return (
-                  <div
-                    key={rt.id}
-                    className={`relative p-5 rounded-2xl border transition-all duration-200 flex flex-col justify-between ${
-                      rt.isDefault
-                        ? "bg-gradient-to-br from-emerald-500/5 via-[var(--card)] to-[var(--card)] border-emerald-500/40 shadow-sm shadow-emerald-500/10 ring-1 ring-emerald-500/20"
-                        : "bg-[var(--card)] border-[var(--border)] hover:border-[var(--muted)]"
-                    }`}
-                  >
-                    <div>
-                      {/* Top Badges & Title */}
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                              rt.isDefault
-                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
-                                : "bg-[var(--subtle)] text-[var(--muted)] border border-[var(--border)]"
-                            }`}
-                          >
-                            <BedDouble className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-bold text-[var(--foreground)] flex items-center gap-1.5">
-                              {rt.name}
-                            </h4>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {rt.isDefault && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                                  <Star className="w-2.5 h-2.5 fill-current" />
-                                  ค่าเริ่มต้น
-                                </span>
-                              )}
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--subtle)] text-[var(--muted)] border border-[var(--border)]">
-                                <DoorOpen className="w-2.5 h-2.5" />
-                                มี {assignedCount} ห้อง
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Pricing Box */}
-                      <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-[var(--subtle)]/70 border border-[var(--border)]/70 mb-3">
-                        <div>
-                          <div className="text-[10px] text-[var(--muted)] font-medium">ค่าเช่ารายเดือน</div>
-                          <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
-                            ฿{Number(rt.monthlyRate || 0).toLocaleString()}
-                            <span className="text-[10px] font-normal text-[var(--muted)]"> /เดือน</span>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-[var(--muted)] font-medium">ค่าเช่ารายวัน</div>
-                          <div className="text-sm font-extrabold text-teal-600 dark:text-teal-400">
-                            ฿{Number(rt.dailyRate || 0).toLocaleString()}
-                            <span className="text-[10px] font-normal text-[var(--muted)]"> /คืน</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Description / Features */}
-                      {rt.description && (
-                        <p className="text-xs text-[var(--muted)] line-clamp-2 mb-4 leading-relaxed bg-[var(--subtle)]/30 p-2.5 rounded-lg border border-[var(--border)]/50">
-                          {rt.description}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Bottom Actions */}
-                    <div className="flex items-center justify-between pt-3 border-t border-[var(--border)] mt-2">
-                      <div>
-                        {!rt.isDefault ? (
-                          <button
-                            type="button"
-                            onClick={() => handleSetDefaultRoomType(rt.id)}
-                            className="inline-flex items-center gap-1 text-[11px] text-[var(--muted)] hover:text-emerald-600 transition font-medium cursor-pointer"
-                          >
-                            <Star className="w-3 h-3" />
-                            <span>ตั้งเป็นค่าเริ่มต้น</span>
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                            <Check className="w-3.5 h-3.5" />
-                            เป็นประเภทหลัก
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditRoomType(rt)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[var(--subtle)] hover:bg-[var(--border)] text-[var(--foreground)] text-xs font-semibold transition cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5 text-blue-500" />
-                          <span>แก้ไข</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRoomType(rt)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[var(--subtle)] hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-600 text-xs font-semibold transition cursor-pointer"
-                          title={assignedCount > 0 ? `ไม่สามารถลบได้เนื่องจากมีห้องใช้งานอยู่ ${assignedCount} ห้อง` : "ลบประเภทห้องนี้"}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>ลบ</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Note banner */}
-            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2.5 leading-relaxed">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <strong>หมายเหตุสำคัญ:</strong> หลังจากเพิ่มหรือแก้ไขประเภทห้องพักแล้ว กรุณากดปุ่ม <strong>"บันทึกการตั้งค่า"</strong> ด้านบนขวา เพื่อบันทึกข้อมูลประเภทห้องพักลงฐานข้อมูลอย่างถาวรครับ
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: Rates */}
+        {/* Tab 2: Rates */}
         {activeTab === "rates" && (
           <div className="space-y-4 max-w-2xl">
             <h3 className="text-sm font-bold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
@@ -1104,125 +741,6 @@ export function BranchSettingsView({
           </button>
         </div>
       </div>
-
-      {/* Modal: เพิ่ม / แก้ไขประเภทห้องพัก */}
-      {isRoomTypeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--card)] w-full max-w-md rounded-2xl border border-[var(--border)] shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                  <BedDouble className="w-4 h-4" />
-                </div>
-                <h4 className="text-sm font-bold text-[var(--foreground)]">
-                  {editingRoomTypeId ? "แก้ไขประเภทห้องพัก" : "เพิ่มประเภทห้องพักใหม่"}
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsRoomTypeModalOpen(false)}
-                className="p-1 rounded-lg text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--subtle)] transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveRoomType} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  ชื่อประเภทห้องพัก *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="เช่น ห้องแอร์ (มาตรฐาน), ห้องพัดลมริมสวน"
-                  value={roomTypeForm.name}
-                  onChange={(e) => setRoomTypeForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                    ค่าเช่ารายเดือน (บาท) *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={roomTypeForm.monthlyRate}
-                    onChange={(e) =>
-                      setRoomTypeForm((prev) => ({ ...prev, monthlyRate: Number(e.target.value) }))
-                    }
-                    className="w-full px-3.5 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-extrabold text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                    ค่าเช่ารายวัน (บาท)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={roomTypeForm.dailyRate}
-                    onChange={(e) =>
-                      setRoomTypeForm((prev) => ({ ...prev, dailyRate: Number(e.target.value) }))
-                    }
-                    className="w-full px-3.5 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-extrabold text-teal-600 dark:text-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  สิ่งอำนวยความสะดวก & รายละเอียดห้อง
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="เช่น แอร์, เตียง 5 ฟุต, ตู้เสื้อผ้า, เครื่องทำน้ำอุ่น, ระเบียง"
-                  value={roomTypeForm.description}
-                  onChange={(e) =>
-                    setRoomTypeForm((prev) => ({ ...prev, description: e.target.value }))
-                  }
-                  className="w-full px-3.5 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <label className="flex items-center gap-2 p-3 rounded-xl bg-[var(--subtle)] border border-[var(--border)] cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={roomTypeForm.isDefault}
-                  onChange={(e) =>
-                    setRoomTypeForm((prev) => ({ ...prev, isDefault: e.target.checked }))
-                  }
-                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                />
-                <span className="text-xs font-medium text-[var(--foreground)]">
-                  ตั้งเป็นประเภทห้องเริ่มต้น (Default เมื่อสร้างห้องใหม่)
-                </span>
-              </label>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
-                <button
-                  type="button"
-                  onClick={() => setIsRoomTypeModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-[var(--subtle)] hover:bg-[var(--border)] text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-500/20 transition cursor-pointer"
-                >
-                  บันทึกประเภทห้อง
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

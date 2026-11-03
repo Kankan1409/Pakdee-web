@@ -58,7 +58,6 @@ import {
   ExpenseItem,
   BranchSettingsDetail,
   BroadcastItem,
-  defaultRoomTypes,
 } from "@/types/dormitory";
 import { formatCurrency, formatDateThai, formatMonthThai, cn } from "@/lib/utils";
 import {
@@ -4169,7 +4168,6 @@ export default function HomePage() {
           {currentTab === "settings" && (
             <BranchSettingsView
               settings={branchSettings}
-              rooms={rooms}
               onSaveSettings={handleSaveBranchSettings}
             />
           )}
@@ -4317,7 +4315,6 @@ export default function HomePage() {
         onClose={() => setIsAddRoomOpen(false)}
         onAddRoom={handleAddRoom}
         onAddBatchRooms={handleAddBatchRooms}
-        roomTypes={branchSettings.roomTypes || defaultRoomTypes}
       />
 
       {/* Database Inspector Modal (ดูข้อมูลจริงใน Supabase Cloud) */}

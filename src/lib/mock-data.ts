@@ -1,4 +1,4 @@
-import { Property, Building, Room, Invoice, DailyBooking, AdditionalService, defaultRoomTypes } from "@/types/dormitory";
+import { Property, Building, Room, Invoice, DailyBooking, AdditionalService } from "@/types/dormitory";
 
 export const initialProperty: Property = {
   id: "prop-1",
@@ -163,5 +163,4 @@ export const initialBranchSettings: BranchSettingsDetail = {
   lineChannelSecret: "018e6d879bb2e1861502701ef2ebb858",
   lineWebhookUrl: "https://api.pakdee.app/webhook/line/branch-1",
   contractTerms: "ผู้เช่าต้องชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน หากล่าช้ามีค่าปรับวันละ 50 บาท ห้ามเลี้ยงสัตว์ และห้ามส่งเสียงดังหลังเวลา 22:00 น.",
-  roomTypes: defaultRoomTypes,
 };
