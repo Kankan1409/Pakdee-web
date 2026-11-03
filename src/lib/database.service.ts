@@ -55,10 +55,89 @@ const KEYS = {
 // In-Memory Host Synchronized Cache
 const memoryDb: Record<string, any> = {};
 let isServerSynced = false;
+let lastDbMtime = 0;
+
+// Resolve DB file path when running in Node.js server context
+function getDbFilePath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = eval("require")("fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = eval("require")("path");
+    const candidates = [
+      path.join(process.cwd(), "data", "db_port3000.json"),
+      path.join(process.cwd(), "Pakdee", "data", "db_port3000.json"),
+      "D:\\DESKTOP\\Pakdee\\data\\db_port3000.json",
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+    return candidates[0];
+  } catch {
+    return "";
+  }
+}
+
+// Synchronize in-memory cache with host file DB when running on the server
+function syncServerDbIfNeeded(): void {
+  if (typeof window !== "undefined") return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = eval("require")("fs");
+    const filePath = getDbFilePath();
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const stats = fs.statSync(filePath);
+    if (stats.mtimeMs > lastDbMtime) {
+      lastDbMtime = stats.mtimeMs;
+      const raw = fs.readFileSync(filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      Object.assign(memoryDb, parsed);
+      isServerSynced = true;
+    }
+  } catch (e) {
+    console.warn("[DatabaseService] syncServerDbIfNeeded warning:", e);
+  }
+}
+
+// Write to host file DB when running on the server
+function writeServerDb(key: string, value: any): void {
+  if (typeof window !== "undefined") return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = eval("require")("fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = eval("require")("path");
+    const filePath = getDbFilePath() || path.join(process.cwd(), "data", "db_port3000.json");
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    let currentDb: Record<string, any> = {};
+    if (fs.existsSync(filePath)) {
+      try {
+        currentDb = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      } catch {}
+    }
+    currentDb[key] = value;
+    const normKey = key.replace(/^pakdee_(dev|test)_/, "");
+    currentDb[normKey] = value;
+    fs.writeFileSync(filePath, JSON.stringify(currentDb, null, 2), "utf8");
+    try {
+      lastDbMtime = fs.statSync(filePath).mtimeMs;
+    } catch {}
+  } catch (e) {
+    console.warn("[DatabaseService] writeServerDb warning:", e);
+  }
+}
 
 // Safe Local & Server-Synchronized Storage Helper
 function getLocal<T>(key: string, fallback: T): T {
-  // 1. In-memory cache synced from Host Server has highest priority
+  // 1. Sync from server DB file if in Node.js runtime
+  if (typeof window === "undefined") {
+    syncServerDbIfNeeded();
+  }
+
+  // 2. In-memory cache synced from Host Server has highest priority
   if (memoryDb[key] !== undefined && memoryDb[key] !== null) {
     return memoryDb[key] as T;
   }
@@ -67,7 +146,7 @@ function getLocal<T>(key: string, fallback: T): T {
     return memoryDb[normKey] as T;
   }
 
-  // 2. Client-side LocalStorage fallback
+  // 3. Client-side LocalStorage fallback
   if (typeof window === "undefined") return fallback;
   try {
     let raw = localStorage.getItem(key) || localStorage.getItem(normKey);
@@ -94,24 +173,28 @@ function setLocal<T>(key: string, value: T): void {
   const normKey = key.replace(/^pakdee_(dev|test)_/, "");
   memoryDb[normKey] = value;
 
-  // 2. Save to client LocalStorage (cache mirror)
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.warn(`Failed to save to localStorage [${key}]:`, e);
-    }
-
-    // 3. Persist directly to Host Machine Database via /api/db
-    fetch("/api/db", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, value }),
-      keepalive: true,
-    }).catch((err) => {
-      console.warn(`[HostDB] Sync failed for [${key}]:`, err);
-    });
+  // 2. Server-side Node.js File Database Sync
+  if (typeof window === "undefined") {
+    writeServerDb(key, value);
+    return;
   }
+
+  // 3. Save to client LocalStorage (cache mirror)
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn(`Failed to save to localStorage [${key}]:`, e);
+  }
+
+  // 4. Persist directly to Host Machine Database via /api/db
+  fetch("/api/db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, value }),
+    keepalive: true,
+  }).catch((err) => {
+    console.warn(`[HostDB] Sync failed for [${key}]:`, err);
+  });
 }
 
 export const DatabaseService = {
@@ -120,7 +203,10 @@ export const DatabaseService = {
    * Ensures devices connecting via LAN always have the host machine's authoritative data
    */
   async init(): Promise<boolean> {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") {
+      syncServerDbIfNeeded();
+      return true;
+    }
     try {
       const res = await fetch("/api/db", { cache: "no-store" });
       if (res.ok) {
@@ -925,26 +1011,56 @@ export const DatabaseService = {
     const cleanRoom = roomNumber.trim();
     const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
     const allRooms = this.getAllRawRooms();
+    const allInvoices = this.getAllRawInvoices();
 
-    // 1. Find tenant by roomNumber in allTenants
+    // 1. Find tenant in allTenants by roomNumber, roomId, or ID
     let targetIdx = allTenants.findIndex(
-      (t) => (t.propertyId || "prop-1") === (propId || "prop-1") && (t.roomNumber || "").trim() === cleanRoom
+      (t) =>
+        (t.propertyId || "prop-1") === (propId || "prop-1") &&
+        ((t.roomNumber || "").trim() === cleanRoom ||
+          t.roomId === `room-${cleanRoom}` ||
+          t.id === `t-${cleanRoom}` ||
+          t.id.endsWith(`-${cleanRoom}`))
     );
 
-    // 2. If not found in allTenants, fallback check room.currentTenant
+    // 2. Find room in allRooms (first in active branch, then across any branch)
+    let roomMatch = allRooms.find(
+      (r) => (r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom
+    );
+    if (!roomMatch) {
+      roomMatch = allRooms.find((r) => r.roomNumber.trim() === cleanRoom);
+    }
+
+    // 3. If tenant not found in allTenants array, synthesize or create from room or invoices
     if (targetIdx === -1) {
-      const roomMatch = allRooms.find(
-        (r) => (r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom && r.currentTenant
-      );
-      if (roomMatch && roomMatch.currentTenant) {
+      if (roomMatch) {
+        // Room exists in building
+        const roomInv = allInvoices.find(
+          (inv) => (inv.propertyId || "prop-1") === (propId || "prop-1") && inv.roomNumber.trim() === cleanRoom
+        );
+        const resolvedName =
+          roomMatch.currentTenant?.fullName ||
+          roomInv?.tenantName ||
+          lineDisplayName ||
+          `ผู้เช่าห้อง ${cleanRoom}`;
+        const resolvedPhone =
+          roomMatch.currentTenant?.phone ||
+          roomInv?.tenantPhone ||
+          "-";
+
         const synthesizedTenant: Tenant = {
-          ...roomMatch.currentTenant,
+          id: roomMatch.currentTenant?.id || `t-${cleanRoom}`,
           propertyId: propId,
+          roomId: roomMatch.id,
           roomNumber: cleanRoom,
+          fullName: resolvedName,
+          phone: resolvedPhone,
+          idCard: roomMatch.currentTenant?.idCard || "-",
           lineUserId,
-          lineDisplayName: lineDisplayName || roomMatch.currentTenant.fullName,
+          lineDisplayName: lineDisplayName || resolvedName,
           lineLinkedAt: new Date().toISOString(),
         };
+
         allTenants.push(synthesizedTenant);
         targetIdx = allTenants.length - 1;
       }
@@ -953,22 +1069,23 @@ export const DatabaseService = {
     if (targetIdx !== -1) {
       allTenants[targetIdx] = {
         ...allTenants[targetIdx],
+        roomNumber: cleanRoom,
+        roomId: allTenants[targetIdx].roomId || (roomMatch?.id || `room-${cleanRoom}`),
         lineUserId,
         lineDisplayName: lineDisplayName || allTenants[targetIdx].lineDisplayName,
         lineLinkedAt: new Date().toISOString(),
       };
       setLocal(KEYS.TENANTS, allTenants);
 
-      // Also update Room.currentTenant
+      // Also update Room.currentTenant and mark room as occupied
       const updatedRooms = allRooms.map((r) => {
-        if ((r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom && r.currentTenant) {
+        if ((r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom) {
           return {
             ...r,
+            status: (r.status === "cleaning" ? "cleaning" : "occupied") as RoomStatus,
             currentTenant: {
-              ...r.currentTenant,
-              lineUserId,
-              lineDisplayName: lineDisplayName || r.currentTenant.lineDisplayName,
-              lineLinkedAt: new Date().toISOString(),
+              ...(r.currentTenant || {}),
+              ...allTenants[targetIdx],
             },
           };
         }
@@ -1766,7 +1883,10 @@ export const DatabaseService = {
   ): Promise<BranchSettingsDetail> {
     const propId = propertyId || property?.id || this.getActivePropertyId();
     const branchSettingsKey = this.getBranchSettingsKey(propId);
-    const saved = getLocal<BranchSettingsDetail | null>(branchSettingsKey, null);
+    let saved = getLocal<BranchSettingsDetail | null>(branchSettingsKey, null);
+    if (!saved) {
+      saved = getLocal<BranchSettingsDetail | null>(KEYS.BRANCH_SETTINGS, null);
+    }
 
     if (saved) {
       if (property) {
