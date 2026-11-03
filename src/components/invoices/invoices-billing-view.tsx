@@ -1,0 +1,317 @@
+"use client";
+
+import React, { useState, useMemo } from "react";
+import { Invoice } from "@/types/dormitory";
+import {
+  Receipt,
+  CheckCircle2,
+  AlertCircle,
+  Send,
+  Plus,
+  ChevronRight,
+  Search,
+  Sparkles,
+  Check,
+  QrCode,
+} from "lucide-react";
+import { formatCurrency, formatMonthThai } from "@/lib/utils";
+
+interface InvoicesBillingViewProps {
+  invoices: Invoice[];
+  isSendingLineBatch?: boolean;
+  onSendLineAllInvoices: () => void;
+  onGenerateMonthlyInvoices: (targetMonth?: string) => void;
+  onMarkAsPaid: (invoiceId: string) => void;
+  onOpenInvoiceModal: (invoice: Invoice) => void;
+  onShowToast: (message: string, type: "success" | "error" | "info" | "warning") => void;
+}
+
+export function InvoicesBillingView({
+  invoices,
+  isSendingLineBatch = false,
+  onSendLineAllInvoices,
+  onGenerateMonthlyInvoices,
+  onMarkAsPaid,
+  onOpenInvoiceModal,
+  onShowToast,
+}: InvoicesBillingViewProps) {
+  const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
+  // Extract available billing months
+  const invoiceMonths = useMemo(() => {
+    return Array.from(
+      new Set([
+        new Date().toISOString().slice(0, 7),
+        ...invoices
+          .map((i) => (i.billingDate && i.billingDate.length >= 7 ? i.billingDate.slice(0, 7) : ""))
+          .filter((m) => !!m),
+      ])
+    )
+      .sort()
+      .reverse();
+  }, [invoices]);
+
+  const displayedInvoices = useMemo(() => {
+    return invoices.filter((i) => {
+      let matchMonth = true;
+      if (monthFilter !== "all") {
+        matchMonth = (i.billingDate || "").startsWith(monthFilter);
+      }
+      const q = searchQuery.trim().toLowerCase();
+      const matchSearch =
+        !q ||
+        i.invoiceNumber.toLowerCase().includes(q) ||
+        i.roomNumber.toLowerCase().includes(q) ||
+        i.tenantName.toLowerCase().includes(q);
+      return matchMonth && matchSearch;
+    });
+  }, [invoices, monthFilter, searchQuery]);
+
+  const invBilled = displayedInvoices.reduce((acc, i) => acc + i.totalAmount, 0);
+  const invPaid = displayedInvoices
+    .filter((i) => i.status === "paid")
+    .reduce((acc, i) => acc + i.totalAmount, 0);
+  const invOverdue = displayedInvoices
+    .filter((i) => i.status !== "paid")
+    .reduce((acc, i) => acc + i.totalAmount, 0);
+  const invPaidCount = displayedInvoices.filter((i) => i.status === "paid").length;
+  const invOverdueCount = displayedInvoices.filter((i) => i.status !== "paid").length;
+  const invCollectionRate = invBilled > 0 ? Math.round((invPaid / invBilled) * 100) : 0;
+
+  return (
+    <div className="space-y-5">
+      {/* 3 Top Financial KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Card 1: Paid */}
+        <div className="bg-[var(--card)] border border-[var(--border)] p-5 rounded-2xl shadow-xs transition hover:border-emerald-500/50">
+          <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+            <span className="font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              <span>รายรับที่รับชำระแล้ว (Paid)</span>
+            </span>
+            <span className="text-[10px] font-bold bg-emerald-500/15 text-emerald-600 px-2 py-0.5 rounded-full">
+              {invPaidCount} บิล
+            </span>
+          </div>
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">
+            {formatCurrency(invPaid)}
+          </div>
+          <div className="text-xs text-[var(--muted)] mt-1.5">
+            อัตราการจัดเก็บ: <strong className="text-emerald-600 font-bold">{invCollectionRate}%</strong> ของยอดเรียกเก็บ
+          </div>
+        </div>
+
+        {/* Card 2: Overdue */}
+        <div className="bg-[var(--card)] border border-[var(--border)] p-5 rounded-2xl shadow-xs transition hover:border-rose-500/50">
+          <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+            <span className="font-semibold text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4 text-rose-500" />
+              <span>ยอดค้างชำระ (Pending / Overdue)</span>
+            </span>
+            <span className="text-[10px] font-bold bg-rose-500/15 text-rose-600 px-2 py-0.5 rounded-full">
+              {invOverdueCount} บิล
+            </span>
+          </div>
+          <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-2">
+            {formatCurrency(invOverdue)}
+          </div>
+          <div className="text-xs text-[var(--muted)] mt-1.5">
+            {invOverdueCount > 0 ? `มี ${invOverdueCount} บิลรอการชำระหรือแนบสลิป` : "ไม่มีบิลค้างชำระ ✓"}
+          </div>
+        </div>
+
+        {/* Card 3: Total Billed */}
+        <div className="bg-[var(--card)] border border-[var(--border)] p-5 rounded-2xl shadow-xs transition hover:border-indigo-500/50">
+          <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+            <span className="font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+              <Receipt className="w-4 h-4 text-indigo-500" />
+              <span>ยอดเรียกเก็บรวมรอบบิล (Billed)</span>
+            </span>
+            <span className="text-[10px] font-bold bg-indigo-500/15 text-indigo-600 px-2 py-0.5 rounded-full">
+              {displayedInvoices.length} บิล
+            </span>
+          </div>
+          <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-2">
+            {formatCurrency(invBilled)}
+          </div>
+          <div className="text-xs text-[var(--muted)] mt-1.5">
+            รวมค่าเช่า ค่าน้ำ ค่าไฟ และค่าบริการ
+          </div>
+        </div>
+      </div>
+
+      {/* Filter and Invoices List Table */}
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>รายการใบแจ้งหนี้ & การชำระเงิน</span>
+            </h3>
+            <p className="text-xs text-[var(--muted)]">
+              ออกบิลอัตโนมัติพร้อมสร้าง Dynamic PromptPay QR Code และส่งเข้า LINE ผู้เช่า
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onSendLineAllInvoices}
+              disabled={isSendingLineBatch}
+              className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+              title="ส่งบิลแจ้งหนี้พร้อม Dynamic PromptPay QR Code เข้า LINE ผู้เช่าทุกห้องที่มีบิลค้าง"
+            >
+              <Send className={`w-3.5 h-3.5 ${isSendingLineBatch ? "animate-spin" : ""}`} />
+              <span>{isSendingLineBatch ? "กำลังส่ง LINE..." : "📱 ส่ง LINE ทุกห้องที่มีบิลค้าง"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onGenerateMonthlyInvoices(monthFilter !== "all" ? monthFilter : undefined)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>⚡ คำนวณและออกบิลรอบเดือน</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Toolbar: Month Selector + Search */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 pb-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                aria-label="กรองรอบเดือนใบแจ้งหนี้"
+                className="bg-[var(--subtle)] border border-[var(--border)] text-[var(--foreground)] text-xs font-semibold rounded-xl px-3 py-1.5 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition cursor-pointer appearance-none"
+              >
+                <option value="all">ทุกรอบเดือน (ทั้งหมด - All Time)</option>
+                {invoiceMonths.map((ym) => (
+                  <option key={ym} value={ym}>
+                    {formatMonthThai(ym)} {ym === new Date().toISOString().slice(0, 7) ? "★ เดือนปัจจุบัน" : ""}
+                  </option>
+                ))}
+              </select>
+              <ChevronRight className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90 text-[var(--muted)] pointer-events-none" />
+            </div>
+
+            {monthFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setMonthFilter("all")}
+                className="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 transition cursor-pointer"
+              >
+                ล้างตัวกรองเดือน
+              </button>
+            )}
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+            <input
+              type="text"
+              placeholder="ค้นหาห้อง / ผู้เช่า / เลขที่บิล..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-[var(--subtle)] border border-[var(--border)] rounded-xl pl-8.5 pr-3 py-1.5 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition"
+            />
+          </div>
+        </div>
+
+        <div className="divide-y divide-[var(--border)] text-xs">
+          {displayedInvoices.length === 0 ? (
+            <div className="py-8 text-center text-[var(--muted)] space-y-1">
+              <div>ไม่พบรายการใบแจ้งหนี้ที่ตรงกับเงื่อนไข</div>
+              {monthFilter !== "all" && (
+                <div className="text-[11px] text-emerald-600">
+                  รอบเดือน {formatMonthThai(monthFilter)} ยังไม่มีบิล คลิก &quot;คำนวณและออกบิลรอบเดือน&quot; เพื่อสร้างบิล
+                </div>
+              )}
+            </div>
+          ) : (
+            displayedInvoices.map((inv) => (
+              <div
+                key={inv.id}
+                className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-black/5 dark:hover:bg-white/5 px-2 rounded-xl transition"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-[var(--foreground)]">
+                      {inv.invoiceNumber} (ห้อง {inv.roomNumber})
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                      - {inv.tenantName}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[var(--muted)] mt-0.5 flex items-center gap-2 flex-wrap">
+                    <span>
+                      ยอดรวม: <span className="font-semibold text-[var(--foreground)]">{formatCurrency(inv.totalAmount)}</span>
+                    </span>
+                    <span>|</span>
+                    <span>กำหนดชำระ: {inv.dueDate || "5 ของเดือน"}</span>
+                    <span>|</span>
+                    <span>รอบบิล: {inv.billingDate || "-"}</span>
+                    <span>|</span>
+                    {inv.lineDeliveryStatus === "sent" ? (
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        ✓ ส่ง LINE แล้ว {inv.lineSentAt ? `(${inv.lineSentAt})` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-full">
+                        ยังไม่ได้ส่ง LINE
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {inv.status === "paid" ? (
+                    <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> ชำระแล้ว
+                    </span>
+                  ) : (
+                    <>
+                      <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg">
+                        ค้างชำระ
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onMarkAsPaid(inv.id);
+                          onShowToast(
+                            `🤖 AI ตรวจสลิปโอนเงินห้อง ${inv.roomNumber} (${formatCurrency(inv.totalAmount)}) ผ่าน 100%! บันทึกชำระแล้ว ✓`,
+                            "success"
+                          );
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                        title="จำลองผู้เช่าส่งสลิปผ่าน LINE ให้ AI ตรวจจับคู่ยอดเงินอัตโนมัติ"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        <span>AI ตรวจสลิป</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onMarkAsPaid(inv.id)}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer"
+                      >
+                        ทำเครื่องหมายว่าชำระแล้ว
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenInvoiceModal(inv)}
+                    className="bg-[var(--subtle)] hover:bg-[var(--border)] text-[var(--foreground)] px-2.5 py-1 rounded-lg font-semibold border border-[var(--border)] transition cursor-pointer flex items-center gap-1"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>ดูบิล / QR</span>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

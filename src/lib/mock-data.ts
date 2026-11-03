@@ -1,4 +1,4 @@
-import { Property, Building, Room, Invoice, DailyBooking, AdditionalService, defaultRoomTypes } from "@/types/dormitory";
+import { Property, Building, Room, Invoice, DailyBooking, AdditionalService } from "@/types/dormitory";
 
 export const initialProperty: Property = {
   id: "prop-1",
@@ -159,9 +159,8 @@ export const initialBranchSettings: BranchSettingsDetail = {
   bankAccountName: "หอพัก พักดี แมนชั่น",
   promptpayNumber: "0812345678",
   promptpayName: "หอพัก พักดี แมนชั่น",
-  lineChannelAccessToken: "dYQhNvEG431k5dx9BUFNtrnn/MIwwalfh+VAAa9SzsVK1cbJkJSV+vBVM/6VRk155u/0l12Ig3JzFNtVYcyMRSt5F3NieNTSl5vq5mrf3qDr2Y6l3LoGeZw6aSxbYb5zNIFQJkUbOT5iy+I9gPIDwwdB04t89/1O/w1cDnyilFU=",
-  lineChannelSecret: "018e6d879bb2e1861502701ef2ebb858",
+  lineChannelAccessToken: "qKsCOa6uRWKLAHJcrs/QljDmKls4sZgZHYrkIcXZ5LQ0CYSOpNKBxxF+aL/pIyXXrljrFz5wqZfCPhMFWTaRtIE0PXT/53dqod9MzjfS48Dx3ZH7nABvX6d/nrtcw6c1aGSWCIZoHtsRv9kcKFwCYAdB04t89/1O/w1cDnyilFU=",
+  lineChannelSecret: "5a3c837da6ba0045ed0073e06cc45de6",
   lineWebhookUrl: "https://api.pakdee.app/webhook/line/branch-1",
   contractTerms: "ผู้เช่าต้องชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน หากล่าช้ามีค่าปรับวันละ 50 บาท ห้ามเลี้ยงสัตว์ และห้ามส่งเสียงดังหลังเวลา 22:00 น.",
-  roomTypes: defaultRoomTypes,
 };

@@ -11,7 +11,6 @@ import {
   ActivityLogItem,
   BranchSettingsDetail,
   DailyBooking,
-  defaultRoomTypes,
 } from "@/types/dormitory";
 import {
   initialProperty,
@@ -922,14 +921,34 @@ export const DatabaseService = {
     lineUserId: string,
     lineDisplayName?: string
   ): Promise<Tenant | null> {
-    const propId = propertyId || this.getActivePropertyId();
+    const propId = propertyId || this.getActivePropertyId() || "prop-1";
     const cleanRoom = roomNumber.trim();
     const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    
-    // Find tenant by roomNumber in this property
-    const targetIdx = allTenants.findIndex(
-      (t) => (t.propertyId || "prop-1") === propId && t.roomNumber === cleanRoom
+    const allRooms = this.getAllRawRooms();
+
+    // 1. Find tenant by roomNumber in allTenants
+    let targetIdx = allTenants.findIndex(
+      (t) => (t.propertyId || "prop-1") === (propId || "prop-1") && (t.roomNumber || "").trim() === cleanRoom
     );
+
+    // 2. If not found in allTenants, fallback check room.currentTenant
+    if (targetIdx === -1) {
+      const roomMatch = allRooms.find(
+        (r) => (r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom && r.currentTenant
+      );
+      if (roomMatch && roomMatch.currentTenant) {
+        const synthesizedTenant: Tenant = {
+          ...roomMatch.currentTenant,
+          propertyId: propId,
+          roomNumber: cleanRoom,
+          lineUserId,
+          lineDisplayName: lineDisplayName || roomMatch.currentTenant.fullName,
+          lineLinkedAt: new Date().toISOString(),
+        };
+        allTenants.push(synthesizedTenant);
+        targetIdx = allTenants.length - 1;
+      }
+    }
 
     if (targetIdx !== -1) {
       allTenants[targetIdx] = {
@@ -940,10 +959,9 @@ export const DatabaseService = {
       };
       setLocal(KEYS.TENANTS, allTenants);
 
-      // Also update Room.currentTenant if exists
-      const allRooms = this.getAllRawRooms();
+      // Also update Room.currentTenant
       const updatedRooms = allRooms.map((r) => {
-        if ((r.propertyId || "prop-1") === propId && r.roomNumber === cleanRoom && r.currentTenant) {
+        if ((r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom && r.currentTenant) {
           return {
             ...r,
             currentTenant: {
@@ -966,9 +984,23 @@ export const DatabaseService = {
 
   async getTenantByLineUser(lineUserId: string, propertyId?: string): Promise<Tenant | null> {
     if (!lineUserId) return null;
-    const propId = propertyId || this.getActivePropertyId();
+    const propId = propertyId || this.getActivePropertyId() || "prop-1";
     const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    return allTenants.find((t) => (t.propertyId || "prop-1") === propId && t.lineUserId === lineUserId) || null;
+    const directMatch = allTenants.find((t) => (t.propertyId || "prop-1") === propId && t.lineUserId === lineUserId);
+    if (directMatch) return directMatch;
+
+    const allRooms = this.getAllRawRooms();
+    const roomMatch = allRooms.find(
+      (r) => (r.propertyId || "prop-1") === propId && r.currentTenant?.lineUserId === lineUserId
+    );
+    if (roomMatch && roomMatch.currentTenant) {
+      return {
+        ...roomMatch.currentTenant,
+        propertyId: propId,
+        roomNumber: roomMatch.roomNumber,
+      };
+    }
+    return null;
   },
 
   async updateInvoiceLineStatus(
@@ -1737,11 +1769,9 @@ export const DatabaseService = {
     const saved = getLocal<BranchSettingsDetail | null>(branchSettingsKey, null);
 
     if (saved) {
-      const roomTypes = saved.roomTypes && saved.roomTypes.length > 0 ? saved.roomTypes : defaultRoomTypes;
       if (property) {
         return {
           ...saved,
-          roomTypes,
           branchName: saved.branchName || property.name,
           address: saved.address || property.address,
           phone: saved.phone || property.phone,
@@ -1751,10 +1781,7 @@ export const DatabaseService = {
           waterRate: saved.waterRate !== undefined ? Number(saved.waterRate) : (property.waterRate ?? 18),
         };
       }
-      return {
-        ...saved,
-        roomTypes,
-      };
+      return saved;
     }
 
     // Default template tailored for this specific branch
