@@ -19,6 +19,7 @@ import { AccountingExportView } from "@/components/accounting/accounting-export-
 import { BranchSettingsView } from "@/components/settings/branch-settings-view";
 import { BroadcastLineView } from "@/components/broadcast/broadcast-line-view";
 import { CheckoutManagementView, CheckoutExecutionData } from "@/components/checkout/checkout-management-view";
+import { CleaningBoardView } from "@/components/cleaning/cleaning-board-view";
 import { AddTenantModal } from "@/components/tenants/add-tenant-modal";
 import { TenantRegistrationView } from "@/components/tenants/tenant-registration-view";
 import { AddRoomModal } from "@/components/rooms/add-room-modal";
@@ -3626,55 +3627,10 @@ export default function HomePage() {
 
           {/* VIEW: Cleaning & Maintenance */}
           {currentTab === "cleaning" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    <span>งานแม่บ้าน & ซ่อมบำรุง (Housekeeping & Maintenance)</span>
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    ติดตามสถานะห้องพักที่รอทำความสะอาดและงานแจ้งซ่อมแบบเรียลไทม์
-                  </p>
-                </div>
-              </div>
-
-              <div className="divide-y divide-[var(--border)] text-xs">
-                {rooms.filter((r) => r.status === "cleaning" || r.status === "maintenance").length === 0 ? (
-                  <div className="py-8 text-center text-[var(--muted)]">
-                    ไม่มีห้องที่รอทำความสะอาดหรือรอซ่อมบำรุงในขณะนี้ ✨
-                  </div>
-                ) : (
-                  rooms
-                    .filter((r) => r.status === "cleaning" || r.status === "maintenance")
-                    .map((room) => (
-                      <div key={room.id} className="py-3 flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-sm">
-                            ห้อง {room.roomNumber} ({room.type} - ชั้น {room.floor})
-                          </div>
-                          <div className="text-[11px] text-[var(--muted)]">
-                            สถานะ:{" "}
-                            {room.status === "cleaning"
-                              ? "🧹 รอแม่บ้านทำความสะอาด"
-                              : "🔧 รองานซ่อมบำรุง"}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleUpdateStatus(room.id, "vacant")}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer flex items-center gap-1.5"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>เสร็จสิ้น (ปรับเป็นห้องว่าง)</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                )}
-              </div>
-            </div>
+            <CleaningBoardView
+              rooms={rooms}
+              onUpdateStatus={handleUpdateStatus}
+            />
           )}
 
           {/* VIEW: Repairs Management */}
