@@ -3698,6 +3698,22 @@
   ],
   "pakdee_dev_daily_bookings": [
     {
+      "id": "b-auto-201-1793699445572",
+      "propertyId": "prop-1793250152420",
+      "roomNumber": "201",
+      "guestName": "ผู้เข้าพักรายวัน",
+      "guestPhone": "-",
+      "checkInDate": "2026-11-03",
+      "checkInTime": "14:00",
+      "checkOutDate": "2026-11-04",
+      "checkOutTime": "12:00",
+      "nights": 1,
+      "dailyRate": 650,
+      "totalRoomPrice": 650,
+      "keyDeposit": 500,
+      "status": "checked_in"
+    },
+    {
       "id": "b-auto-201-1793587294954",
       "propertyId": "prop-1",
       "roomNumber": "201",
@@ -4717,6 +4733,22 @@
     "id": "settings-prop-1793250152420"
   },
   "daily_bookings": [
+    {
+      "id": "b-auto-201-1793699445572",
+      "propertyId": "prop-1793250152420",
+      "roomNumber": "201",
+      "guestName": "ผู้เข้าพักรายวัน",
+      "guestPhone": "-",
+      "checkInDate": "2026-11-03",
+      "checkInTime": "14:00",
+      "checkOutDate": "2026-11-04",
+      "checkOutTime": "12:00",
+      "nights": 1,
+      "dailyRate": 650,
+      "totalRoomPrice": 650,
+      "keyDeposit": 500,
+      "status": "checked_in"
+    },
     {
       "id": "b-auto-201-1793587294954",
       "propertyId": "prop-1",

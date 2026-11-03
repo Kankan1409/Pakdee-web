@@ -11,6 +11,7 @@ import {
   ActivityLogItem,
   BranchSettingsDetail,
   DailyBooking,
+  defaultRoomTypes,
 } from "@/types/dormitory";
 import {
   initialProperty,
@@ -1905,9 +1906,11 @@ export const DatabaseService = {
     }
 
     if (saved) {
+      const roomTypes = saved.roomTypes && saved.roomTypes.length > 0 ? saved.roomTypes : defaultRoomTypes;
       if (property) {
         return {
           ...saved,
+          roomTypes,
           branchName: saved.branchName || property.name,
           address: saved.address || property.address,
           phone: saved.phone || property.phone,
@@ -1917,7 +1920,10 @@ export const DatabaseService = {
           waterRate: saved.waterRate !== undefined ? Number(saved.waterRate) : (property.waterRate ?? 18),
         };
       }
-      return saved;
+      return {
+        ...saved,
+        roomTypes,
+      };
     }
 
     // Default template tailored for this specific branch
