@@ -1059,11 +1059,14 @@ export default function HomePage() {
 
   // Handler: Update room status
   const handleUpdateStatus = async (roomId: string, newStatus: RoomStatus) => {
-    const targetRoom = rooms.find((r) => r.id === roomId);
+    const targetRoom = rooms.find((r) => r.id === roomId || r.roomNumber === roomId);
 
-    // Safeguard: ป้องกันการกดเปลี่ยนสถานะเป็น cleaning หรือ vacant โดยตรง หากห้องยังมีผู้เช่า/ผู้เข้าพักอยู่
+    // Safeguard: ป้องกันการกดเปลี่ยนสถานะห้องที่มีผู้เช่าอยู่ (occupied, overdue, daily) โดยยังไม่ได้แจ้งย้ายออก
+    // หมายเหตุ: หากห้องอยู่ในสถานะ "cleaning" หรือ "maintenance" อยู่แล้ว จะสามารถกดยืนยันเป็น "vacant" (ห้องว่าง) ได้ทันที
     if (
       targetRoom &&
+      targetRoom.status !== "cleaning" &&
+      targetRoom.status !== "maintenance" &&
       (targetRoom.status === "occupied" || targetRoom.status === "overdue" || targetRoom.status === "daily" || !!targetRoom.currentTenant) &&
       (newStatus === "cleaning" || newStatus === "vacant")
     ) {
@@ -2770,6 +2773,7 @@ export default function HomePage() {
                 dailyBookings={dailyBookings}
                 invoices={invoices}
                 onSelectRoom={(room) => setSelectedRoom(room)}
+                onUpdateStatus={handleUpdateStatus}
                 onOpenAddTenant={(targetRoomId) => {
                   const sel = rooms.find((r) => r.id === targetRoomId);
                   if (sel && sel.status !== "vacant") {

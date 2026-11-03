@@ -770,9 +770,9 @@ export const DatabaseService = {
 
   async updateRoomStatus(roomId: string, status: RoomStatus): Promise<boolean> {
     const allRooms = this.getAllRawRooms();
-    const targetRoom = allRooms.find((r) => r.id === roomId);
+    const targetRoom = allRooms.find((r) => r.id === roomId || r.roomNumber === roomId);
     const updated = allRooms.map((r) => {
-      if (r.id === roomId) {
+      if (r.id === roomId || r.roomNumber === roomId) {
         if (status === "vacant" || status === "cleaning") {
           return { ...r, status, currentTenant: undefined, leaseEndDate: undefined };
         }
@@ -781,6 +781,22 @@ export const DatabaseService = {
       return r;
     });
     setLocal(KEYS.ROOMS, updated);
+
+    // If marked as vacant, detach room assignment from any daily guest in tenants registry
+    if (status === "vacant" && targetRoom) {
+      const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+      const updatedTenants = allTenants.map((t) => {
+        if (
+          (t.propertyId || "prop-1") === (targetRoom.propertyId || "prop-1") &&
+          (t.roomNumber === targetRoom.roomNumber || t.roomId === targetRoom.id) &&
+          t.notes?.includes("[ผู้เข้าพักรายวัน]")
+        ) {
+          return { ...t, roomNumber: undefined, roomId: undefined };
+        }
+        return t;
+      });
+      setLocal(KEYS.TENANTS, updatedTenants);
+    }
 
     // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
     if (typeof window !== "undefined") {

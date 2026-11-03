@@ -26,6 +26,7 @@ interface RoomMatrixProps {
   dailyBookings?: DailyBooking[];
   invoices?: Invoice[];
   onSelectRoom: (room: Room) => void;
+  onUpdateStatus?: (roomId: string, status: RoomStatus) => void;
   onOpenAddTenant?: (roomId: string) => void;
   onOpenAddRoom?: () => void;
   onQuickGenerateStandardRooms?: () => void;
@@ -41,6 +42,7 @@ export function RoomMatrix({
   dailyBookings = [],
   invoices = [],
   onSelectRoom,
+  onUpdateStatus,
   onOpenAddTenant,
   onOpenAddRoom,
   onQuickGenerateStandardRooms,
@@ -696,9 +698,20 @@ export function RoomMatrix({
                           มัดจำแล้ว
                         </span>
                       ) : room.status === "cleaning" ? (
-                        <span className="text-yellow-600 dark:text-yellow-400 font-semibold">
-                          แจ้งเสร็จ ➔
-                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onUpdateStatus) {
+                              onUpdateStatus(room.id, "vacant");
+                            }
+                          }}
+                          className="text-amber-600 dark:text-amber-400 hover:text-emerald-600 dark:hover:text-emerald-400 font-bold px-2 py-0.5 rounded-lg hover:bg-emerald-500/10 active:scale-95 transition cursor-pointer flex items-center gap-1 z-10"
+                          title="ยืนยันทำความสะอาดเสร็จแล้ว (ปรับเป็นห้องว่าง)"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>แจ้งเสร็จ ➔</span>
+                        </button>
                       ) : (
                         <span className="text-slate-500 font-medium">
                           {cfg.label}
