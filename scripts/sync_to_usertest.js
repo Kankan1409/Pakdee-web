@@ -25,6 +25,11 @@ const files = [
   'src/components/meter/quick-meter-modal.tsx',
   'src/components/accounting/add-expense-modal.tsx',
   'src/components/accounting/accounting-export-view.tsx',
+  'src/components/checkout/checkout-management-view.tsx',
+  'src/components/daily/daily-calendar-view.tsx',
+  'src/components/cleaning/cleaning-board-view.tsx',
+  'src/components/tenants/tenants-list-view.tsx',
+  'src/components/invoices/invoices-billing-view.tsx',
   'src/components/layout/sidebar.tsx',
   'src/app/page.tsx',
   'data/db_port3000.json'
@@ -36,6 +41,7 @@ const dstBase = 'D:/DESKTOP/Pakdee-UserTest';
 files.forEach(file => {
   const src = path.join(srcBase, file);
   const dst = path.join(dstBase, file);
+  if (!fs.existsSync(src)) return;
   const dir = path.dirname(dst);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
