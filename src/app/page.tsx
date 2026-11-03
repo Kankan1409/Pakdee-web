@@ -12,14 +12,21 @@ import { RoomDetailModal } from "@/components/dashboard/room-detail-modal";
 import { QuickMeterModal } from "@/components/meter/quick-meter-modal";
 import { MeterSpreadsheetView } from "@/components/meters/meter-spreadsheet-view";
 import { InvoicePreviewModal } from "@/components/invoice/invoice-preview-modal";
+import { InvoicesBillingView } from "@/components/invoices/invoices-billing-view";
+import { SlipVerificationView } from "@/components/invoices/slip-verification-view";
+import { ReceiptsListView } from "@/components/invoices/receipts-list-view";
 import { SuperAdminModal } from "@/components/admin/super-admin-modal";
 import { ContractManagementView } from "@/components/contracts/contract-management-view";
 import { RepairsManagementView } from "@/components/repairs/repairs-management-view";
 import { AccountingExportView } from "@/components/accounting/accounting-export-view";
 import { BranchSettingsView } from "@/components/settings/branch-settings-view";
 import { BroadcastLineView } from "@/components/broadcast/broadcast-line-view";
+import { CheckoutManagementView, CheckoutExecutionData } from "@/components/checkout/checkout-management-view";
+import { CleaningBoardView } from "@/components/cleaning/cleaning-board-view";
+import { DailyCalendarView } from "@/components/daily/daily-calendar-view";
 import { AddTenantModal } from "@/components/tenants/add-tenant-modal";
 import { TenantRegistrationView } from "@/components/tenants/tenant-registration-view";
+import { TenantsListView } from "@/components/tenants/tenants-list-view";
 import { AddRoomModal } from "@/components/rooms/add-room-modal";
 import { DailyCheckoutModal } from "@/components/dashboard/daily-checkout-modal";
 import { DatabaseInspectorModal } from "@/components/admin/database-inspector-modal";
@@ -58,7 +65,6 @@ import {
   ExpenseItem,
   BranchSettingsDetail,
   BroadcastItem,
-  defaultRoomTypes,
 } from "@/types/dormitory";
 import { formatCurrency, formatDateThai, formatMonthThai, cn } from "@/lib/utils";
 import {
@@ -2057,19 +2063,19 @@ export default function HomePage() {
   };
 
   // Handler: Checkout Settlement with Auto Closing Invoice/Receipt Generation (Requirement 5)
-  const handleExecuteCheckout = async () => {
-    const targetRoom = rooms.find((r) => r.id === checkoutRoomId);
+  const handleExecuteCheckout = async (data?: CheckoutExecutionData) => {
+    const targetRoom = data?.targetRoom || rooms.find((r) => r.id === checkoutRoomId);
     if (!targetRoom) {
       showToast("กรุณาเลือกห้องที่ต้องการทำเรื่องย้ายออก", "warning");
       return;
     }
 
-    const elecPrev = checkoutElecPrev === "" ? targetRoom.currentElectricMeter : Number(checkoutElecPrev);
-    const elecCurr = checkoutElecCurr === "" ? targetRoom.currentElectricMeter : Number(checkoutElecCurr);
-    const waterPrev = checkoutWaterPrev === "" ? targetRoom.currentWaterMeter : Number(checkoutWaterPrev);
-    const waterCurr = checkoutWaterCurr === "" ? targetRoom.currentWaterMeter : Number(checkoutWaterCurr);
-    const cleaningFee = checkoutCleaningFee === "" ? 0 : Number(checkoutCleaningFee);
-    const damageFee = checkoutDamageFee === "" ? 0 : Number(checkoutDamageFee);
+    const elecPrev = data ? data.elecPrev : (checkoutElecPrev === "" ? targetRoom.currentElectricMeter : Number(checkoutElecPrev));
+    const elecCurr = data ? data.elecCurr : (checkoutElecCurr === "" ? targetRoom.currentElectricMeter : Number(checkoutElecCurr));
+    const waterPrev = data ? data.waterPrev : (checkoutWaterPrev === "" ? targetRoom.currentWaterMeter : Number(checkoutWaterPrev));
+    const waterCurr = data ? data.waterCurr : (checkoutWaterCurr === "" ? targetRoom.currentWaterMeter : Number(checkoutWaterCurr));
+    const cleaningFee = data ? data.cleaningFee : (checkoutCleaningFee === "" ? 0 : Number(checkoutCleaningFee));
+    const damageFee = data ? data.damageFee : (checkoutDamageFee === "" ? 0 : Number(checkoutDamageFee));
 
     const elecUnits = Math.max(0, elecCurr - elecPrev);
     const waterUnits = Math.max(0, waterCurr - waterPrev);
@@ -2086,7 +2092,7 @@ export default function HomePage() {
     );
 
     const totalDeductions = elecCost + waterCost + cleaningFee + damageFee + unpaidBillsAmount;
-    const deposit = checkoutDepositAmount !== "" ? Number(checkoutDepositAmount) : (targetRoom.monthlyRate * 2 || 8000);
+    const deposit = data ? data.depositAmount : (checkoutDepositAmount !== "" ? Number(checkoutDepositAmount) : (targetRoom.monthlyRate * 2 || 8000));
     const netRefund = deposit - totalDeductions;
 
     setConfirmDialog({
@@ -2788,158 +2794,29 @@ export default function HomePage() {
 
           {/* VIEW: Daily Bookings */}
           {currentTab === "daily" && (
-            <div className="space-y-5">
-              {/* Top Banner Card: Header & Action (แยกกล่องชัดเจน) */}
-              <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0 shadow-xs">
-                    <Calendar className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base font-bold text-[var(--foreground)] tracking-tight">
-                        ปฏิทินจองห้องพักรายวัน (Daily Bookings)
-                      </h3>
-                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                        {dailyBookings.length} รายการทั้งหมด
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      เช็คอิน 14:00 น. / เช็คเอาท์ 12:00 น. • มัดจำคีย์การ์ด • ส่งต่องานทำความสะอาดแม่บ้านอัตโนมัติ
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const firstVacant = rooms.find((r) => r.status === "vacant");
-                      setNewBookingForm({
-                        bookingType: "daily",
-                        roomNumber: firstVacant?.roomNumber || "",
-                        guestName: "",
-                        guestPhone: "",
-                        idCard: "",
-                        vehiclePlate: "",
-                        checkInDate: new Date().toISOString().slice(0, 10),
-                        checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-                        nightlyRate: firstVacant?.dailyRate || 650,
-                        depositAmount: 500,
-                        roomDeposit: 500,
-                      });
-                      setIsNewBookingOpen(true);
-                    }}
-                    className="bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-2 shadow-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>+ จองห้องรายวันใหม่</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Data Section: Distinctly Separated Card (แยกเนื้อหาออกจากหัวข้อ) */}
-              <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    <h4 className="text-sm font-bold text-[var(--foreground)]">
-                      รายการผู้เข้าพักรายวันและสถานะห้อง
-                    </h4>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      กำลังเข้าพัก: <strong>{dailyBookings.filter((b) => b.status === "checked_in").length}</strong>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-500" />
-                      รอเข้าพัก: <strong>{dailyBookings.filter((b) => b.status === "confirmed").length}</strong>
-                    </span>
-                  </div>
-                </div>
-
-                {dailyBookings.length === 0 ? (
-                  <div className="py-12 text-center text-[var(--muted)] space-y-3 bg-[var(--subtle)] rounded-2xl border border-[var(--border)]">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                      <Calendar className="w-6 h-6" />
-                    </div>
-                    <div className="font-semibold text-sm text-[var(--foreground)]">
-                      ยังไม่มีรายการจองห้องพักรายวันในขณะนี้
-                    </div>
-                    <p className="text-xs max-w-sm mx-auto">
-                      คลิกปุ่ม &quot;+ จองห้องรายวันใหม่&quot; ด้านบน เพื่อเปิดห้องว่างให้ลูกค้าเข้าพักแบบรายวัน
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {dailyBookings.map((b) => (
-                      <div
-                        key={b.id}
-                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--subtle)] hover:border-amber-500/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs"
-                      >
-                        <div className="flex items-start sm:items-center gap-3.5">
-                          <div className="px-3 py-2 rounded-xl bg-[var(--card)] border border-[var(--border)] font-black text-sm text-[var(--foreground)] shrink-0 shadow-2xs text-center min-w-[70px]">
-                            <div className="text-[10px] text-[var(--muted)] font-normal uppercase">ห้องพัก</div>
-                            <div>{b.roomNumber}</div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="font-bold text-sm text-[var(--foreground)] flex items-center gap-2">
-                              <span>{b.guestName}</span>
-                              <span className="text-xs font-mono font-normal text-[var(--muted)]">({b.guestPhone})</span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[11px] font-medium text-[var(--foreground)]">
-                                📅 เข้าพัก {b.nights} คืน ({b.checkInDate} ถึง {b.checkOutDate})
-                              </span>
-                              <span>•</span>
-                              <span>ค่าห้อง: <strong className="text-[var(--foreground)]">{formatCurrency(b.totalRoomPrice)}</strong></span>
-                              <span>•</span>
-                              <span>มัดจำ: <strong className="text-amber-600 dark:text-amber-400">{formatCurrency(b.keyDeposit)}</strong></span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2.5 self-end md:self-center shrink-0">
-                          <span
-                            className={cn(
-                              "font-bold text-xs px-3 py-1.5 rounded-xl border flex items-center gap-1.5",
-                              b.status === "checked_in"
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                                : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "w-2 h-2 rounded-full",
-                                b.status === "checked_in" ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
-                              )}
-                            />
-                            {b.status === "checked_in" ? "กำลังเข้าพัก (In แล้ว)" : "ยืนยันการจองแล้ว"}
-                          </span>
-
-                          {b.status === "confirmed" && (
-                            <button
-                              onClick={() => handleDailyCheckIn(b.id, b.roomNumber)}
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer shadow-xs"
-                            >
-                              เช็คอิน (In)
-                            </button>
-                          )}
-                          {b.status === "checked_in" && (
-                            <button
-                              onClick={() => handleDailyCheckOut(b.id, b.roomNumber, b.keyDeposit)}
-                              className="bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer shadow-xs"
-                            >
-                              เช็คเอาท์ (Out)
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <DailyCalendarView
+              dailyBookings={dailyBookings}
+              rooms={rooms}
+              onOpenNewBooking={() => {
+                const firstVacant = rooms.find((r) => r.status === "vacant");
+                setNewBookingForm({
+                  bookingType: "daily",
+                  roomNumber: firstVacant?.roomNumber || "",
+                  guestName: "",
+                  guestPhone: "",
+                  idCard: "",
+                  vehiclePlate: "",
+                  checkInDate: new Date().toISOString().slice(0, 10),
+                  checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+                  nightlyRate: firstVacant?.dailyRate || 650,
+                  depositAmount: 500,
+                  roomDeposit: 500,
+                });
+                setIsNewBookingOpen(true);
+              }}
+              onDailyCheckIn={handleDailyCheckIn}
+              onDailyCheckOut={handleDailyCheckOut}
+            />
           )}
 
           {/* VIEW: Meter Reading (Spreadsheet Fast Entry & Top Summary Banner) */}
@@ -2953,627 +2830,50 @@ export default function HomePage() {
           )}
 
           {/* VIEW: Invoices */}
-          {currentTab === "invoices" && (() => {
-            // Extract available billing months
-            const invoiceMonths = Array.from(
-              new Set([
-                new Date().toISOString().slice(0, 7),
-                ...invoices
-                  .map((i) => (i.billingDate && i.billingDate.length >= 7 ? i.billingDate.slice(0, 7) : ""))
-                  .filter((m) => !!m),
-              ])
-            ).sort().reverse();
-
-            const displayedInvoices = invoices.filter((i) => {
-              let matchMonth = true;
-              if (invoiceMonthFilter !== "all") {
-                matchMonth = (i.billingDate || "").startsWith(invoiceMonthFilter);
-              }
-              const q = invoiceSearchQuery.trim().toLowerCase();
-              const matchSearch =
-                !q ||
-                i.invoiceNumber.toLowerCase().includes(q) ||
-                i.roomNumber.toLowerCase().includes(q) ||
-                i.tenantName.toLowerCase().includes(q);
-              return matchMonth && matchSearch;
-            });
-
-            const invBilled = displayedInvoices.reduce((acc, i) => acc + i.totalAmount, 0);
-            const invPaid = displayedInvoices
-              .filter((i) => i.status === "paid")
-              .reduce((acc, i) => acc + i.totalAmount, 0);
-            const invOverdue = displayedInvoices
-              .filter((i) => i.status !== "paid")
-              .reduce((acc, i) => acc + i.totalAmount, 0);
-            const invPaidCount = displayedInvoices.filter((i) => i.status === "paid").length;
-            const invOverdueCount = displayedInvoices.filter((i) => i.status !== "paid").length;
-            const invCollectionRate =
-              invBilled > 0 ? Math.round((invPaid / invBilled) * 100) : 0;
-
-            return (
-              <div className="space-y-5">
-                {/* 3 Top Financial KPI Summary Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Card 1: รายรับที่รับชำระแล้วจริง (Paid) */}
-                  <div className="bg-[var(--card)] border border-[var(--border)] p-5 rounded-2xl shadow-xs transition hover:border-emerald-500/50">
-                    <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-                      <span className="font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                        <span>รายรับที่รับชำระแล้ว (Paid)</span>
-                      </span>
-                      <span className="text-[10px] font-bold bg-emerald-500/15 text-emerald-600 px-2 py-0.5 rounded-full">
-                        {invPaidCount} บิล
-                      </span>
-                    </div>
-                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">
-                      {formatCurrency(invPaid)}
-                    </div>
-                    <div className="text-xs text-[var(--muted)] mt-1.5">
-                      อัตราการจัดเก็บ: <strong className="text-emerald-600 font-bold">{invCollectionRate}%</strong> ของยอดเรียกเก็บ
-                    </div>
-                  </div>
-
-                  {/* Card 2: ยอดค้างชำระ / รอติดตาม (Overdue) */}
-                  <div className="bg-[var(--card)] border border-[var(--border)] p-5 rounded-2xl shadow-xs transition hover:border-rose-500/50">
-                    <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-                      <span className="font-semibold text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
-                        <AlertCircle className="w-4 h-4 text-rose-500" />
-                        <span>ยอดค้างชำระ (Pending / Overdue)</span>
-                      </span>
-                      <span className="text-[10px] font-bold bg-rose-500/15 text-rose-600 px-2 py-0.5 rounded-full">
-                        {invOverdueCount} บิล
-                      </span>
-                    </div>
-                    <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-2">
-                      {formatCurrency(invOverdue)}
-                    </div>
-                    <div className="text-xs text-[var(--muted)] mt-1.5">
-                      {invOverdueCount > 0 ? `มี ${invOverdueCount} บิลรอการชำระหรือแนบสลิป` : "ไม่มีบิลค้างชำระ ✓"}
-                    </div>
-                  </div>
-
-                  {/* Card 3: ยอดเรียกเก็บรวม (Total Billed) */}
-                  <div className="bg-[var(--card)] border border-[var(--border)] p-5 rounded-2xl shadow-xs transition hover:border-indigo-500/50">
-                    <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-                      <span className="font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                        <Receipt className="w-4 h-4 text-indigo-500" />
-                        <span>ยอดเรียกเก็บรวมรอบบิล (Billed)</span>
-                      </span>
-                      <span className="text-[10px] font-bold bg-indigo-500/15 text-indigo-600 px-2 py-0.5 rounded-full">
-                        {displayedInvoices.length} บิล
-                      </span>
-                    </div>
-                    <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-2">
-                      {formatCurrency(invBilled)}
-                    </div>
-                    <div className="text-xs text-[var(--muted)] mt-1.5">
-                      รวมค่าเช่า ค่าน้ำ ค่าไฟ และค่าบริการ
-                    </div>
-                  </div>
-                </div>
-
-                {/* Filter and Invoices List Table */}
-                <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                        <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>รายการใบแจ้งหนี้ & การชำระเงิน</span>
-                      </h3>
-                      <p className="text-xs text-[var(--muted)]">
-                        ออกบิลอัตโนมัติพร้อมสร้าง Dynamic PromptPay QR Code และส่งเข้า LINE ผู้เช่า
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSendLineAllInvoices}
-                        disabled={isSendingLineBatch}
-                        className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
-                        title="ส่งบิลแจ้งหนี้พร้อม Dynamic PromptPay QR Code เข้า LINE ผู้เช่าทุกห้องที่มีบิลค้าง"
-                      >
-                        <Send className={`w-3.5 h-3.5 ${isSendingLineBatch ? "animate-spin" : ""}`} />
-                        <span>{isSendingLineBatch ? "กำลังส่ง LINE..." : "📱 ส่ง LINE ทุกห้องที่มีบิลค้าง"}</span>
-                      </button>
-                      <button
-                        onClick={handleGenerateMonthlyInvoices}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>⚡ คำนวณและออกบิลรอบเดือน</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Filter Toolbar: Month Selector + Search */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 pb-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="relative">
-                        <select
-                          value={invoiceMonthFilter}
-                          onChange={(e) => setInvoiceMonthFilter(e.target.value)}
-                          aria-label="กรองรอบเดือนใบแจ้งหนี้"
-                          className="bg-[var(--subtle)] border border-[var(--border)] text-[var(--foreground)] text-xs font-semibold rounded-xl px-3 py-1.5 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition cursor-pointer appearance-none"
-                        >
-                          <option value="all">ทุกรอบเดือน (ทั้งหมด - All Time)</option>
-                          {invoiceMonths.map((ym) => (
-                            <option key={ym} value={ym}>
-                              {formatMonthThai(ym)} {ym === new Date().toISOString().slice(0, 7) ? "★ เดือนปัจจุบัน" : ""}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronRight className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90 text-[var(--muted)] pointer-events-none" />
-                      </div>
-
-                      {invoiceMonthFilter !== "all" && (
-                        <button
-                          type="button"
-                          onClick={() => setInvoiceMonthFilter("all")}
-                          className="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 transition cursor-pointer"
-                        >
-                          ล้างตัวกรองเดือน
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="relative w-full sm:w-64">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-                      <input
-                        type="text"
-                        placeholder="ค้นหาห้อง / ผู้เช่า / เลขที่บิล..."
-                        value={invoiceSearchQuery}
-                        onChange={(e) => setInvoiceSearchQuery(e.target.value)}
-                        className="w-full bg-[var(--subtle)] border border-[var(--border)] rounded-xl pl-8.5 pr-3 py-1.5 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="divide-y divide-[var(--border)] text-xs">
-                    {displayedInvoices.length === 0 ? (
-                      <div className="py-8 text-center text-[var(--muted)] space-y-1">
-                        <div>ไม่พบรายการใบแจ้งหนี้ที่ตรงกับเงื่อนไข</div>
-                        {invoiceMonthFilter !== "all" && (
-                          <div className="text-[11px] text-emerald-600">
-                            รอบเดือน {formatMonthThai(invoiceMonthFilter)} ยังไม่มีบิล คลิก "คำนวณและออกบิลรอบเดือน" เพื่อสร้างบิล
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      displayedInvoices.map((inv) => (
-                        <div
-                          key={inv.id}
-                          className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-black/5 dark:hover:bg-white/5 px-2 rounded-xl transition"
-                        >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-[var(--foreground)]">
-                                {inv.invoiceNumber} (ห้อง {inv.roomNumber})
-                              </span>
-                              <span className="text-slate-600 dark:text-slate-400 font-medium">
-                                - {inv.tenantName}
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-[var(--muted)] mt-0.5 flex items-center gap-2 flex-wrap">
-                              <span>ยอดรวม: <span className="font-semibold text-[var(--foreground)]">{formatCurrency(inv.totalAmount)}</span></span>
-                              <span>|</span>
-                              <span>กำหนดชำระ: {inv.dueDate || "5 ของเดือน"}</span>
-                              <span>|</span>
-                              <span>รอบบิล: {inv.billingDate || "-"}</span>
-                              <span>|</span>
-                              {inv.lineDeliveryStatus === "sent" ? (
-                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                                  ✓ ส่ง LINE แล้ว {inv.lineSentAt ? `(${inv.lineSentAt})` : ""}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-full">
-                                  ยังไม่ได้ส่ง LINE
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {inv.status === "paid" ? (
-                              <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1">
-                                <Check className="w-3.5 h-3.5" /> ชำระแล้ว
-                              </span>
-                            ) : (
-                              <>
-                                <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg">
-                                  ค้างชำระ
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleMarkAsPaid(inv.id);
-                                    showToast(`🤖 AI ตรวจสลิปโอนเงินห้อง ${inv.roomNumber} (${formatCurrency(inv.totalAmount)}) ผ่าน 100%! บันทึกชำระแล้ว ✓`, "success");
-                                  }}
-                                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                  title="จำลองผู้เช่าส่งสลิปผ่าน LINE ให้ AI ตรวจจับคู่ยอดเงินอัตโนมัติ"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                                  <span>AI ตรวจสลิป</span>
-                                </button>
-                                <button
-                                  onClick={() => handleMarkAsPaid(inv.id)}
-                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer"
-                                >
-                                  ทำเครื่องหมายว่าชำระแล้ว
-                                </button>
-                              </>
-                            )}
-                            <button
-                              onClick={() => {
-                                setActiveInvoice(inv);
-                                setIsInvoiceModalOpen(true);
-                              }}
-                              className="bg-[var(--subtle)] hover:bg-[var(--border)] text-[var(--foreground)] px-2.5 py-1 rounded-lg font-semibold border border-[var(--border)] transition cursor-pointer flex items-center gap-1"
-                            >
-                              <QrCode className="w-3.5 h-3.5" />
-                              <span>ดูบิล / QR</span>
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {currentTab === "invoices" && (
+            <InvoicesBillingView
+              invoices={invoices}
+              isSendingLineBatch={isSendingLineBatch}
+              onSendLineAllInvoices={handleSendLineAllInvoices}
+              onGenerateMonthlyInvoices={handleGenerateMonthlyInvoices}
+              onMarkAsPaid={handleMarkAsPaid}
+              onOpenInvoiceModal={(inv) => {
+                setActiveInvoice(inv);
+                setIsInvoiceModalOpen(true);
+              }}
+              onShowToast={showToast}
+            />
+          )}
 
           {/* VIEW: Slips (AI Slip Verification) */}
-          {currentTab === "slips" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-blue-500" />
-                    <span>ระบบตรวจสลิปโอนเงิน (AI & PromptPay Slip Verification)</span>
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    ตรวจเช็คความถูกต้องของสลิปโอนเงินอัตโนมัติ ป้องกันสลิปปลอม และสลิปซ้ำ
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--subtle)] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs">สลิปห้อง 101 (รอบ ต.ค. 2026)</span>
-                    <span className="text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold px-2 py-0.5 rounded-full">
-                      ตรวจสอบผ่าน 100%
-                    </span>
-                  </div>
-                  <div className="text-xs space-y-1 text-[var(--muted)]">
-                    <div>ผู้โอน: นายสมชาย สุขสบาย (ธ.กสิกรไทย)</div>
-                    <div>ยอดเงิน: <span className="font-semibold text-emerald-600">5,064.00 บาท</span> (ตรงกับยอดบิล)</div>
-                    <div>เลขอ้างอิง: 2026102609384501</div>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl border border-dashed border-[var(--border)] flex flex-col items-center justify-center text-center p-6 space-y-2">
-                  <CreditCard className="w-8 h-8 text-[var(--muted)]" />
-                  <div className="text-xs font-semibold">รายการสลิปรอตรวจสอบ</div>
-                  <div className="text-[10px] text-[var(--muted)]">
-                    เมื่อผู้เช่าส่งสลิปผ่าน LINE OA ระบบ AI จะอ่านยอดเงินและเวลาเพื่อจับคู่บิลอัตโนมัติ
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {currentTab === "slips" && <SlipVerificationView />}
 
           {/* VIEW: Receipts */}
           {currentTab === "receipts" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                    <Printer className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>ระบบออกใบเสร็จรับเงิน (Official Receipts)</span>
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    รายการบิลที่ชำระแล้ว พร้อมพิมพ์ใบเสร็จหรือส่ง PDF ทาง LINE
-                  </p>
-                </div>
-              </div>
-
-              <div className="divide-y divide-[var(--border)] text-xs">
-                {invoices.filter((i) => i.status === "paid").map((inv) => (
-                  <div key={inv.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-sm">REC-{inv.invoiceNumber.replace("INV-", "")}</span> - ห้อง {inv.roomNumber} ({inv.tenantName})
-                      <div className="text-[11px] text-[var(--muted)]">
-                        ชำระเมื่อ {inv.paidAt ? formatDateThai(inv.paidAt) : "26 ต.ค. 2026"} • ยอดเงิน {formatCurrency(inv.totalAmount)}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setActiveInvoice(inv);
-                        setIsInvoiceModalOpen(true);
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>พิมพ์ใบเสร็จ</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ReceiptsListView
+              invoices={invoices}
+              onOpenReceipt={(inv) => {
+                setActiveInvoice(inv);
+                setIsInvoiceModalOpen(true);
+              }}
+            />
           )}
 
           {/* VIEW: Tenants Directory (รวมทั้งผู้เช่ารายเดือนและผู้เข้าพักรายวัน) */}
-          {currentTab === "tenants" && (() => {
-            // Map room numbers to tenants (Multi-source: rooms, contracts, invoices)
-            const tenantRoomMap = new Map<string, string>();
-            rooms.forEach((r) => {
-              if (r.currentTenant) {
-                tenantRoomMap.set(r.currentTenant.id, r.roomNumber);
-                tenantRoomMap.set(r.currentTenant.fullName, r.roomNumber);
-              }
-            });
-            contracts.forEach((c) => {
-              if (c.tenantName && c.roomNumber) {
-                if (!tenantRoomMap.has(c.tenantName)) tenantRoomMap.set(c.tenantName, c.roomNumber);
-              }
-            });
-            invoices.forEach((inv) => {
-              if (inv.tenantName && inv.roomNumber) {
-                if (!tenantRoomMap.has(inv.tenantName)) tenantRoomMap.set(inv.tenantName, inv.roomNumber);
-              }
-            });
-
-            // Fast lookup for daily bookings
-            const dailyBookingMap = new Map<string, DailyBooking>();
-            dailyBookings.forEach((b) => {
-              dailyBookingMap.set(b.guestName, b);
-              if (b.guestPhone) dailyBookingMap.set(b.guestPhone, b);
-              dailyBookingMap.set(`${b.guestName}_${b.guestPhone}`, b);
-            });
-
-            // รวมทั้งผู้เช่ารายเดือน และผู้เข้าพักรายวัน (User Requirement 3 - Multi-source Room Number Extraction)
-            const combinedList: Array<{
-              id: string;
-              type: "monthly" | "daily";
-              roomNumber: string;
-              fullName: string;
-              phone: string;
-              idCard?: string;
-              lineId?: string;
-              vehiclePlate?: string;
-              emergencyContact?: string;
-              depositAmount?: number;
-              stayInfo?: string;
-              statusText?: string;
-            }> = [];
-
-            tenants.forEach((t) => {
-              const isDaily = t.notes?.includes("รายวัน");
-              const matchingBooking =
-                dailyBookingMap.get(`${t.fullName}_${t.phone}`) ||
-                dailyBookingMap.get(t.fullName) ||
-                (t.phone ? dailyBookingMap.get(t.phone) : undefined);
-
-              // Multi-source room number resolution:
-              // 1. Direct t.roomNumber
-              // 2. Room lookup by tenant id / name
-              // 3. Matching daily booking roomNumber
-              // 4. Notes regex e.g. "ห้อง 102"
-              const noteRoomMatch = t.notes?.match(/ห้อง\s*([A-Za-z0-9_-]+)/);
-              const room =
-                t.roomNumber ||
-                tenantRoomMap.get(t.id) ||
-                tenantRoomMap.get(t.fullName) ||
-                matchingBooking?.roomNumber ||
-                (noteRoomMatch ? noteRoomMatch[1] : "");
-
-              const finalIdCard = t.idCard || matchingBooking?.idCard || "";
-              const finalPlate = t.vehiclePlate || matchingBooking?.vehiclePlate || "";
-
-              combinedList.push({
-                id: t.id,
-                type: isDaily ? "daily" : "monthly",
-                roomNumber: room,
-                fullName: t.fullName,
-                phone: t.phone,
-                idCard: finalIdCard,
-                lineId: t.lineId,
-                vehiclePlate: finalPlate,
-                emergencyContact: t.emergencyContact,
-                depositAmount: t.depositAmount || (matchingBooking ? (matchingBooking.keyDeposit || 0) + (matchingBooking.roomDeposit || 0) : undefined),
-                stayInfo: isDaily
-                  ? (t.notes || (matchingBooking ? `เข้าพัก ${matchingBooking.checkInDate} ถึง ${matchingBooking.checkOutDate}` : "ผู้เข้าพักรายวัน"))
-                  : (room ? `สัญญาเช่าห้อง ${room}` : "ผู้เช่าในระบบ"),
-                statusText: isDaily ? "ผู้เข้าพักรายวัน" : "ผู้เช่ารายเดือน",
-              });
-            });
-
-            dailyBookings.forEach((b) => {
-              const existingItem = combinedList.find(
-                (item) => item.fullName === b.guestName || (b.guestPhone && item.phone === b.guestPhone)
-              );
-              if (existingItem) {
-                // If roomNumber or ID/plate was missing, fill it from daily booking!
-                if (!existingItem.roomNumber && b.roomNumber) {
-                  existingItem.roomNumber = b.roomNumber;
-                }
-                if (!existingItem.idCard && b.idCard) {
-                  existingItem.idCard = b.idCard;
-                }
-                if (!existingItem.vehiclePlate && b.vehiclePlate) {
-                  existingItem.vehiclePlate = b.vehiclePlate;
-                }
-              } else {
-                combinedList.push({
-                  id: b.id,
-                  type: "daily",
-                  roomNumber: b.roomNumber,
-                  fullName: b.guestName,
-                  phone: b.guestPhone,
-                  idCard: b.idCard || "",
-                  vehiclePlate: b.vehiclePlate || "",
-                  depositAmount: (b.keyDeposit || 0) + (b.roomDeposit || 0),
-                  stayInfo: `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights} คืน)`,
-                  statusText: b.status === "checked_in" ? "กำลังเข้าพัก" : "ยืนยันการจองแล้ว",
-                });
-              }
-            });
-
-            const filteredList = combinedList.filter((item) => {
-              const matchType =
-                tenantFilterTab === "all" || item.type === tenantFilterTab;
-              const q = tenantSearchQuery.trim().toLowerCase();
-              const matchSearch =
-                !q ||
-                item.fullName.toLowerCase().includes(q) ||
-                item.phone.toLowerCase().includes(q) ||
-                (item.idCard && item.idCard.toLowerCase().includes(q)) ||
-                (item.roomNumber && item.roomNumber.toLowerCase().includes(q));
-              return matchType && matchSearch;
-            });
-
-            const monthlyCount = combinedList.filter((i) => i.type === "monthly").length;
-            const dailyCount = combinedList.filter((i) => i.type === "daily").length;
-
-            return (
-              <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                      <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                      <span>ทะเบียนประวัติผู้เช่าและผู้เข้าพัก (Tenant & Guest Directory)</span>
-                    </h3>
-                    <p className="text-xs text-[var(--muted)] mt-0.5">
-                      รวมประวัติผู้เช่ารายเดือนและลูกค้าเข้าพักรายวันทั้งหมด เพื่อความครบถ้วนของข้อมูล
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSelectedRoom(null);
-                      setInitialAddTenantRoomId(undefined);
-                      handleTabChange("tenant-new");
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ ทำสัญญาเช่า / เพิ่มผู้เช่าใหม่</span>
-                  </button>
-                </div>
-
-                {/* Filter Tabs & Search Bar */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 pb-1">
-                  <div className="flex items-center gap-1.5 bg-[var(--subtle)] p-1 rounded-xl border border-[var(--border)] text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setTenantFilterTab("all")}
-                      className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
-                        tenantFilterTab === "all"
-                          ? "bg-[var(--card)] text-emerald-600 dark:text-emerald-400 shadow-xs border border-[var(--border)]"
-                          : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                      }`}
-                    >
-                      ทั้งหมด ({combinedList.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTenantFilterTab("monthly")}
-                      className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                        tenantFilterTab === "monthly"
-                          ? "bg-[var(--card)] text-indigo-600 dark:text-indigo-400 shadow-xs border border-[var(--border)]"
-                          : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                      }`}
-                    >
-                      <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                      <span>รายเดือน ({monthlyCount})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTenantFilterTab("daily")}
-                      className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                        tenantFilterTab === "daily"
-                          ? "bg-[var(--card)] text-blue-600 dark:text-blue-400 shadow-xs border border-[var(--border)]"
-                          : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                      }`}
-                    >
-                      <span className="w-2 h-2 rounded-full bg-blue-500" />
-                      <span>รายวัน ({dailyCount})</span>
-                    </button>
-                  </div>
-
-                  <div className="relative w-full sm:w-64">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-                    <input
-                      type="text"
-                      value={tenantSearchQuery}
-                      onChange={(e) => setTenantSearchQuery(e.target.value)}
-                      placeholder="ค้นหาชื่อ, เบอร์โทร, ห้อง..."
-                      className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] focus:outline-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead>
-                      <tr className="border-b border-[var(--border)] text-[var(--muted)] bg-[var(--subtle)]">
-                        <th className="py-3 px-3">ประเภท</th>
-                        <th className="py-3 px-3">ห้อง</th>
-                        <th className="py-3 px-3">ชื่อ-นามสกุล</th>
-                        <th className="py-3 px-3">เบอร์โทรศัพท์</th>
-                        <th className="py-3 px-3">ข้อมูลสัญญา / การเข้าพัก</th>
-                        <th className="py-3 px-3">เลขบัตรประชาชน</th>
-                        <th className="py-3 px-3">มัดจำ</th>
-                        <th className="py-3 px-3">LINE / ทะเบียนรถ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
-                      {filteredList.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="py-8 text-center text-[var(--muted)]">
-                            ไม่พบข้อมูลผู้เช่าตามตัวกรองที่เลือก
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredList.map((t) => (
-                          <tr key={t.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition">
-                            <td className="py-3 px-3">
-                              {t.type === "monthly" ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25">
-                                  รายเดือน
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25">
-                                  รายวัน
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 font-bold text-sm">
-                              {t.roomNumber ? `ห้อง ${t.roomNumber}` : "-"}
-                            </td>
-                            <td className="py-3 px-3 font-bold">{t.fullName}</td>
-                            <td className="py-3 px-3 font-mono">{t.phone}</td>
-                            <td className="py-3 px-3 text-[var(--muted)] text-[11px] max-w-xs truncate">
-                              {t.stayInfo || "-"}
-                            </td>
-                            <td className="py-3 px-3 font-mono text-[11px]">{t.idCard || "-"}</td>
-                            <td className="py-3 px-3 font-medium">
-                              {t.depositAmount ? formatCurrency(t.depositAmount) : "-"}
-                            </td>
-                            <td className="py-3 px-3 text-[var(--muted)] text-[11px]">
-                              {t.lineId ? `LINE: ${t.lineId}` : ""}
-                              {t.vehiclePlate ? ` • รถ: ${t.vehiclePlate}` : ""}
-                              {!t.lineId && !t.vehiclePlate ? "-" : ""}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
+          {currentTab === "tenants" && (
+            <TenantsListView
+              rooms={rooms}
+              tenants={tenants}
+              contracts={contracts}
+              invoices={invoices}
+              dailyBookings={dailyBookings}
+              onOpenNewTenant={() => {
+                setSelectedRoom(null);
+                setInitialAddTenantRoomId(undefined);
+                handleTabChange("tenant-new");
+              }}
+            />
+          )}
 
           {/* VIEW: Tenant Registration Full-Page View */}
           {currentTab === "tenant-new" && (
@@ -3612,517 +2912,24 @@ export default function HomePage() {
           )}
 
           {/* VIEW: Checkout & Deposit Refund */}
-          {currentTab === "checkout" && (() => {
-            const selectedRoom = rooms.find((rm) => rm.id === checkoutRoomId);
-            const activeCt = contracts.find(
-              (c) => c.roomNumber === selectedRoom?.roomNumber && c.status === "active"
-            );
-            const unpaidInvs = invoices.filter(
-              (i) => i.roomNumber === selectedRoom?.roomNumber && i.status !== "paid"
-            );
-            const unpaidBillsTotal = unpaidInvs.reduce(
-              (acc, i) => acc + (i.remainingAmount ?? i.totalAmount),
-              0
-            );
-
-            const elecPrevVal = checkoutElecPrev === "" ? (selectedRoom?.currentElectricMeter ?? 0) : Number(checkoutElecPrev);
-            const elecCurrVal = checkoutElecCurr === "" ? (selectedRoom?.currentElectricMeter ?? 0) : Number(checkoutElecCurr);
-            const elecUnits = Math.max(0, elecCurrVal - elecPrevVal);
-            const elecCost = elecUnits * property.electricRate;
-
-            const waterPrevVal = checkoutWaterPrev === "" ? (selectedRoom?.currentWaterMeter ?? 0) : Number(checkoutWaterPrev);
-            const waterCurrVal = checkoutWaterCurr === "" ? (selectedRoom?.currentWaterMeter ?? 0) : Number(checkoutWaterCurr);
-            const waterUnits = Math.max(0, waterCurrVal - waterPrevVal);
-            const waterCost = waterUnits * property.waterRate;
-
-            const cleanFeeVal = checkoutCleaningFee === "" ? 0 : Number(checkoutCleaningFee);
-            const dmgFeeVal = checkoutDamageFee === "" ? 0 : Number(checkoutDamageFee);
-            const depositVal = checkoutDepositAmount === "" ? 0 : Number(checkoutDepositAmount);
-
-            const totalDeductions = elecCost + waterCost + cleanFeeVal + dmgFeeVal + unpaidBillsTotal;
-            const netRefund = depositVal - totalDeductions;
-
-            return (
-              <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-6 max-w-4xl">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-[var(--foreground)] flex items-center gap-2">
-                      <DoorOpen className="w-5 h-5 text-rose-500" />
-                      <span>ระบบสรุปย้ายออก & คืนเงินประกัน (Move-out Settlement)</span>
-                    </h3>
-                    <p className="text-xs text-[var(--muted)] mt-0.5">
-                      คำนวณค่าน้ำ-ไฟวันย้ายออก หักบิลค้างชำระ ค่าทำความสะอาด และคำนวณเงินประกันคืนผู้เช่าตามจริง
-                    </p>
-                  </div>
-                  {selectedRoom && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 border border-rose-500/20 self-start sm:self-auto">
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                      ห้อง {selectedRoom.roomNumber} (ชั้น {selectedRoom.floor})
-                    </span>
-                  )}
-                </div>
-
-                {/* Step 1: Select Room */}
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-[var(--foreground)]">
-                    1. เลือกห้องที่ต้องการทำเรื่องย้ายออก
-                  </label>
-                  <select
-                    value={checkoutRoomId}
-                    onChange={(e) => {
-                      const selId = e.target.value;
-                      setCheckoutRoomId(selId);
-                      const r = rooms.find((rm) => rm.id === selId);
-                      if (r) {
-                        setCheckoutElecPrev(r.currentElectricMeter);
-                        setCheckoutElecCurr(r.currentElectricMeter);
-                        setCheckoutWaterPrev(r.currentWaterMeter);
-                        setCheckoutWaterCurr(r.currentWaterMeter);
-                        const act = contracts.find((c) => c.roomNumber === r.roomNumber && c.status === "active");
-                        const dep = act?.depositAmount || (r as any).depositAmount || r.currentTenant?.depositAmount || (r.monthlyRate * 2) || 8000;
-                        setCheckoutDepositAmount(dep);
-                      }
-                    }}
-                    className="w-full p-3 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-sm font-semibold focus:outline-emerald-500"
-                  >
-                    <option value="">-- กรุณาเลือกห้องพักที่ต้องการย้ายออก --</option>
-                    {rooms.filter((r) => (r.status === "occupied" || r.status === "overdue") && !r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]")).map((r) => (
-                      <option key={r.id} value={r.id}>
-                        ห้อง {r.roomNumber} - {r.currentTenant?.fullName || "ไม่มีชื่อ"} (ค่าเช่า ฿{(r.monthlyRate || 0).toLocaleString()}/เดือน) {r.status === "overdue" ? " [มียอดค้างชำระ]" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedRoom && (
-                  <div className="space-y-5 text-xs">
-                    {/* Bento Row 1: Tenant Information & Lease Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-1">
-                        <div className="text-[var(--muted)] flex items-center gap-1.5 font-medium">
-                          <Users className="w-3.5 h-3.5 text-blue-500" />
-                          <span>ข้อมูลผู้เช่าห้องพัก</span>
-                        </div>
-                        <div className="font-bold text-sm text-[var(--foreground)]">
-                          {selectedRoom.currentTenant?.fullName || "-"}
-                        </div>
-                        <div className="text-[var(--muted)]">
-                          โทร: {selectedRoom.currentTenant?.phone || "-"}
-                        </div>
-                      </div>
-
-                      <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-1">
-                        <div className="text-[var(--muted)] flex items-center gap-1.5 font-medium">
-                          <FileSignature className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>สัญญาเช่าที่เปิดใช้งาน</span>
-                        </div>
-                        <div className="font-bold text-sm text-[var(--foreground)]">
-                          {activeCt ? `สัญญาเลขที่ ${activeCt.contractNumber}` : "ไม่มีบันทึกสัญญา (ยึดตามเรทห้อง)"}
-                        </div>
-                        <div className="text-[var(--muted)]">
-                          {activeCt ? `เริ่ม ${activeCt.startDate} ถึง ${activeCt.endDate}` : "-"}
-                        </div>
-                      </div>
-
-                      <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-1">
-                        <div className="text-[var(--muted)] flex items-center gap-1.5 font-medium">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>เงินประกันมัดจำเดิม (ตามสัญญา)</span>
-                        </div>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            value={checkoutDepositAmount}
-                            onChange={(e) => setCheckoutDepositAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                            placeholder="0"
-                            className="w-full p-1.5 px-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400 focus:outline-emerald-500"
-                          />
-                        </div>
-                        <div className="text-[11px] text-[var(--muted)]">
-                          {activeCt ? `สัญญาบันทึกไว้ ฿${(activeCt.depositAmount || 0).toLocaleString()}` : "แก้ไขจำนวนเงินได้หากมีการเปลี่ยนแปลง"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bento Row 2: Unpaid Invoices Deduction Alert */}
-                    <div className="p-4 rounded-xl border transition-all bg-[var(--card)]">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="font-bold text-xs flex items-center gap-1.5 text-[var(--foreground)]">
-                          <Receipt className="w-4 h-4 text-amber-500" />
-                          <span>2. ตรวจสอบบิลค้างชำระของห้องพักนี้ (Unpaid Monthly Invoices)</span>
-                        </div>
-                        {unpaidInvs.length === 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            ไม่มีบิลค้างชำระ
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-600 border border-rose-500/20">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            พบบิลค้าง {unpaidInvs.length} ใบ (รวม {formatCurrency(unpaidBillsTotal)})
-                          </span>
-                        )}
-                      </div>
-
-                      {unpaidInvs.length > 0 ? (
-                        <div className="space-y-2 mt-3">
-                          <div className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--subtle)] overflow-hidden">
-                            {unpaidInvs.map((inv) => (
-                              <div key={inv.id} className="p-2.5 px-3 flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                  <div className="font-semibold text-xs text-[var(--foreground)] flex items-center gap-2">
-                                    <span>{inv.invoiceNumber}</span>
-                                    <span className="text-[11px] text-[var(--muted)]">รอบ {(inv as any).billingMonth || (inv as any).month || "-"}</span>
-                                  </div>
-                                  <div className="text-[11px] text-[var(--muted)]">
-                                    ยอดเรียกเก็บ ฿{(inv.totalAmount || 0).toLocaleString()} • ชำระแล้ว ฿{(inv.paidAmount || 0).toLocaleString()}
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-xs font-bold text-rose-600">
-                                    ค้างชำระ ฿{((inv.remainingAmount ?? inv.totalAmount) || 0).toLocaleString()}
-                                  </div>
-                                  <div className="text-[10px] text-amber-600 dark:text-amber-400">
-                                    (จะถูกนำไปหักจากเงินประกัน)
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-[var(--muted)]">
-                          ผู้เช่าชำระค่าเช่าและค่าน้ำ-ไฟตามรอบบิลที่ผ่านมาครบถ้วนแล้ว ไม่มียอดค้างชำระยกมา
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Bento Row 3: Move-out Meter Readings */}
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-[var(--foreground)]">
-                        3. บันทึกเลขมิเตอร์วันย้ายออก (Move-out Meter Readings)
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Electric Card */}
-                        <div className="p-4 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-3">
-                          <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
-                            <span className="font-bold text-xs flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                              <Zap className="w-4 h-4" />
-                              <span>มิเตอร์ไฟฟ้า (฿{property.electricRate}/หน่วย)</span>
-                            </span>
-                            <span className="font-mono text-xs font-bold text-[var(--foreground)]">
-                              ใช้ไป {elecUnits} หน่วย
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[11px] text-[var(--muted)] mb-1">
-                                เลขมิเตอร์เดิม (จากระบบ)
-                              </label>
-                              <input
-                                type="number"
-                                value={checkoutElecPrev}
-                                onChange={(e) => setCheckoutElecPrev(e.target.value === "" ? "" : Number(e.target.value))}
-                                placeholder="0"
-                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-[var(--foreground)] font-semibold mb-1">
-                                เลขวันย้ายออก *
-                              </label>
-                              <input
-                                type="number"
-                                value={checkoutElecCurr}
-                                onChange={(e) => setCheckoutElecCurr(e.target.value === "" ? "" : Number(e.target.value))}
-                                placeholder="0"
-                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-amber-500/50 font-mono text-xs font-bold text-amber-600 dark:text-amber-400 focus:outline-amber-500"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex justify-between items-center text-xs pt-1 text-[var(--muted)] border-t border-[var(--border)]">
-                            <span>คิดเป็นค่าไฟฟ้า:</span>
-                            <span className="font-bold text-[var(--foreground)] font-mono">
-                              {formatCurrency(elecCost)}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Water Card */}
-                        <div className="p-4 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-3">
-                          <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
-                            <span className="font-bold text-xs flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-                              <Sparkles className="w-4 h-4" />
-                              <span>มิเตอร์น้ำประปา (฿{property.waterRate}/หน่วย)</span>
-                            </span>
-                            <span className="font-mono text-xs font-bold text-[var(--foreground)]">
-                              ใช้ไป {waterUnits} หน่วย
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[11px] text-[var(--muted)] mb-1">
-                                เลขมิเตอร์เดิม (จากระบบ)
-                              </label>
-                              <input
-                                type="number"
-                                value={checkoutWaterPrev}
-                                onChange={(e) => setCheckoutWaterPrev(e.target.value === "" ? "" : Number(e.target.value))}
-                                placeholder="0"
-                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-[var(--foreground)] font-semibold mb-1">
-                                เลขวันย้ายออก *
-                              </label>
-                              <input
-                                type="number"
-                                value={checkoutWaterCurr}
-                                onChange={(e) => setCheckoutWaterCurr(e.target.value === "" ? "" : Number(e.target.value))}
-                                placeholder="0"
-                                className="w-full p-2 rounded-lg bg-[var(--card)] border border-blue-500/50 font-mono text-xs font-bold text-blue-600 dark:text-blue-400 focus:outline-blue-500"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex justify-between items-center text-xs pt-1 text-[var(--muted)] border-t border-[var(--border)]">
-                            <span>คิดเป็นค่าน้ำประปา:</span>
-                            <span className="font-bold text-[var(--foreground)] font-mono">
-                              {formatCurrency(waterCost)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bento Row 4: Additional Fees */}
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-[var(--foreground)]">
-                        4. ค่าบริการทำความสะอาดและค่าความเสียหาย
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="font-semibold text-xs text-[var(--foreground)]">
-                              ค่าทำความสะอาดห้องพัก (บาท)
-                            </label>
-                            <div className="flex gap-1">
-                              {[0, 300, 500, 800].map((amt) => (
-                                <button
-                                  key={amt}
-                                  type="button"
-                                  onClick={() => setCheckoutCleaningFee(amt)}
-                                  className={cn(
-                                    "px-1.5 py-0.5 rounded text-[10px] font-mono border transition cursor-pointer",
-                                    checkoutCleaningFee === amt
-                                      ? "bg-emerald-600 text-white border-emerald-600"
-                                      : "bg-[var(--card)] border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
-                                  )}
-                                >
-                                  {amt}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <input
-                            type="number"
-                            value={checkoutCleaningFee}
-                            onChange={(e) => setCheckoutCleaningFee(e.target.value === "" ? "" : Number(e.target.value))}
-                            placeholder="0"
-                            className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
-                          />
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] space-y-2">
-                          <label className="block font-semibold text-xs text-[var(--foreground)]">
-                            ค่าเสียหาย / ค่าซ่อมแซมอุปกรณ์ (บาท)
-                          </label>
-                          <input
-                            type="number"
-                            value={checkoutDamageFee}
-                            onChange={(e) => setCheckoutDamageFee(e.target.value === "" ? "" : Number(e.target.value))}
-                            placeholder="0"
-                            className="w-full p-2 rounded-lg bg-[var(--card)] border border-[var(--border)] font-mono text-xs focus:outline-emerald-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bento Row 5: Settlement Summary Breakdown */}
-                    <div className="p-5 rounded-2xl bg-[var(--subtle)] border border-[var(--border)] space-y-3.5">
-                      <div className="flex items-center justify-between border-b border-[var(--border)] pb-2.5">
-                        <span className="font-bold text-sm text-[var(--foreground)] flex items-center gap-2">
-                          <Receipt className="w-4 h-4 text-emerald-500" />
-                          <span>5. สรุปรายละเอียดการหักเงินประกันและยอดสุทธิ</span>
-                        </span>
-                        <span className="text-[11px] text-[var(--muted)]">
-                          คำนวณแบบเรียลไทม์
-                        </span>
-                      </div>
-
-                      <div className="space-y-1.5 text-xs">
-                        <div className="flex justify-between py-1">
-                          <span className="text-[var(--muted)]">เงินประกันห้องพักเดิม (ตามสัญญา):</span>
-                          <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                            +{formatCurrency(depositVal)}
-                          </span>
-                        </div>
-
-                        {unpaidBillsTotal > 0 && (
-                          <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
-                            <span>หักบิลค้างชำระ ({unpaidInvs.length} ใบ):</span>
-                            <span className="font-bold font-mono">
-                              -{formatCurrency(unpaidBillsTotal)}
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
-                          <span>หักค่าไฟฟ้าวันย้ายออก ({elecUnits} หน่วย @ ฿{property.electricRate}):</span>
-                          <span className="font-bold font-mono">
-                            -{formatCurrency(elecCost)}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
-                          <span>หักค่าน้ำประปาวันย้ายออก ({waterUnits} หน่วย @ ฿{property.waterRate}):</span>
-                          <span className="font-bold font-mono">
-                            -{formatCurrency(waterCost)}
-                          </span>
-                        </div>
-
-                        {cleanFeeVal > 0 && (
-                          <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
-                            <span>หักค่าบริการทำความสะอาดห้องพัก:</span>
-                            <span className="font-bold font-mono">
-                              -{formatCurrency(cleanFeeVal)}
-                            </span>
-                          </div>
-                        )}
-
-                        {dmgFeeVal > 0 && (
-                          <div className="flex justify-between py-1 text-rose-600 dark:text-rose-400">
-                            <span>หักค่าเสียหาย / ค่าซ่อมแซม:</span>
-                            <span className="font-bold font-mono">
-                              -{formatCurrency(dmgFeeVal)}
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex justify-between py-1.5 border-t border-[var(--border)] text-[var(--muted)] font-semibold">
-                          <span>รวมรายการหักทั้งหมด:</span>
-                          <span className="font-bold font-mono text-rose-600 dark:text-rose-400">
-                            -{formatCurrency(totalDeductions)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Net Result Bento Box */}
-                      <div
-                        className={cn(
-                          "p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3",
-                          netRefund >= 0
-                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
-                            : "bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300"
-                        )}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="font-bold text-sm flex items-center gap-1.5">
-                            {netRefund >= 0 ? (
-                              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                            ) : (
-                              <AlertCircle className="w-5 h-5 text-rose-600" />
-                            )}
-                            <span>
-                              {netRefund >= 0
-                                ? "เงินประกันสุทธิที่ต้องคืนผู้เช่า (Refund to Tenant)"
-                                : "เงินประกันไม่พอหัก! ผู้เช่ามียอดค้างชำระเพิ่ม (Shortfall)"}
-                            </span>
-                          </div>
-                          <p className="text-[11px] opacity-80">
-                            {netRefund >= 0
-                              ? "ระบบจะตัดรอบสัญญาและออกใบสรุปเงินประกันเพื่อโอนคืนผู้เช่า"
-                              : "ผู้เช่าต้องชำระส่วนต่างเพิ่มเติมก่อนการย้ายออกเสร็จสมบูรณ์"}
-                          </p>
-                        </div>
-
-                        <div className="text-right">
-                          <span className="text-2xl font-black font-mono">
-                            {formatCurrency(Math.abs(netRefund))}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Submit Button */}
-                    <div className="pt-2">
-                      <button
-                        onClick={handleExecuteCheckout}
-                        disabled={!checkoutRoomId}
-                        className="w-full sm:w-auto bg-rose-600 hover:bg-rose-500 active:scale-98 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 text-sm"
-                      >
-                        <DoorOpen className="w-4 h-4" />
-                        <span>ยืนยันการย้ายออกและส่งต่องานแม่บ้าน</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {currentTab === 'checkout' && (
+            <CheckoutManagementView
+              rooms={rooms}
+              contracts={contracts}
+              invoices={invoices}
+              property={property}
+              selectedRoomId={checkoutRoomId}
+              onSelectRoomId={setCheckoutRoomId}
+              onExecuteCheckout={handleExecuteCheckout}
+            />
+          )}
 
           {/* VIEW: Cleaning & Maintenance */}
           {currentTab === "cleaning" && (
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    <span>งานแม่บ้าน & ซ่อมบำรุง (Housekeeping & Maintenance)</span>
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    ติดตามสถานะห้องพักที่รอทำความสะอาดและงานแจ้งซ่อมแบบเรียลไทม์
-                  </p>
-                </div>
-              </div>
-
-              <div className="divide-y divide-[var(--border)] text-xs">
-                {rooms.filter((r) => r.status === "cleaning" || r.status === "maintenance").length === 0 ? (
-                  <div className="py-8 text-center text-[var(--muted)]">
-                    ไม่มีห้องที่รอทำความสะอาดหรือรอซ่อมบำรุงในขณะนี้ ✨
-                  </div>
-                ) : (
-                  rooms
-                    .filter((r) => r.status === "cleaning" || r.status === "maintenance")
-                    .map((room) => (
-                      <div key={room.id} className="py-3 flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-sm">
-                            ห้อง {room.roomNumber} ({room.type} - ชั้น {room.floor})
-                          </div>
-                          <div className="text-[11px] text-[var(--muted)]">
-                            สถานะ:{" "}
-                            {room.status === "cleaning"
-                              ? "🧹 รอแม่บ้านทำความสะอาด"
-                              : "🔧 รองานซ่อมบำรุง"}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleUpdateStatus(room.id, "vacant")}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer flex items-center gap-1.5"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>เสร็จสิ้น (ปรับเป็นห้องว่าง)</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                )}
-              </div>
-            </div>
+            <CleaningBoardView
+              rooms={rooms}
+              onUpdateStatus={handleUpdateStatus}
+            />
           )}
 
           {/* VIEW: Repairs Management */}
@@ -4169,7 +2976,6 @@ export default function HomePage() {
           {currentTab === "settings" && (
             <BranchSettingsView
               settings={branchSettings}
-              rooms={rooms}
               onSaveSettings={handleSaveBranchSettings}
             />
           )}
@@ -4317,7 +3123,6 @@ export default function HomePage() {
         onClose={() => setIsAddRoomOpen(false)}
         onAddRoom={handleAddRoom}
         onAddBatchRooms={handleAddBatchRooms}
-        roomTypes={branchSettings.roomTypes || defaultRoomTypes}
       />
 
       {/* Database Inspector Modal (ดูข้อมูลจริงใน Supabase Cloud) */}
