@@ -87,12 +87,13 @@ export async function POST(req: NextRequest) {
         if (message.type === "text") {
           const userText = (message.text || "").trim();
 
-          // 1. ตรวจสอบการผูกห้องพัก (เช่น "ห้อง 101", "101", "ผูกห้อง 101")
-          const roomMatch = userText.match(/^(?:ห้อง|room)?\s*([a-zA-Z0-9]+)$/i);
-          const isExplicitBind = userText.startsWith("ผูกห้อง") || userText.startsWith("ห้อง");
+          // 1. ตรวจสอบการผูกห้องพัก (เช่น "101", "ห้อง 101", "ผูก 101", "ผูกห้อง 101", "room 101")
+          const cleanBindingText = userText.replace(/^ผูก(?:ห้อง|บัญชี)?s*/i, "").trim();
+          const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?s*([a-zA-Z0-9_-]+)$/i);
+          const isExplicitBind = userText.startsWith("ผูก") || userText.startsWith("ห้อง") || /^[rR]oom/i.test(userText);
 
-          // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง
-          if (roomMatch && (isExplicitBind || /^\d{2,4}$/.test(userText))) {
+          // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง/ผูก
+          if (roomMatch && (isExplicitBind || /^\d{2,4}$/.test(cleanBindingText))) {
             const requestedRoom = roomMatch[1];
             const boundTenant = await DatabaseService.bindTenantLineUser(
               activePropId,
@@ -107,7 +108,163 @@ export async function POST(req: NextRequest) {
                 (i) => i.roomNumber === requestedRoom && i.status !== "paid"
               );
 
-              const replyTexts = [
+              const replyTexts: any[] = [
+                {
+                  type: "text",
+                  text: `🎉 ผูกบัญชี LINE กับห้อง ${requestedRoom} (${boundTenant.fullName}) สำเร็จเรียบร้อยแล้วครับ!\n\nจากนี้ระบบจะส่งบิลแจ้งหนี้ค่าเช่าและค่าน้ำค่าไฟเข้าไลน์นี้ทุกเดือนครับ ✨`,
+                },
+              ];
+
+              // หากมีบิลค้างอยู่ ส่งการ์ดบิลแจ้งหนี้พร้อม PromptPay QR ให้ทันที
+              if (unpaidForRoom.length > 0) {
+                const latestInv = unpaidForRoom[0];
+                let qrDataUrl = "";
+                try {
+                  qrDataUrl = await generatePromptPayQRCode(promptpayNumber, latestInv.totalAmount);
+                } catch (e) {}
+
+                const flexInvoice = buildInvoiceFlexMessage(latestInv, property, settings, qrDataUrl);
+                replyTexts.push(flexInvoice as any);
+              }
+
+              await replyLineMessage(channelAccessToken, replyToken, replyTexts);
+              continue;
+            } else {
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: `⚠️ ไม่พบข้อมูลผู้เช่าห้อง "${requestedRoom}" ในระบบทะเบียนหอพักครับ\nกรุณาตรวจสอบหมายเลขห้องอีกครั้ง หรือติดต่อผู้จัดการหอพักครับ`,
+                },
+              ]);
+              continue;
+            }
+          }
+
+          // 2. คำสั่ง: ขอบิล / เช็คยอดค้างชำระ
+          if (/ขอบิล|เช็คยอด|ยอดค้าง|บิล|ค่าน้ำค่าไฟ|ชำระเงิน/i.test(userText)) {
+            const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
+            if (!tenant || !tenant.roomNumber) {
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: "🏢 คุณยังไม่ได้ผูกห้องพักกับระบบครับ\nกรุณาพิมพ์หมายเลขห้องพัก เช่น 'ห้อง 101' หรือ '101' เพื่อผูกข้อมูลก่อนครับ",
+                },
+              ]);
+              continue;
+            }
+
+            const invoices = await DatabaseService.getInvoices(activePropId);
+            const unpaid = invoices.find(
+              (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+            );
+
+            if (unpaid) {
+              let qrUrl = "";
+              try {
+                qrUrl = await generatePromptPayQRCode(promptpayNumber, unpaid.totalAmount);
+              } catch (e) {}
+
+              const invFlex = buildInvoiceFlexMessage(unpaid, property, settings, qrUrl);
+              await replyLineMessage(channelAccessToken, replyToken, [invFlex]);
+            } else {
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: `✨ ยอดเยี่ยมครับ! ห้อง ${tenant.roomNumber} (${tenant.fullName}) ไม่มีบิลค้างชำระในระบบแล้วครับ ขอบคุณครับ`,
+                },
+              ]);
+            }
+            continue;
+          }
+
+          // 3. คำสั่ง: แจ้งซ่อม (เช่น "แจ้งซ่อม แอร์ไม่เย็น", "แจ้งซ่อม ท่อน้ำรั่ว")
+          if (/^(?:แจ้งซ่อม|ซ่อม|แจ้งปัญหา)\s*(.*)/i.test(userText) || /แอร์ไม่เย็น|น้ำรั่ว|ไฟดับ|ท่อตัน/i.test(userText)) {
+            const repairDetail = userText.replace(/^(?:แจ้งซ่อม|ซ่อม|แจ้งปัญหา)\s*/i, "").trim() || "แจ้งซ่อมบำรุงทั่วไป";
+            const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
+            const targetRoom = tenant?.roomNumber || "ไม่ระบุห้อง";
+
+            let category: "air" | "plumbing" | "electric" | "furniture" | "other" = "other";
+            if (/แอร์|ความเย็น|น้ำหยด/i.test(repairDetail)) category = "air";
+            else if (/น้ำ|ท่อ|ก๊อก|ชักโครก/i.test(repairDetail)) category = "plumbing";
+            else if (/ไฟ|หลอดไฟ|ปลั๊ก|สวิตช์/i.test(repairDetail)) category = "electric";
+            else if (/เตียง|ตู้|โต๊ะ|เก้าอี้|ประตู|หน้าต่าง/i.test(repairDetail)) category = "furniture";
+
+            const newRepair = await DatabaseService.addRepair({
+              propertyId: activePropId,
+              roomNumber: targetRoom,
+              title: repairDetail,
+              description: `แจ้งผ่าน LINE OA โดย ${tenant?.fullName || "ผู้พักอาศัย"}`,
+              category,
+              priority: "normal",
+              status: "pending",
+              cost: 0,
+            });
+
+            const repairFlex = buildRepairTicketFlexMessage(newRepair, branchName);
+            await replyLineMessage(channelAccessToken, replyToken, [repairFlex]);
+            continue;
+          }
+
+          // 4. คำสั่ง: ข้อมูลติดต่อ / สำนักงาน
+          if (/ติดต่อ|นิติ|เบอร์โทร|โทร|สอบถาม|สำนักงาน|ออฟฟิศ/i.test(userText)) {
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: `🏢 ${branchName}\n📍 ที่อยู่: ${settings?.address || property?.address || "ที่อยู่หอพัก"}\n📞 เบอร์ติดต่อ: ${settings?.phone || property?.phone || "081-234-5678"}\n⏰ เวลาทำการ: 08:30 - 20:00 น. ทุกวันครับ`,
+              },
+            ]);
+            continue;
+          }
+
+          // 5. คำสั่ง: กฎระเบียบหอพัก
+          if (/กฎ|ระเบียบ|ข้อห้าม|สัญญา/i.test(userText)) {
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: `📜 กฎระเบียบและข้อปฏิบัติ ${branchName}:\n\n${settings?.contractTerms || "1. ห้ามส่งเสียงดังหลัง 22:00 น.\n2. ชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน\n3. ห้ามเลี้ยงสัตว์ทุกชนิด\n4. ช่วยกันรักษาความสะอาดพื้นที่ส่วนกลาง"}`,
+              },
+            ]);
+            continue;
+          }
+
+          // 6. Default Fallback Help Menu
+          await replyLineMessage(channelAccessToken, replyToken, [
+            {
+              type: "text",
+              text: `สวัสดีครับ 🙏 ${branchName} ยินดีให้บริการครับ\n\nคำสั่งที่สามารถพิมพ์ได้ 24 ชม.:\n• พิมพ์เลขห้อง (เช่น '101' หรือ 'ห้อง 101') เพื่อผูกข้อมูลห้อง\n• พิมพ์ 'ขอบิล' เพื่อดูยอดค่าใช้จ่ายและ QR สแกนจ่าย\n• พิมพ์ 'แจ้งซ่อม [รายละเอียด]' เพื่อแจ้งปัญหาห้องพัก\n• พิมพ์ 'ติดต่อ' หรือ 'กฎระเบียบ' เพื่อดูข้อมูลหอพัก\n• ส่งรูปภาพสลิปโอนเงิน เพื่อตรวจสอบยอดและรับใบเสร็จอัตโนมัติ`,
+            },
+          ]);
+          continue;
+        }
+
+        // -------------------------------------------------------------
+        // A. ข้อความประเภทข้อความ (Text)
+        // -------------------------------------------------------------
+        if (message.type === "text") {
+          const userText = (message.text || "").trim();
+
+          // 1. ตรวจสอบการผูกห้องพัก (เช่น "101", "ห้อง 101", "ผูก 101", "ผูกห้อง 101", "room 101")
+          const cleanBindingText = userText.replace(/^ผูก(?:ห้อง|บัญชี)?s*/i, "").trim();
+          const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?s*([a-zA-Z0-9_-]+)$/i);
+          const isExplicitBind = userText.startsWith("ผูก") || userText.startsWith("ห้อง") || /^[rR]oom/i.test(userText);
+
+          // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง/ผูก
+          if (roomMatch && (isExplicitBind || /^\d{2,4}$/.test(cleanBindingText))) {
+            const requestedRoom = roomMatch[1];
+            const boundTenant = await DatabaseService.bindTenantLineUser(
+              activePropId,
+              requestedRoom,
+              userId,
+              "ผู้เช่าห้อง " + requestedRoom
+            );
+
+            if (boundTenant) {
+              const invoices = await DatabaseService.getInvoices(activePropId);
+              const unpaidForRoom = invoices.filter(
+                (i) => i.roomNumber === requestedRoom && i.status !== "paid"
+              );
+
+              const replyTexts: any[] = [
                 {
                   type: "text",
                   text: `🎉 ผูกบัญชี LINE กับห้อง ${requestedRoom} (${boundTenant.fullName}) สำเร็จเรียบร้อยแล้วครับ!\n\nจากนี้ระบบจะส่งบิลแจ้งหนี้ค่าเช่าและค่าน้ำค่าไฟเข้าไลน์นี้ทุกเดือนครับ ✨`,
