@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -40,5 +41,19 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Zip archives
+# Zip archives & backups
 *.zip
+*.tar.gz
+*.rar
+*.7z
+*.bak
+backups/
+scratch/
+QA Openhands/
+หน้าการตั้งค่า/
+db_live_backup.json
+*backup*.json
+data/*_snapshot*.json
+
+# Excel files in root
+/*.xlsx
