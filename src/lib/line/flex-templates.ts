@@ -186,8 +186,8 @@ export function buildInvoiceFlexMessage(
               },
             ],
           },
-          // QR Code Image if available
-          ...(qrCodeUrl
+          // QR Code Image if available (strictly validate that it is an HTTPS URL to comply with LINE API rules)
+          ...(qrCodeUrl && qrCodeUrl.startsWith("https://")
             ? [
                 {
                   type: "separator",

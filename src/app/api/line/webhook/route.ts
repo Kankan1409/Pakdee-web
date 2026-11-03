@@ -10,7 +10,7 @@ import {
   buildRepairTicketFlexMessage,
   buildWelcomeFlexMessage,
 } from "@/lib/line/flex-templates";
-import { generatePromptPayQRCode } from "@/lib/promptpay";
+import { generatePromptPayQRCodeUrl } from "@/lib/promptpay";
 
 // Force Node.js runtime for crypto & buffer compatibility
 export const runtime = "nodejs";
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
                 const latestInv = unpaidForRoom[0];
                 let qrDataUrl = "";
                 try {
-                  qrDataUrl = await generatePromptPayQRCode(promptpayNumber, latestInv.totalAmount);
+                  qrDataUrl = generatePromptPayQRCodeUrl(promptpayNumber, latestInv.totalAmount);
                 } catch (e) {
                   console.warn("[LINE-WEBHOOK] PromptPay QR generation error:", e);
                 }
@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
             if (unpaid) {
               let qrUrl = "";
               try {
-                qrUrl = await generatePromptPayQRCode(promptpayNumber, unpaid.totalAmount);
+                qrUrl = generatePromptPayQRCodeUrl(promptpayNumber, unpaid.totalAmount);
               } catch (e) {}
 
               const invFlex = buildInvoiceFlexMessage(unpaid, property, settings, qrUrl);

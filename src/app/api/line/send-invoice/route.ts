@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
 import { buildInvoiceFlexMessage } from "@/lib/line/flex-templates";
-import { generatePromptPayQRCode } from "@/lib/promptpay";
+import { generatePromptPayQRCodeUrl } from "@/lib/promptpay";
 import { Invoice } from "@/types/dormitory";
 
 export const runtime = "nodejs";
@@ -33,36 +33,59 @@ export async function POST(req: NextRequest) {
       const tenant = allTenants.find((t) => t.roomNumber === invoice.roomNumber);
       const recipientUserId = tenant?.lineUserId;
 
-      // สร้าง Dynamic PromptPay QR Code
+      // สร้าง Dynamic PromptPay QR Code (HTTPS URL ตามมาตรฐาน LINE Flex Message)
       let qrCodeUrl = "";
       try {
-        qrCodeUrl = await generatePromptPayQRCode(promptpayNumber, invoice.totalAmount);
+        qrCodeUrl = generatePromptPayQRCodeUrl(promptpayNumber, invoice.totalAmount);
       } catch (e) {
-        console.warn("[SEND-INVOICE] Failed to generate QR data URL:", e);
+        console.warn("[SEND-INVOICE] Failed to generate QR URL:", e);
       }
 
       const flexMessage = buildInvoiceFlexMessage(invoice, property, settings, qrCodeUrl);
 
-      // ส่งข้อความผ่าน LINE Messaging API
-      const result = await pushLineMessage(channelAccessToken, recipientUserId || "simulated-user", [
-        flexMessage,
-      ]);
+      // ส่งข้อความผ่าน LINE Messaging API หากผู้เช่าผูก LINE แล้ว
+      if (recipientUserId && recipientUserId.startsWith("U")) {
+        const result = await pushLineMessage(channelAccessToken, recipientUserId, [flexMessage]);
 
-      // อัปเดตสถานะบิลในระบบ
-      await DatabaseService.updateInvoiceLineStatus(invoice.id, "sent");
+        if (!result.success) {
+          console.error(`[SEND-INVOICE] Push failed for room ${invoice.roomNumber}:`, result.error);
+          return NextResponse.json(
+            {
+              success: false,
+              error: result.error || "LINE push failed",
+              message: `ส่ง LINE ไม่สำเร็จ: ${result.error}`,
+            },
+            { status: 400 }
+          );
+        }
 
-      return NextResponse.json({
-        success: true,
-        invoiceId: invoice.id,
-        roomNumber: invoice.roomNumber,
-        tenantName: invoice.tenantName,
-        isSimulated: result.isSimulated || !recipientUserId,
-        hasLinkedLine: Boolean(recipientUserId),
-        lineUserId: recipientUserId || null,
-        message: recipientUserId
-          ? `ส่งบิลเข้า LINE ของผู้เช่าห้อง ${invoice.roomNumber} เรียบร้อยแล้ว`
-          : `บันทึกการส่งบิลห้อง ${invoice.roomNumber} สำเร็จ (ผู้เช่ายังไม่ได้ผูก LINE บิลจะส่งทันทีเมื่อผู้เช่าผูกห้อง)`,
-      });
+        // อัปเดตสถานะบิลในระบบเมื่อส่งสำเร็จจริง
+        await DatabaseService.updateInvoiceLineStatus(invoice.id, "sent");
+
+        return NextResponse.json({
+          success: true,
+          invoiceId: invoice.id,
+          roomNumber: invoice.roomNumber,
+          tenantName: invoice.tenantName,
+          isSimulated: false,
+          hasLinkedLine: true,
+          lineUserId: recipientUserId,
+          message: `ส่งบิลเข้า LINE ของผู้เช่าห้อง ${invoice.roomNumber} เรียบร้อยแล้ว`,
+        });
+      } else {
+        // ผู้เช่ายังไม่ได้ผูก LINE
+        await DatabaseService.updateInvoiceLineStatus(invoice.id, "sent");
+        return NextResponse.json({
+          success: true,
+          invoiceId: invoice.id,
+          roomNumber: invoice.roomNumber,
+          tenantName: invoice.tenantName,
+          isSimulated: true,
+          hasLinkedLine: false,
+          lineUserId: null,
+          message: `บันทึกการส่งบิลห้อง ${invoice.roomNumber} สำเร็จ (ผู้เช่ายังไม่ได้ผูก LINE บิลจะส่งทันทีเมื่อผู้เช่าผูกห้อง)`,
+        });
+      }
     }
 
     // 2. ส่งบิลทุกห้องพร้อมกัน (Batch Mode)
@@ -77,21 +100,25 @@ export async function POST(req: NextRequest) {
 
       let qrCodeUrl = "";
       try {
-        qrCodeUrl = await generatePromptPayQRCode(promptpayNumber, inv.totalAmount);
+        qrCodeUrl = generatePromptPayQRCodeUrl(promptpayNumber, inv.totalAmount);
       } catch (e) {}
 
       const flexMessage = buildInvoiceFlexMessage(inv, property, settings, qrCodeUrl);
-      const res = await pushLineMessage(channelAccessToken, recipientUserId || "simulated-user", [
-        flexMessage,
-      ]);
 
-      await DatabaseService.updateInvoiceLineStatus(inv.id, "sent");
-      deliveredRooms.push(inv.roomNumber);
-
-      if (res.isSimulated || !recipientUserId) {
-        simulatedCount++;
+      if (recipientUserId && recipientUserId.startsWith("U")) {
+        const res = await pushLineMessage(channelAccessToken, recipientUserId, [flexMessage]);
+        if (res.success) {
+          await DatabaseService.updateInvoiceLineStatus(inv.id, "sent");
+          deliveredRooms.push(inv.roomNumber);
+          sentCount++;
+        } else {
+          console.error(`[SEND-INVOICE] Batch push failed for room ${inv.roomNumber}:`, res.error);
+        }
       } else {
-        sentCount++;
+        // ยังไม่ได้ผูก LINE บันทึกสถานะส่ง
+        await DatabaseService.updateInvoiceLineStatus(inv.id, "sent");
+        deliveredRooms.push(inv.roomNumber);
+        simulatedCount++;
       }
     }
 
@@ -108,7 +135,7 @@ export async function POST(req: NextRequest) {
       realSent: sentCount,
       simulatedSent: simulatedCount,
       deliveredRooms,
-      message: `ส่งบิลแจ้งหนี้เข้า LINE เรียบร้อยแล้ว ทั้งหมด ${unpaidInvoices.length} ห้อง`,
+      message: `ส่งบิลแจ้งหนี้เข้า LINE เรียบร้อยแล้ว ทั้งหมด ${unpaidInvoices.length} ห้อง (${sentCount} ห้องสำเร็จ, ${simulatedCount} รอผูก LINE)`,
     });
   } catch (error: any) {
     console.error("[API-SEND-INVOICE-ERROR]", error);

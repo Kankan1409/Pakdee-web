@@ -84,3 +84,13 @@ export async function generatePromptPayQRCode(target: string, amount?: number): 
     return "";
   }
 }
+
+/**
+ * Generate a public HTTPS QR Code image URL compliant with LINE Messaging API Flex Message constraints.
+ * (LINE Flex Message requires image.url to be an https:// URL with length <= 2000 chars; data: URIs are rejected)
+ */
+export function generatePromptPayQRCodeUrl(target: string, amount?: number): string {
+  const payload = generatePromptPayPayload(target, amount);
+  if (!payload) return "";
+  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(payload)}`;
+}

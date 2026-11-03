@@ -514,8 +514,6 @@
       "phone": "095-321-6421",
       "idCard": "1-3017-00228-55-8",
       "vehiclePlate": "",
-      "roomNumber": "101",
-      "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
       "notes": "[ผู้เข้าพักรายวัน] ห้อง 101 (2026-11-03 ถึง 2026-11-04)",
       "depositAmount": 1000
     },
@@ -584,7 +582,7 @@
         }
       ],
       "lineDeliveryStatus": "sent",
-      "lineSentAt": "3/11/69 16:43 น."
+      "lineSentAt": "3/11/69 16:53 น."
     },
     {
       "id": "inv-daily-1793698693104-101",
@@ -989,6 +987,15 @@
     }
   ],
   "pakdee_dev_activity_logs": [
+    {
+      "id": "log-1793699618509",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "INVOICE",
+      "description": "ส่งบิลเข้า LINE ทั้งหมด 1 ห้อง (1 บัญชีจริง, 0 รอผู้เช่าผูก)",
+      "createdAt": "3/11/69 16:53 น."
+    },
     {
       "id": "log-1793699038782",
       "propertyId": "prop-1793250152420",
@@ -1429,15 +1436,6 @@
       "entity": "ROOM",
       "description": "ส่งบรอดแคสต์ LINE: ⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา (1 ห้อง)",
       "createdAt": "3/11/69 16:29 น."
-    },
-    {
-      "id": "log-1793698110866",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้ INV-202611-101 ห้อง 101 (฿5,000)",
-      "createdAt": "3/11/69 16:28 น."
     }
   ],
   "pakdee_dev_meter_readings": [
@@ -4068,7 +4066,7 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "cleaning",
+      "status": "vacant",
       "currentElectricMeter": 100,
       "currentWaterMeter": 38
     },
@@ -4199,6 +4197,15 @@
     }
   ],
   "activity_logs": [
+    {
+      "id": "log-1793699618509",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "INVOICE",
+      "description": "ส่งบิลเข้า LINE ทั้งหมด 1 ห้อง (1 บัญชีจริง, 0 รอผู้เช่าผูก)",
+      "createdAt": "3/11/69 16:53 น."
+    },
     {
       "id": "log-1793699038782",
       "propertyId": "prop-1793250152420",
@@ -4639,15 +4646,6 @@
       "entity": "ROOM",
       "description": "ส่งบรอดแคสต์ LINE: ⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา (1 ห้อง)",
       "createdAt": "3/11/69 16:29 น."
-    },
-    {
-      "id": "log-1793698110866",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้ INV-202611-101 ห้อง 101 (฿5,000)",
-      "createdAt": "3/11/69 16:28 น."
     }
   ],
   "properties": [
@@ -4795,8 +4793,6 @@
       "phone": "095-321-6421",
       "idCard": "1-3017-00228-55-8",
       "vehiclePlate": "",
-      "roomNumber": "101",
-      "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
       "notes": "[ผู้เข้าพักรายวัน] ห้อง 101 (2026-11-03 ถึง 2026-11-04)",
       "depositAmount": 1000
     },
@@ -5074,7 +5070,7 @@
         }
       ],
       "lineDeliveryStatus": "sent",
-      "lineSentAt": "3/11/69 16:43 น."
+      "lineSentAt": "3/11/69 16:53 น."
     },
     {
       "id": "inv-daily-1793698693104-101",
