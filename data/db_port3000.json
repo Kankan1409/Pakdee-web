@@ -28,9 +28,23 @@
       "type": "Standard",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "vacant",
+      "status": "occupied",
+      "currentTenant": {
+        "id": "t-101",
+        "propertyId": "prop-1",
+        "fullName": "นายสมชาย สุขสบาย",
+        "phone": "089-999-8888",
+        "idCard": "1100200300400",
+        "gender": "MALE",
+        "age": 28,
+        "lineId": "somchai_suk",
+        "emergencyContact": "นางสมศรี สุขสบาย (081-111-2222)",
+        "vehiclePlate": "1กข 1234 กทม.",
+        "invoiceLang": "TH"
+      },
       "currentElectricMeter": 1315,
-      "currentWaterMeter": 265
+      "currentWaterMeter": 265,
+      "leaseEndDate": "2027-10-31"
     },
     {
       "id": "room-102",
@@ -491,6 +505,33 @@
   ],
   "pakdee_dev_activity_logs": [
     {
+      "id": "log-1793697766236",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "สร้างผังห้องมาตรฐาน 24 ห้อง",
+      "createdAt": "3/11/69 16:22 น."
+    },
+    {
+      "id": "log-1793697765444",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "สร้างผังห้องมาตรฐาน 24 ห้อง",
+      "createdAt": "3/11/69 16:22 น."
+    },
+    {
+      "id": "log-1793697763774",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "สร้างผังห้องมาตรฐาน 24 ห้อง",
+      "createdAt": "3/11/69 16:22 น."
+    },
+    {
       "id": "log-1793674745282",
       "propertyId": "prop-1793250152420",
       "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
@@ -911,33 +952,6 @@
       "action": "PAYMENT",
       "entity": "INVOICE",
       "description": "อัปเดตสถานะบิล ID inv-prop-1793250152420-1793670895046-104 เป็น \"paid\" (ยอดชำระ ฿4,100)",
-      "createdAt": "3/11/69 09:23 น."
-    },
-    {
-      "id": "log-1793672581901",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "บันทึกการรับเงิน PMT-202611-0024 ยอด ฿4,100 (ออกใบเสร็จ REC-202611-0024)",
-      "createdAt": "3/11/69 09:23 น."
-    },
-    {
-      "id": "log-1793672580943",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "อัปเดตสถานะบิล ID inv-prop-1793250152420-1793671344789-106 เป็น \"paid\" (ยอดชำระ ฿4,100)",
-      "createdAt": "3/11/69 09:23 น."
-    },
-    {
-      "id": "log-1793672580942",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "บันทึกการรับเงิน PMT-202611-0023 ยอด ฿4,100 (ออกใบเสร็จ REC-202611-0023)",
       "createdAt": "3/11/69 09:23 น."
     }
   ],
@@ -2820,9 +2834,23 @@
       "type": "Standard",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "vacant",
+      "status": "occupied",
+      "currentTenant": {
+        "id": "t-101",
+        "propertyId": "prop-1",
+        "fullName": "นายสมชาย สุขสบาย",
+        "phone": "089-999-8888",
+        "idCard": "1100200300400",
+        "gender": "MALE",
+        "age": 28,
+        "lineId": "somchai_suk",
+        "emergencyContact": "นางสมศรี สุขสบาย (081-111-2222)",
+        "vehiclePlate": "1กข 1234 กทม.",
+        "invoiceLang": "TH"
+      },
       "currentElectricMeter": 1315,
-      "currentWaterMeter": 265
+      "currentWaterMeter": 265,
+      "leaseEndDate": "2027-10-31"
     },
     {
       "id": "room-102",
@@ -3140,6 +3168,33 @@
     }
   ],
   "activity_logs": [
+    {
+      "id": "log-1793697766236",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "สร้างผังห้องมาตรฐาน 24 ห้อง",
+      "createdAt": "3/11/69 16:22 น."
+    },
+    {
+      "id": "log-1793697765444",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "สร้างผังห้องมาตรฐาน 24 ห้อง",
+      "createdAt": "3/11/69 16:22 น."
+    },
+    {
+      "id": "log-1793697763774",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "ROOM",
+      "description": "สร้างผังห้องมาตรฐาน 24 ห้อง",
+      "createdAt": "3/11/69 16:22 น."
+    },
     {
       "id": "log-1793674745282",
       "propertyId": "prop-1793250152420",
@@ -3561,33 +3616,6 @@
       "action": "PAYMENT",
       "entity": "INVOICE",
       "description": "อัปเดตสถานะบิล ID inv-prop-1793250152420-1793670895046-104 เป็น \"paid\" (ยอดชำระ ฿4,100)",
-      "createdAt": "3/11/69 09:23 น."
-    },
-    {
-      "id": "log-1793672581901",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "บันทึกการรับเงิน PMT-202611-0024 ยอด ฿4,100 (ออกใบเสร็จ REC-202611-0024)",
-      "createdAt": "3/11/69 09:23 น."
-    },
-    {
-      "id": "log-1793672580943",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "อัปเดตสถานะบิล ID inv-prop-1793250152420-1793671344789-106 เป็น \"paid\" (ยอดชำระ ฿4,100)",
-      "createdAt": "3/11/69 09:23 น."
-    },
-    {
-      "id": "log-1793672580942",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "บันทึกการรับเงิน PMT-202611-0023 ยอด ฿4,100 (ออกใบเสร็จ REC-202611-0023)",
       "createdAt": "3/11/69 09:23 น."
     }
   ],
