@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Room, RoomStatus } from "@/types/dormitory";
+import React, { useState, useEffect } from "react";
+import { Room, RoomStatus, RoomTypeConfig, defaultRoomTypes } from "@/types/dormitory";
 import { Plus, Building, Layers, DollarSign, Zap, Droplets } from "lucide-react";
 
 interface AddRoomModalProps {
@@ -23,16 +23,45 @@ interface AddRoomModalProps {
     dailyRate?: number;
     status: RoomStatus;
   }[]) => Promise<void> | void;
+  roomTypes?: RoomTypeConfig[];
 }
 
-export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms }: AddRoomModalProps) {
+export function AddRoomModal({
+  isOpen,
+  onClose,
+  onAddRoom,
+  onAddBatchRooms,
+  roomTypes = defaultRoomTypes,
+}: AddRoomModalProps) {
+  const activeRoomTypes = roomTypes && roomTypes.length > 0 ? roomTypes : defaultRoomTypes;
+  const defaultTypeObj = activeRoomTypes.find((r) => r.isDefault) || activeRoomTypes[0];
+
   const [mode, setMode] = useState<"single" | "batch">("single");
   const [roomNumber, setRoomNumber] = useState<string>("");
   const [floor, setFloor] = useState<number>(1);
-  const [type, setType] = useState<string>("ห้องแอร์");
-  const [monthlyRate, setMonthlyRate] = useState<number>(4000);
-  const [dailyRate, setDailyRate] = useState<number>(650);
+  const [type, setType] = useState<string>(defaultTypeObj.name);
+  const [monthlyRate, setMonthlyRate] = useState<number>(defaultTypeObj.monthlyRate);
+  const [dailyRate, setDailyRate] = useState<number>(defaultTypeObj.dailyRate);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Sync with default type when modal opens or roomTypes changes
+  useEffect(() => {
+    if (isOpen) {
+      const def = activeRoomTypes.find((r) => r.isDefault) || activeRoomTypes[0];
+      setType(def.name);
+      setMonthlyRate(def.monthlyRate);
+      setDailyRate(def.dailyRate);
+    }
+  }, [isOpen, roomTypes]);
+
+  const handleTypeChange = (newTypeName: string) => {
+    setType(newTypeName);
+    const matched = activeRoomTypes.find((r) => r.name === newTypeName);
+    if (matched) {
+      setMonthlyRate(matched.monthlyRate);
+      setDailyRate(matched.dailyRate);
+    }
+  };
 
   // Batch Mode
   const [batchPrefix, setBatchPrefix] = useState<string>("10");
@@ -226,13 +255,14 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms }: Ad
             <label className="block text-xs font-medium text-[var(--muted)] mb-1">ประเภทห้อง *</label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
+              onChange={(e) => handleTypeChange(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] font-semibold cursor-pointer"
             >
-              <option value="ห้องแอร์">ห้องแอร์ (มาตรฐาน)</option>
-              <option value="ห้องพัดลม">ห้องพัดลม</option>
-              <option value="ห้องแอร์ (สตูดิโอ)">ห้องแอร์ (สตูดิโอ)</option>
-              <option value="ห้องสูทพิเศษ">ห้องสูทพิเศษ (VIP)</option>
+              {activeRoomTypes.map((rt) => (
+                <option key={rt.id} value={rt.name}>
+                  {rt.name} (฿{Number(rt.monthlyRate || 0).toLocaleString()} / ด.)
+                </option>
+              ))}
             </select>
           </div>
 

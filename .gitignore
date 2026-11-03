@@ -51,6 +51,7 @@ backups/
 scratch/
 QA Openhands/
 หน้าการตั้งค่า/
+GIT1/
 db_live_backup.json
 *backup*.json
 data/*_snapshot*.json
