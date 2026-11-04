@@ -259,8 +259,36 @@ CREATE INDEX IF NOT EXISTS idx_expenses_property_id ON public.expenses(property_
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON public.expenses(expense_date);
 
 -- ==============================================================================
--- ROW LEVEL SECURITY (RLS) POLICIES FOR INSTANT ACCESS
+-- ROW LEVEL SECURITY (RLS) POLICIES FOR INSTANT ACCESS ON ALL TABLES
 -- ==============================================================================
+ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on properties" ON public.properties;
+CREATE POLICY "Public Access on properties" ON public.properties FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.buildings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on buildings" ON public.buildings;
+CREATE POLICY "Public Access on buildings" ON public.buildings FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on tenants" ON public.tenants;
+CREATE POLICY "Public Access on tenants" ON public.tenants FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on rooms" ON public.rooms;
+CREATE POLICY "Public Access on rooms" ON public.rooms FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on invoices" ON public.invoices;
+CREATE POLICY "Public Access on invoices" ON public.invoices FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.invoice_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on invoice_items" ON public.invoice_items;
+CREATE POLICY "Public Access on invoice_items" ON public.invoice_items FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.meter_readings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access on meter_readings" ON public.meter_readings;
+CREATE POLICY "Public Access on meter_readings" ON public.meter_readings FOR ALL USING (true) WITH CHECK (true);
+
 ALTER TABLE public.contracts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access on contracts" ON public.contracts;
 CREATE POLICY "Public Access on contracts" ON public.contracts FOR ALL USING (true) WITH CHECK (true);

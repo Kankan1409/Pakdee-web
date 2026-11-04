@@ -80,7 +80,7 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "json">("table");
 
-  // Fetch counts for all tables from Supabase (pakdee_store + relational tables)
+  // Fetch counts for all separate relational tables from Supabase
   const fetchCounts = async () => {
     const newCounts: Record<TableName, number> = { ...counts };
     let storeMap: Record<string, any> = {};
@@ -103,29 +103,36 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
     } catch {}
 
     for (const t of TABLES) {
+      try {
+        const { count, error } = await supabase.from(t.key).select("*", { count: "exact", head: true });
+        if (!error && count !== null && count > 0) {
+          newCounts[t.key] = count;
+          continue;
+        }
+      } catch {}
+
       if (storeMap[t.key] !== undefined && storeMap[t.key] !== null) {
         const val = storeMap[t.key];
         newCounts[t.key] = Array.isArray(val) ? val.length : 1;
         continue;
       }
 
-      try {
-        const { count, error } = await supabase.from(t.key).select("*", { count: "exact", head: true });
-        if (!error && count !== null) {
-          newCounts[t.key] = count;
-          continue;
-        }
-      } catch {}
-
       newCounts[t.key] = 0;
     }
     setCounts(newCounts);
   };
 
-  // Fetch rows for active table from Supabase
+  // Fetch rows for active separate table from Supabase
   const fetchTableData = async (tbl: TableName) => {
     setIsLoading(true);
     try {
+      const { data: rows, error } = await supabase.from(tbl).select("*").limit(100);
+      if (!error && rows && rows.length > 0) {
+        setData(rows);
+        setDataSource("supabase");
+        return;
+      }
+
       const { data: storeRows, error: storeErr } = await supabase
         .from("pakdee_store")
         .select("key, value, updated_at")
@@ -135,7 +142,7 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
         const sorted = [...storeRows].sort((a: any, b: any) => {
           const tA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
           const tB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-          if (tA !== tB) return tB - tA; // newest first
+          if (tA !== tB) return tB - tA;
           const aPref = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
           const bPref = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
           return bPref - aPref;
@@ -147,13 +154,6 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
           setDataSource("supabase");
           return;
         }
-      }
-
-      const { data: rows, error } = await supabase.from(tbl).select("*").limit(100);
-      if (!error && rows && rows.length > 0) {
-        setData(rows);
-        setDataSource("supabase");
-        return;
       }
 
       setData([]);

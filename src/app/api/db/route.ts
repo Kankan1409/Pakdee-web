@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { syncKeyToRelationalTable } from "@/lib/supabase-relational";
 
 function normalizeKey(k: string): string {
   return k.replace(/^pakdee_(dev|test)_/, "");
@@ -130,6 +131,9 @@ export async function POST(req: NextRequest) {
 
       const { error } = await supabase.from("pakdee_store").upsert(rowsToUpsert);
 
+      // Also sync to the corresponding separate relational table in Supabase
+      await syncKeyToRelationalTable(normKey, body.value, { [normKey]: body.value });
+
       if (error) {
         console.warn("[Supabase API] Upsert error:", error.message);
         return NextResponse.json(
@@ -139,13 +143,19 @@ export async function POST(req: NextRequest) {
       }
     } else if (body.data && typeof body.data === "object") {
       const rowMap = new Map<string, { key: string; value: any; updated_at: string }>();
+      const normDb: Record<string, any> = {};
       Object.entries(body.data).forEach(([k, v]) => {
         rowMap.set(k, { key: k, value: v, updated_at: nowIso });
         const normKey = normalizeKey(k);
+        normDb[normKey] = v;
         if (normKey !== k) {
           rowMap.set(normKey, { key: normKey, value: v, updated_at: nowIso });
         }
       });
+
+      for (const [normKey, val] of Object.entries(normDb)) {
+        await syncKeyToRelationalTable(normKey, val, normDb);
+      }
 
       const rows = Array.from(rowMap.values());
       if (rows.length > 0) {

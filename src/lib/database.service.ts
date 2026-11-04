@@ -25,6 +25,13 @@ import {
 } from "@/lib/mock-data";
 import { BranchItem } from "@/components/branch/branch-selector-view";
 import { supabase } from "@/lib/supabase";
+import {
+  toUuid,
+  syncKeyToRelationalTable,
+  syncAllToRelationalTables,
+  loadFromRelationalTables,
+  collectUnifiedTenants,
+} from "@/lib/supabase-relational";
 
 /**
  * PAKDEE LOCAL-FIRST DATABASE ENGINE
@@ -87,8 +94,13 @@ function setLocal<T>(key: string, value: T): void {
   memoryDb[key] = value;
   memoryDb[normKey] = value;
 
-  // 2. Persist BOTH key and normalized key directly to Supabase Cloud pakdee_store
-  // so legacy unprefixed rows never hold stale undeleted data
+  // 2. Sync directly to the corresponding separate relational table in Supabase
+  // (properties, buildings, branch_settings, tenants, rooms, contracts, invoices, invoice_items, meter_readings, repairs, expenses, daily_bookings, activity_logs)
+  syncKeyToRelationalTable(normKey, value, memoryDb).catch((err) => {
+    console.warn(`[Supabase Relational] Sync warning [${normKey}]:`, err);
+  });
+
+  // 3. Also keep pakdee_store synced for extended JSON metadata (e.g. 14 clauses, roomTypes)
   try {
     const nowIso = new Date().toISOString();
     const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [
@@ -132,7 +144,7 @@ function setupRealtimeSync(): void {
       return;
     }
 
-    // 3. Create fresh channel only if no active channel exists
+    // 3. Create fresh channel listening to all public tables in Supabase
     const channel = supabase
       .channel("pakdee_store_changes")
       .on(
@@ -140,24 +152,23 @@ function setupRealtimeSync(): void {
         {
           event: "*",
           schema: "public",
-          table: "pakdee_store",
         },
         (payload: any) => {
-          if (payload?.new && payload.new.key) {
+          if (payload?.table === "pakdee_store" && payload?.new && payload.new.key) {
             const { key, value } = payload.new;
             const normKey = normalizeKey(key);
             memoryDb[key] = value;
             memoryDb[normKey] = value;
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("pakdee_db_updated", { detail: { key, value } })
-              );
-            }
+          }
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("pakdee_db_updated", { detail: payload })
+            );
           }
         }
       )
       .subscribe((status: string) => {
-        console.log("[Supabase Realtime] pakdee_store subscription status:", status);
+        console.log("[Supabase Realtime] relational tables subscription status:", status);
       });
 
     realtimeChannel = channel;
@@ -178,14 +189,13 @@ export const DatabaseService = {
       setupRealtimeSync();
     }
 
-    // Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
+    // 1. Load extended metadata from pakdee_store first (if any)
     try {
       const { data: cloudStore, error } = await supabase
         .from("pakdee_store")
         .select("key, value, updated_at");
 
       if (!error && cloudStore && cloudStore.length > 0) {
-        // Sort so unprefixed keys are loaded first, then pakdee_dev_* keys, and newer updated_at always wins
         const sortedRows = [...cloudStore].sort((a: any, b: any) => {
           const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
           const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
@@ -206,7 +216,7 @@ export const DatabaseService = {
           }
         });
 
-        // Reconcile any out-of-sync unprefixed keys in pakdee_store so deletions never get overwritten
+        // Reconcile any out-of-sync unprefixed keys in pakdee_store
         const syncRows: { key: string; value: any; updated_at: string }[] = [];
         const nowIso = new Date().toISOString();
         sortedRows.forEach((row: any) => {
@@ -232,18 +242,59 @@ export const DatabaseService = {
             .upsert(syncRows)
             .then(() => {});
         }
-
-        isServerSynced = true;
-        console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
-        return true;
-      } else if (error) {
-        console.warn("[Supabase Cloud Direct] Supabase query warning:", error.message);
       }
     } catch (e: any) {
-      console.warn("[Supabase Cloud Direct] Cloud fetch failed:", e?.message);
+      console.warn("[Supabase Cloud Direct] Store fetch warning:", e?.message);
     }
 
-    return false;
+    // 2. Ensure all tenants occupying rooms or in active contracts are unified into memoryDb["tenants"]
+    if (Array.isArray(memoryDb["rooms"]) || Array.isArray(memoryDb["contracts"])) {
+      const unifiedTenants = collectUnifiedTenants(
+        Array.isArray(memoryDb["tenants"]) ? memoryDb["tenants"] : [],
+        Array.isArray(memoryDb["rooms"]) ? memoryDb["rooms"] : [],
+        Array.isArray(memoryDb["contracts"]) ? memoryDb["contracts"] : []
+      );
+      memoryDb["tenants"] = unifiedTenants;
+      memoryDb[KEYS.TENANTS] = unifiedTenants;
+    }
+
+    // 3. Synchronize & load from separate relational tables in Supabase
+    // (properties, buildings, branch_settings, tenants, rooms, contracts, invoices, invoice_items, meter_readings, repairs, expenses, daily_bookings, activity_logs)
+    try {
+      const isMigrated = Boolean(memoryDb["pakdee_relational_migrated"]);
+      const { hasRelationalData, data: relData } = await loadFromRelationalTables(memoryDb);
+
+      if (!isMigrated || !hasRelationalData) {
+        // First-time migration: push all current app data into the separate Supabase tables
+        await syncAllToRelationalTables(memoryDb);
+        memoryDb["pakdee_relational_migrated"] = true;
+        supabase
+          .from("pakdee_store")
+          .upsert({
+            key: "pakdee_relational_migrated",
+            value: true,
+            updated_at: new Date().toISOString(),
+          })
+          .then(() => {});
+      } else {
+        // Authoritative load from separate relational tables in Supabase
+        Object.entries(relData).forEach(([normKey, val]) => {
+          if (val !== undefined) {
+            memoryDb[normKey] = val;
+            memoryDb[`pakdee_dev_${normKey}`] = val;
+          }
+        });
+        // Keep relational tables in sync with any unified tenants
+        await syncAllToRelationalTables(memoryDb);
+      }
+      isServerSynced = true;
+      console.log("[Supabase Relational] Separate tables synchronized with Supabase Cloud");
+      return true;
+    } catch (e: any) {
+      console.warn("[Supabase Relational] Init relational sync warning:", e?.message);
+    }
+
+    return isServerSynced;
   },
 
   isServerSynced(): boolean {
@@ -251,24 +302,35 @@ export const DatabaseService = {
   },
 
   /**
-   * Atomically persist multiple keys directly to Supabase Cloud (pakdee_store)
+   * Atomically persist multiple keys directly to Supabase Cloud relational tables + pakdee_store
    */
   async persistBatch(data: Record<string, any>): Promise<boolean> {
     // 1. Update in-memory cache for both prefixed and normalized keys
     const nowIso = new Date().toISOString();
     const rowMap = new Map<string, { key: string; value: any; updated_at: string }>();
+    const normEntries: [string, any][] = [];
 
     Object.entries(data).forEach(([key, val]) => {
       const normKey = normalizeKey(key);
       memoryDb[key] = val;
       memoryDb[normKey] = val;
+      normEntries.push([normKey, val]);
       rowMap.set(key, { key, value: val, updated_at: nowIso });
       if (normKey !== key) {
         rowMap.set(normKey, { key: normKey, value: val, updated_at: nowIso });
       }
     });
 
-    // 2. Persist directly to Supabase Cloud pakdee_store
+    // 2. Persist to separate relational tables in Supabase
+    try {
+      for (const [normKey, val] of normEntries) {
+        await syncKeyToRelationalTable(normKey, val, memoryDb);
+      }
+    } catch (e: any) {
+      console.warn("[Supabase Relational] Batch relational sync warning:", e?.message);
+    }
+
+    // 3. Also persist to pakdee_store for extended metadata
     try {
       const rows = Array.from(rowMap.values());
       if (rows.length > 0) {
@@ -1077,7 +1139,13 @@ export const DatabaseService = {
   // 4. TENANTS (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   async getTenants(propertyId?: string): Promise<Tenant[]> {
-    const tenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const rawTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const rawRooms = getLocal<Room[]>(KEYS.ROOMS, []);
+    const rawContracts = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
+    const tenants = collectUnifiedTenants(rawTenants, rawRooms, rawContracts);
+    if (tenants.length !== rawTenants.length) {
+      setLocal(KEYS.TENANTS, tenants);
+    }
     if (propertyId) {
       return tenants.filter((t) => (t.propertyId || "prop-1") === propertyId);
     }
@@ -1086,13 +1154,11 @@ export const DatabaseService = {
 
   async deleteTenant(tenantId: string): Promise<boolean> {
     const current = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const target = current.find((t) => t.id === tenantId);
-    const updated = current.filter((t) => t.id !== tenantId);
+    const target = current.find((t) => t.id === tenantId || toUuid(t.id) === toUuid(tenantId));
+    const updated = current.filter((t) => t.id !== tenantId && toUuid(t.id) !== toUuid(tenantId));
     await this.persistBatch({ [KEYS.TENANTS]: updated });
     try {
-      if (isValidUuid(tenantId)) {
-        await supabase.from("tenants").delete().eq("id", tenantId);
-      }
+      await supabase.from("tenants").delete().eq("id", toUuid(tenantId));
       if (target?.fullName) {
         await supabase.from("tenants").delete().eq("full_name", target.fullName);
       }
@@ -1105,12 +1171,13 @@ export const DatabaseService = {
   async createTenant(tenantData: Omit<Tenant, "id"> & { propertyId?: string }): Promise<Tenant | null> {
     const propId = tenantData.propertyId || this.getActivePropertyId();
     const newTenant: Tenant = {
-      id: `t-${Date.now()}`,
+      id: toUuid(`t-${Date.now()}-${tenantData.fullName}`),
       propertyId: propId,
       ...tenantData,
     };
-    const current = await this.getTenants();
-    setLocal(KEYS.TENANTS, [newTenant, ...current]);
+    const current = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const updated = [newTenant, ...current.filter((t) => t.fullName !== newTenant.fullName)];
+    await this.persistBatch({ [KEYS.TENANTS]: updated });
     await this.logActivity("CREATE", "TENANT", `ลงทะเบียนผู้เช่าใหม่: ${newTenant.fullName} (${newTenant.phone})`, propId);
     return newTenant;
   },
@@ -1596,29 +1663,56 @@ export const DatabaseService = {
   },
 
   async addContract(
-    item: Omit<ContractItem, "id" | "createdAt" | "contractNumber"> & { propertyId?: string }
+    item: Omit<ContractItem, "id" | "createdAt" | "contractNumber"> & {
+      id?: string;
+      contractNumber?: string;
+      createdAt?: string;
+      propertyId?: string;
+    }
   ): Promise<ContractItem> {
     const propId = item.propertyId || this.getActivePropertyId();
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
     const newContract: ContractItem = {
       ...item,
-      id: "cnt-" + Date.now(),
+      id: item.id ? toUuid(item.id) : toUuid(`cnt-${Date.now()}-${item.roomNumber}`),
       propertyId: propId,
-      contractNumber: `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
-      createdAt: new Date().toISOString().slice(0, 10),
+      contractNumber: item.contractNumber || `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
+      createdAt: item.createdAt || new Date().toISOString().slice(0, 10),
     };
-    setLocal(KEYS.CONTRACTS, [newContract, ...all]);
+    const updatedContracts = [newContract, ...all.filter((c) => c.contractNumber !== newContract.contractNumber)];
 
-    // Synchronize Room to occupied in database
+    // Ensure tenant exists in KEYS.TENANTS
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    let matchedTenant = allTenants.find(
+      (t) => (t.propertyId || "prop-1") === propId && t.fullName.trim() === item.tenantName.trim()
+    );
+    let updatedTenants = allTenants;
+    if (!matchedTenant) {
+      matchedTenant = {
+        id: toUuid(`t-${propId}-${item.roomNumber}-${item.tenantName}`),
+        propertyId: propId,
+        roomNumber: item.roomNumber,
+        fullName: item.tenantName,
+        phone: item.tenantPhone,
+        idCard: "-",
+      };
+      updatedTenants = [matchedTenant, ...allTenants];
+    }
+
+    // Synchronize Room to occupied in database while preserving full tenant profile if already assigned
     const allRooms = this.getAllRawRooms();
     const updatedRooms = allRooms.map((r) => {
       if ((r.propertyId || "prop-1") === propId && r.roomNumber === item.roomNumber) {
+        const existingRoomTenant =
+          r.currentTenant && r.currentTenant.fullName.trim() === item.tenantName.trim()
+            ? r.currentTenant
+            : matchedTenant;
         return {
           ...r,
           status: "occupied" as RoomStatus,
           leaseEndDate: item.endDate,
-          currentTenant: {
-            id: `t-${Date.now()}`,
+          currentTenant: existingRoomTenant || {
+            id: toUuid(`t-${propId}-${item.roomNumber}-${item.tenantName}`),
             propertyId: propId,
             fullName: item.tenantName,
             phone: item.tenantPhone,
@@ -1628,7 +1722,12 @@ export const DatabaseService = {
       }
       return r;
     });
-    setLocal(KEYS.ROOMS, updatedRooms);
+
+    await this.persistBatch({
+      [KEYS.TENANTS]: updatedTenants,
+      [KEYS.ROOMS]: updatedRooms,
+      [KEYS.CONTRACTS]: updatedContracts,
+    });
 
     await this.logActivity("CREATE", "CONTRACT", `สร้างสัญญาเช่าห้อง ${item.roomNumber} ผู้เช่า: ${item.tenantName}`, propId);
     return newContract;
