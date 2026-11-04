@@ -233,19 +233,29 @@ export function ContractManagementView({
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            if (onOpenNewTenantRegistration) {
-              onOpenNewTenantRegistration();
-            } else {
-              setIsModalOpen(true);
-            }
-          }}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-medium shadow-md shadow-purple-500/20 transition cursor-pointer text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>สร้างเอกสารสัญญาใหม่</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/contracts/print"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold transition cursor-pointer text-sm"
+          >
+            <Printer className="w-4 h-4 text-emerald-600" />
+            <span>ตัวอย่างเอกสารสัญญา (A4)</span>
+          </a>
+
+          <button
+            onClick={() => {
+              if (onOpenNewTenantRegistration) {
+                onOpenNewTenantRegistration();
+              } else {
+                setIsModalOpen(true);
+              }
+            }}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-medium shadow-md shadow-purple-500/20 transition cursor-pointer text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>สร้างเอกสารสัญญาใหม่</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}

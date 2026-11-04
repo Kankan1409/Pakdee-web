@@ -33,6 +33,7 @@ import {
   Layers,
   HelpCircle,
   FileSignature,
+  Printer,
 } from "lucide-react";
 import {
   isValidThaiIdCard,
@@ -1756,6 +1757,64 @@ export function TenantRegistrationView({
                     <span>ยืนยันทำสัญญาเช่าห้องพัก</span>
                   </>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    const draft = {
+                      contractNumber: `CT-${new Date().getFullYear()}-${selectedRoom?.roomNumber || "103"}-01`,
+                      contractDate: new Date().toISOString().split("T")[0],
+                      roomNumber: selectedRoom?.roomNumber || "103",
+                      floor: selectedRoom?.floor || 1,
+                      roomType: selectedRoom?.type || "ห้องแอร์",
+                      monthlyRate: selectedRoom?.monthlyRate || 4000,
+                      fullName: fullName.trim() || "คุณนวรัตน์ มงคลสุข",
+                      phone: phone.trim() || "089-456-7890",
+                      idCard: idCard.trim() || "1-1005-01234-56-7",
+                      gender,
+                      age: age ? Number(age) : 26,
+                      lineId: lineId.trim() || "-",
+                      email: email.trim() || "-",
+                      vehiclePlate: vehiclePlate.trim() || "-",
+                      address: address.trim() || "-",
+                      emergencyContact: emergencyContact.trim() || "-",
+                      taxId: taxId.trim() || "-",
+                      invoiceLang,
+                      notes: notes.trim() || "-",
+                      startDate,
+                      endDate,
+                      isContinuous,
+                      paymentDueDay,
+                      lateFeePerDay,
+                      electricalEquipmentFee,
+                      furnitureFee,
+                      hasDeposit,
+                      depositAmount,
+                      hasTv,
+                      tvRentalFee,
+                      hasFridge,
+                      fridgeRentalFee,
+                      additionalFees,
+                      noticeDays,
+                      depositRefundDays,
+                      overdueGraceDays,
+                      allowPets,
+                      noSmoking,
+                      additionalRules,
+                      clauses,
+                    };
+                    localStorage.setItem("pakdee_contract_print_draft", JSON.stringify(draft));
+                  } catch {
+                    // ignore
+                  }
+                  window.location.href = "/contracts/print";
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                <span>ดูตัวอย่างเอกสารสัญญาที่จะพิมพ์ (A4)</span>
               </button>
 
               <button
