@@ -28,7 +28,6 @@ import { supabase } from "@/lib/supabase";
 import {
   toUuid,
   syncKeyToRelationalTable,
-  syncAllToRelationalTables,
   loadFromRelationalTables,
   collectUnifiedTenants,
 } from "@/lib/supabase-relational";
@@ -88,6 +87,14 @@ function getLocal<T>(key: string, fallback: T): T {
   return fallback;
 }
 
+function reportSyncFailure(error: unknown): void {
+  isServerSynced = false;
+  console.error("[Supabase] Save failed:", error);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("pakdee_sync_error"));
+  }
+}
+
 function setLocal<T>(key: string, value: T): void {
   // 1. Immediately update in-memory cache for both prefixed and normalized key
   const normKey = normalizeKey(key);
@@ -97,7 +104,7 @@ function setLocal<T>(key: string, value: T): void {
   // 2. Sync directly to the corresponding separate relational table in Supabase
   // (properties, buildings, branch_settings, tenants, rooms, contracts, invoices, invoice_items, meter_readings, repairs, expenses, daily_bookings, activity_logs)
   syncKeyToRelationalTable(normKey, value, memoryDb).catch((err) => {
-    console.warn(`[Supabase Relational] Sync warning [${normKey}]:`, err);
+    reportSyncFailure(err);
   });
 
   // 3. Also keep pakdee_store synced for extended JSON metadata (e.g. 14 clauses, roomTypes)
@@ -113,10 +120,10 @@ function setLocal<T>(key: string, value: T): void {
       .from("pakdee_store")
       .upsert(rowsToUpsert)
       .then(({ error }: any) => {
-        if (error) console.warn(`[Supabase] Upsert error [${key}]:`, error.message);
-      });
+        if (error) reportSyncFailure(error);
+      }, reportSyncFailure);
   } catch (err) {
-    console.warn(`[Supabase] Upsert skipped [${key}]:`, err);
+    reportSyncFailure(err);
   }
 }
 
@@ -189,112 +196,35 @@ export const DatabaseService = {
       setupRealtimeSync();
     }
 
-    // 1. Load extended metadata from pakdee_store first (if any)
+    // Loading (including Realtime refreshes) must never write back to the cloud.
+    // Build a complete snapshot first so a failed read cannot replace good cache data.
     try {
       const { data: cloudStore, error } = await supabase
         .from("pakdee_store")
         .select("key, value, updated_at");
-
-      if (!error && cloudStore && cloudStore.length > 0) {
-        const sortedRows = [...cloudStore].sort((a: any, b: any) => {
-          const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-          const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-          if (timeA !== timeB) return timeA - timeB;
-          const aIsDev = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
-          const bIsDev = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
-          return aIsDev - bIsDev;
-        });
-
-        const rowByKey = new Map<string, any>();
-        sortedRows.forEach((row: any) => {
-          rowByKey.set(row.key, row);
-          const normKey = normalizeKey(row.key);
-          memoryDb[row.key] = row.value;
-          memoryDb[normKey] = row.value;
-          if (row.key === normKey) {
-            memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
-          }
-        });
-
-        // Reconcile any out-of-sync unprefixed keys in pakdee_store
-        const syncRows: { key: string; value: any; updated_at: string }[] = [];
-        const nowIso = new Date().toISOString();
-        sortedRows.forEach((row: any) => {
-          if (String(row.key).startsWith("pakdee_dev_")) {
-            const normKey = normalizeKey(row.key);
-            memoryDb[row.key] = memoryDb[normKey];
-            const unprefixedRow = rowByKey.get(normKey);
-            if (
-              unprefixedRow &&
-              JSON.stringify(unprefixedRow.value) !== JSON.stringify(memoryDb[normKey])
-            ) {
-              syncRows.push({
-                key: normKey,
-                value: memoryDb[normKey],
-                updated_at: nowIso,
-              });
-            }
-          }
-        });
-        if (syncRows.length > 0) {
-          supabase
-            .from("pakdee_store")
-            .upsert(syncRows)
-            .then(() => {});
-        }
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud Direct] Store fetch warning:", e?.message);
-    }
-
-    // 2. Ensure all tenants occupying rooms or in active contracts are unified into memoryDb["tenants"]
-    if (Array.isArray(memoryDb["rooms"]) || Array.isArray(memoryDb["contracts"])) {
-      const unifiedTenants = collectUnifiedTenants(
-        Array.isArray(memoryDb["tenants"]) ? memoryDb["tenants"] : [],
-        Array.isArray(memoryDb["rooms"]) ? memoryDb["rooms"] : [],
-        Array.isArray(memoryDb["contracts"]) ? memoryDb["contracts"] : []
+      if (error) throw new Error(error.message, { cause: error });
+      const snapshot: Record<string, any> = {};
+      const sortedRows = [...(cloudStore || [])].sort((a, b) =>
+        (Date.parse(a.updated_at || "") || 0) - (Date.parse(b.updated_at || "") || 0)
       );
-      memoryDb["tenants"] = unifiedTenants;
-      memoryDb[KEYS.TENANTS] = unifiedTenants;
-    }
-
-    // 3. Synchronize & load from separate relational tables in Supabase
-    // (properties, buildings, branch_settings, tenants, rooms, contracts, invoices, invoice_items, meter_readings, repairs, expenses, daily_bookings, activity_logs)
-    try {
-      const isMigrated = Boolean(memoryDb["pakdee_relational_migrated"]);
-      const { hasRelationalData, data: relData } = await loadFromRelationalTables(memoryDb);
-
-      if (!isMigrated || !hasRelationalData) {
-        // First-time migration: push all current app data into the separate Supabase tables
-        await syncAllToRelationalTables(memoryDb);
-        memoryDb["pakdee_relational_migrated"] = true;
-        supabase
-          .from("pakdee_store")
-          .upsert({
-            key: "pakdee_relational_migrated",
-            value: true,
-            updated_at: new Date().toISOString(),
-          })
-          .then(() => {});
-      } else {
-        // Authoritative load from separate relational tables in Supabase
-        Object.entries(relData).forEach(([normKey, val]) => {
-          if (val !== undefined) {
-            memoryDb[normKey] = val;
-            memoryDb[`pakdee_dev_${normKey}`] = val;
-          }
-        });
-        // Keep relational tables in sync with any unified tenants
-        await syncAllToRelationalTables(memoryDb);
+      for (const row of sortedRows) {
+        const key = normalizeKey(row.key);
+        snapshot[key] = row.value;
+        snapshot[`pakdee_dev_${key}`] = row.value;
       }
+      const { data: relationalData } = await loadFromRelationalTables(snapshot);
+      for (const [key, value] of Object.entries(relationalData)) {
+        snapshot[key] = value;
+        snapshot[`pakdee_dev_${key}`] = value;
+      }
+      for (const key of Object.keys(memoryDb)) delete memoryDb[key];
+      Object.assign(memoryDb, snapshot);
       isServerSynced = true;
-      console.log("[Supabase Relational] Separate tables synchronized with Supabase Cloud");
       return true;
-    } catch (e: any) {
-      console.warn("[Supabase Relational] Init relational sync warning:", e?.message);
+    } catch (error) {
+      isServerSynced = false;
+      throw error;
     }
-
-    return isServerSynced;
   },
 
   isServerSynced(): boolean {
@@ -302,7 +232,7 @@ export const DatabaseService = {
   },
 
   /**
-   * Atomically persist multiple keys directly to Supabase Cloud relational tables + pakdee_store
+   * Persist multiple keys directly to Supabase Cloud relational tables + pakdee_store
    */
   async persistBatch(data: Record<string, any>): Promise<boolean> {
     // 1. Update in-memory cache for both prefixed and normalized keys
@@ -328,6 +258,8 @@ export const DatabaseService = {
       }
     } catch (e: any) {
       console.warn("[Supabase Relational] Batch relational sync warning:", e?.message);
+      isServerSynced = false;
+      throw e;
     }
 
     // 3. Also persist to pakdee_store for extended metadata
@@ -336,11 +268,13 @@ export const DatabaseService = {
       if (rows.length > 0) {
         const { error } = await supabase.from("pakdee_store").upsert(rows);
         if (error) {
-          console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
+          throw new Error(error.message, { cause: error });
         }
       }
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
+      isServerSynced = false;
+      throw e;
     }
 
     return true;

@@ -537,13 +537,18 @@ export default function HomePage() {
       loadData();
     };
 
+    const handleSyncError = () => {
+      showToast("บันทึกลง Supabase ไม่สำเร็จ กรุณาลองใหม่", "error");
+    };
     if (typeof window !== "undefined") {
+      window.addEventListener("pakdee_sync_error", handleSyncError);
       window.addEventListener("pakdee_db_updated", handleRealtimeUpdate);
     }
 
     return () => {
       if (typeof window !== "undefined") {
         window.removeEventListener("pakdee_db_updated", handleRealtimeUpdate);
+        window.removeEventListener("pakdee_sync_error", handleSyncError);
       }
     };
   }, [loadData]);
