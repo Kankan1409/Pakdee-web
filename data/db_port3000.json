@@ -356,14 +356,19 @@
       "monthlyRate": 4000,
       "dailyRate": 650,
       "status": "occupied",
-      "currentElectricMeter": 100,
-      "currentWaterMeter": 38,
+      "currentElectricMeter": 50,
+      "currentWaterMeter": 8,
       "currentTenant": {
-        "id": "t-1793755500000",
+        "id": "t-1793756277702",
         "propertyId": "prop-1793250152420",
         "fullName": "ข้าวหอม",
         "phone": "097-110-3327",
-        "idCard": "-"
+        "idCard": "-",
+        "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
+        "roomNumber": "101",
+        "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
+        "lineDisplayName": "ผู้เช่าห้อง 101",
+        "lineLinkedAt": "2026-11-04T01:53:23.221Z"
       },
       "leaseEndDate": "2027-11-04"
     },
@@ -377,8 +382,8 @@
       "monthlyRate": 4000,
       "dailyRate": 650,
       "status": "occupied",
-      "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
+      "currentElectricMeter": 25,
+      "currentWaterMeter": 4,
       "currentTenant": {
         "id": "t-1793698927358",
         "propertyId": "prop-1793250152420",
@@ -495,6 +500,28 @@
   ],
   "pakdee_dev_tenants": [
     {
+      "id": "t-1793756277601",
+      "propertyId": "prop-1793250152420",
+      "fullName": "ข้าวหอม",
+      "phone": "097-110-3327",
+      "idCard": "1-1040-00063-45-3",
+      "gender": "FEMALE",
+      "age": 24,
+      "invoiceLang": "TH",
+      "depositAmount": 8000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": []
+    },
+    {
       "id": "t-1793755499887",
       "propertyId": "prop-1793250152420",
       "fullName": "ข้าวหอม",
@@ -589,9 +616,81 @@
       "idCard": "-",
       "lineDisplayName": "ผู้เช่าห้อง 101",
       "lineLinkedAt": "2026-11-04T01:12:31.654Z"
+    },
+    {
+      "id": "t-1793756277702",
+      "propertyId": "prop-1793250152420",
+      "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "roomNumber": "101",
+      "fullName": "ข้าวหอม",
+      "phone": "097-110-3327",
+      "idCard": "-",
+      "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
+      "lineDisplayName": "ผู้เช่าห้อง 101",
+      "lineLinkedAt": "2026-11-04T01:53:23.221Z"
     }
   ],
   "pakdee_dev_invoices": [
+    {
+      "id": "inv-prop-1793250152420-1793756292209-101",
+      "propertyId": "prop-1793250152420",
+      "invoiceNumber": "INV-202611-101",
+      "roomNumber": "101",
+      "tenantName": "ข้าวหอม",
+      "tenantPhone": "097-110-3327",
+      "billingDate": "2026-11-25",
+      "dueDate": "2026-11-05",
+      "totalAmount": 4450,
+      "status": "unpaid",
+      "items": [
+        {
+          "name": "ค่าเช่าห้องพัก (ห้อง 101)",
+          "amount": 4000
+        },
+        {
+          "name": "ค่าไฟ 25 หน่วย (25 - 50)",
+          "units": 25,
+          "rate": 10,
+          "amount": 250,
+          "meterPrev": 25,
+          "meterCurr": 50
+        },
+        {
+          "name": "ค่าน้ำประปา 4 หน่วย (4 - 8)",
+          "units": 4,
+          "rate": 20,
+          "amount": 100,
+          "meterPrev": 4,
+          "meterCurr": 8
+        },
+        {
+          "name": "ค่าส่วนกลางและขยะ",
+          "amount": 100
+        }
+      ],
+      "lineDeliveryStatus": "sent",
+      "lineSentAt": "4/11/69 08:46 น."
+    },
+    {
+      "id": "inv-checkout-1793756197032-101",
+      "propertyId": "prop-1793250152420",
+      "invoiceNumber": "INV-OUT-101-7032",
+      "roomNumber": "101",
+      "tenantName": "ข้าวหอม",
+      "tenantPhone": "097-110-3327",
+      "billingDate": "2026-11-04",
+      "dueDate": "2026-11-04",
+      "items": [
+        {
+          "name": "ค่าบริการทำความสะอาดห้องพัก (ย้ายออก)",
+          "amount": 500
+        }
+      ],
+      "totalAmount": 500,
+      "status": "paid",
+      "paidAt": "4/11/2569 (หักชำระจากเงินประกันมัดจำ)",
+      "invoiceType": "custom"
+    },
     {
       "id": "inv-prop-1793250152420-1793699033900-102",
       "propertyId": "prop-1793250152420",
@@ -609,20 +708,20 @@
           "amount": 4000
         },
         {
-          "name": "ค่าไฟ 25 หน่วย (0 - 25)",
+          "name": "ค่าไฟ 25 หน่วย (25 - 50)",
           "units": 25,
           "rate": 10,
           "amount": 250,
-          "meterPrev": 0,
-          "meterCurr": 25
+          "meterPrev": 25,
+          "meterCurr": 50
         },
         {
-          "name": "ค่าน้ำประปา 4 หน่วย (0 - 4)",
+          "name": "ค่าน้ำประปา 4 หน่วย (4 - 8)",
           "units": 4,
           "rate": 20,
           "amount": 100,
-          "meterPrev": 0,
-          "meterCurr": 4
+          "meterPrev": 4,
+          "meterCurr": 8
         },
         {
           "name": "ค่าส่วนกลางและขยะ",
@@ -630,7 +729,7 @@
         }
       ],
       "lineDeliveryStatus": "sent",
-      "lineSentAt": "3/11/69 16:53 น."
+      "lineSentAt": "4/11/69 08:46 น."
     },
     {
       "id": "inv-daily-1793698693104-101",
@@ -856,6 +955,115 @@
   ],
   "pakdee_dev_contracts": [
     {
+      "id": "cnt-1793756277701",
+      "propertyId": "prop-1793250152420",
+      "contractNumber": "CT-2026-101-935",
+      "roomNumber": "101",
+      "tenantName": "ข้าวหอม",
+      "tenantPhone": "097-110-3327",
+      "startDate": "2026-11-04",
+      "endDate": "2027-11-04",
+      "monthlyRent": 4000,
+      "depositAmount": 8000,
+      "advanceRent": 4000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": [],
+      "paymentDueDay": 5,
+      "lateFeePerDay": 100,
+      "electricalEquipmentFee": 0,
+      "furnitureFee": 0,
+      "isContinuous": false,
+      "noticeDays": 30,
+      "depositRefundDays": 7,
+      "overdueGraceDays": 7,
+      "allowPets": false,
+      "noSmoking": true,
+      "additionalRules": [],
+      "clauses": [
+        {
+          "id": 1,
+          "title": "ห้องพักที่เช่า",
+          "content": "ผู้เช่าตกลงเช่าและผู้ให้เช่าตกลงให้เช่าห้องพักเลขที่ [หมายเลขห้อง] ชั้น [ชั้น] ตั้งอยู่ที่ [ที่อยู่หอพัก] เพื่อใช้เป็นที่พักอาศัยเท่านั้น ห้ามใช้เพื่อประโยชน์อื่นใดโดยมิได้รับความยินยอมเป็นลายลักษณ์อักษรจากผู้ให้เช่า"
+        },
+        {
+          "id": 2,
+          "title": "ระยะเวลาการเช่า",
+          "content": "สัญญาเช่าฉบับนี้กำหนดระยะเวลา ตั้งแต่วันที่ [วันเริ่มสัญญา] ถึงวันที่ [วันสิ้นสุดสัญญา] หากผู้เช่าประสงค์จะต่อสัญญา จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า 30 วันก่อนวันสิ้นสุดสัญญา"
+        },
+        {
+          "id": 3,
+          "title": "ค่าเช่า",
+          "content": "ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าเดือนละ [ค่าเช่า] บาท ([ค่าเช่าตัวอักษร]) ภายในวันที่ [วันกำหนดชำระ] ของทุกเดือน หากชำระล่าช้าจะต้องเสียค่าปรับวันละ [ค่าปรับ] บาท"
+        },
+        {
+          "id": 4,
+          "title": "เงินประกัน",
+          "content": "ผู้เช่าได้วางเงินประกันจำนวน [เงินประกัน] บาท ให้แก่ผู้ให้เช่า เงินประกันจะคืนให้ภายใน [จำนวนวันคืนเงินประกัน] วัน หลังจากวันสิ้นสุดสัญญาและย้ายออก หากไม่มีค่าเสียหายหรือค่าน้ำไฟค้างชำระ"
+        },
+        {
+          "id": 5,
+          "title": "ค่าสาธารณูปโภค",
+          "content": "ผู้เช่าตกลงชำระค่าสาธารณูปโภค ได้แก่ ค่าน้ำประปา ค่าไฟฟ้า ค่าบริการส่วนกลาง ค่าอินเทอร์เน็ต ตามอัตราที่หอพักกำหนด โดยชำระพร้อมกับค่าเช่าประจำเดือน"
+        },
+        {
+          "id": 6,
+          "title": "เฟอร์นิเจอร์และอุปกรณ์",
+          "content": "ผู้เช่าตกลงรับมอบห้องพักพร้อมเฟอร์นิเจอร์และอุปกรณ์ตามรายการที่ตรวจรับ ผู้เช่าจะบำรุงรักษาทรัพย์สินดังกล่าวให้อยู่ในสภาพดี หากเกิดความเสียหายต้องรับผิดชอบค่าซ่อมแซมหรือชดใช้"
+        },
+        {
+          "id": 7,
+          "title": "การดูแลรักษาห้องพัก",
+          "content": "ผู้เช่าจะต้องดูแลรักษาห้องพักให้มีสุขอนามัยเรียบร้อย สะอาด ไม่ทำลายทรัพย์สินของผู้ให้เช่า และไม่ดัดแปลงหรือต่อเติมห้องพักโดยไม่ได้รับอนุญาต"
+        },
+        {
+          "id": 8,
+          "title": "การใช้ห้องพัก",
+          "content": "ผู้เช่าจะไม่กระทำการอันเป็นการรบกวนความสงบสุขของผู้อื่น ไม่ประกอบกิจกรรมผิดกฎหมาย เก็บวัตถุอันตรายหรือสารเสพติด และต้องไม่กระทำการใดๆ ที่เป็นการรบกวนผู้อยู่อาศัยอื่น"
+        },
+        {
+          "id": 9,
+          "title": "ผู้พักอาศัย",
+          "content": "ผู้เช่าจะพักอาศัยตามจำนวนคนที่ตกลงไว้ หากมีบุคคลอื่นมาพักร่วมจะต้องได้รับอนุญาตและแจ้งให้ทราบและเสียค่าบริการเพิ่มเติม ห้ามนำบุคคลภายนอกเข้ามาพักอาศัยโดยพลการ"
+        },
+        {
+          "id": 10,
+          "title": "การซ่อมแซม",
+          "content": "หากมีความชำรุดเสียหายจากการใช้งานปกติ ผู้ให้เช่าจะเป็นผู้รับผิดชอบซ่อมแซม แต่หากเกิดจากความผิดของผู้เช่า ผู้เช่าต้องเป็นผู้รับผิดชอบค่าซ่อมแซมเอง"
+        },
+        {
+          "id": 11,
+          "title": "การตรวจสอบห้องพัก",
+          "content": "ผู้ให้เช่ามีสิทธิ์เข้าตรวจสอบห้องพักได้ โดยแจ้งให้ผู้เช่าทราบล่วงหน้าอย่างน้อย 24 ชั่วโมง ยกเว้นกรณีฉุกเฉิน"
+        },
+        {
+          "id": 12,
+          "title": "การบอกเลิกสัญญา",
+          "content": "หากผู้เช่าประสงค์จะบอกเลิกสัญญาก่อนครบกำหนด จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า [จำนวนวันแจ้งล่วงหน้า] วัน มิฉะนั้นจะถูกริบเงินประกัน"
+        },
+        {
+          "id": 13,
+          "title": "การผิดสัญญา",
+          "content": "หากผู้เช่าผิดข้อตกลงในสัญญาข้อใดข้อหนึ่ง ผู้ให้เช่ามีสิทธิ์บอกเลิกสัญญาได้ทันที โดยผู้เช่าไม่มีสิทธิ์เรียกร้องค่าเสียหายใดๆ"
+        },
+        {
+          "id": 14,
+          "title": "ข้อตกลงทั่วไป",
+          "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
+        }
+      ],
+      "status": "active",
+      "createdAt": "2026-11-04"
+    },
+    {
       "id": "cnt-1793755500000",
       "propertyId": "prop-1793250152420",
       "contractNumber": "CT-2026-101-839",
@@ -961,7 +1169,7 @@
           "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
         }
       ],
-      "status": "active",
+      "status": "terminated",
       "createdAt": "2026-11-04"
     },
     {
@@ -1114,6 +1322,28 @@
       "title": "⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา",
       "message": "เรียนผู้พักอาศัยทุกท่าน ทางการไฟฟ้าฯ จะดำเนินการตัดกระแสไฟฟ้าเพื่อปรับปรุงระบบหม้อแปลงในวันพฤหัสบดีที่ 30 ต.ค. เวลา 09:00 - 12:00 น. ขออภัยในความไม่สะดวก",
       "targetType": "all",
+      "recipientCount": 2,
+      "propertyId": "prop-1793250152420",
+      "id": "bc-1793756770075",
+      "sentAt": "4/11/69 08:46 น.",
+      "status": "sent"
+    },
+    {
+      "template": "power",
+      "title": "⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา",
+      "message": "เรียนผู้พักอาศัยทุกท่าน ทางการไฟฟ้าฯ จะดำเนินการตัดกระแสไฟฟ้าเพื่อปรับปรุงระบบหม้อแปลงในวันพฤหัสบดีที่ 30 ต.ค. เวลา 09:00 - 12:00 น. ขออภัยในความไม่สะดวก",
+      "targetType": "all",
+      "recipientCount": 2,
+      "propertyId": "prop-1793250152420",
+      "id": "bc-1793756750596",
+      "sentAt": "4/11/69 08:45 น.",
+      "status": "sent"
+    },
+    {
+      "template": "power",
+      "title": "⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา",
+      "message": "เรียนผู้พักอาศัยทุกท่าน ทางการไฟฟ้าฯ จะดำเนินการตัดกระแสไฟฟ้าเพื่อปรับปรุงระบบหม้อแปลงในวันพฤหัสบดีที่ 30 ต.ค. เวลา 09:00 - 12:00 น. ขออภัยในความไม่สะดวก",
+      "targetType": "all",
       "recipientCount": 1,
       "propertyId": "prop-1793250152420",
       "id": "bc-1793698852431",
@@ -1144,6 +1374,276 @@
     }
   ],
   "pakdee_dev_activity_logs": [
+    {
+      "id": "log-1793757203273",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ข้าวหอม)",
+      "createdAt": "4/11/69 08:53 น."
+    },
+    {
+      "id": "log-1793756782022",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "INVOICE",
+      "description": "ส่งบิลเข้า LINE ทั้งหมด 2 ห้อง (1 บัญชีจริง, 1 รอผู้เช่าผูก)",
+      "createdAt": "4/11/69 08:46 น."
+    },
+    {
+      "id": "log-1793756770076",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "ROOM",
+      "description": "ส่งบรอดแคสต์ LINE: ⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา (2 ห้อง)",
+      "createdAt": "4/11/69 08:46 น."
+    },
+    {
+      "id": "log-1793756750606",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "ROOM",
+      "description": "ส่งบรอดแคสต์ LINE: ⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา (2 ห้อง)",
+      "createdAt": "4/11/69 08:45 น."
+    },
+    {
+      "id": "log-1793756292270",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้ INV-202611-102 ห้อง 102 (฿4,450)",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756292234",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้ INV-202611-101 ห้อง 101 (฿4,450)",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289667",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 110: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289665",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 109: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289664",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 108: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289663",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 107: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289662",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 106: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289660",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 105: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289659",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 104: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289658",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 103: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289657",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 8",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289641",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 8",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288539",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 110: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288538",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 109: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288536",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 108: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288535",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 107: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288533",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 106: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288532",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 105: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288531",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 104: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288530",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 103: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288529",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 102: ไฟ 25, น้ำ 4",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288514",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 25, น้ำ 4",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756277614",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "TENANT",
+      "description": "ลงทะเบียนผู้เช่าใหม่: ข้าวหอม (097-110-3327)",
+      "createdAt": "4/11/69 08:37 น."
+    },
+    {
+      "id": "log-1793756197130",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:36 น."
+    },
+    {
+      "id": "log-1793756197128",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-OUT-101-7032 ห้อง 101 (฿500)",
+      "createdAt": "4/11/69 08:36 น."
+    },
+    {
+      "id": "log-1793756197031",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "ROOM",
+      "description": "สรุปย้ายออกห้อง ID: room-prop-1793250152420-101-1793698554393-s9l1 และส่งต่อแผนกแม่บ้าน",
+      "createdAt": "4/11/69 08:36 น."
+    },
     {
       "id": "log-1793755500001",
       "propertyId": "prop-1793250152420",
@@ -1323,279 +1823,163 @@
       "entity": "METER",
       "description": "จดมิเตอร์ห้อง 102: ไฟ 25, น้ำ 4",
       "createdAt": "3/11/69 16:43 น."
-    },
-    {
-      "id": "log-1793699030822",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 100, น้ำ 38",
-      "createdAt": "3/11/69 16:43 น."
-    },
-    {
-      "id": "log-1793698927359",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "CONTRACT",
-      "description": "สร้างสัญญาเช่าห้อง 102 ผู้เช่า: บีคลัช",
-      "createdAt": "3/11/69 16:42 น."
-    },
-    {
-      "id": "log-1793698927224",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "TENANT",
-      "description": "ลงทะเบียนผู้เช่าใหม่: บีคลัช (085-156-4316)",
-      "createdAt": "3/11/69 16:42 น."
-    },
-    {
-      "id": "log-1793698868532",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 110: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868531",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 109: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868530",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 108: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868529",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 107: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868528",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 106: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868527",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 105: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868526",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 104: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868524",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 103: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868522",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868508",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 75, น้ำ 34",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698693260",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698693128",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿650)",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698680506",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698680328",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿650)",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698676523",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698676359",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿650)",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698645373",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698645118",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿1,750)",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698598983",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "TENANT",
-      "description": "ลงทะเบียนผู้เช่าใหม่: บี (095-321-6421)",
-      "createdAt": "3/11/69 16:36 น."
-    },
-    {
-      "id": "log-1793698598980",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "ROOM",
-      "description": "บันทึกการจองรายวันห้อง 101 (บี)",
-      "createdAt": "3/11/69 16:36 น."
-    },
-    {
-      "id": "log-1793698554456",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "ROOM",
-      "description": "เพิ่มห้องพักเป็นชุด 10 ห้อง (101, 102, 103, 104, 105, 106, 107, 108, 109, 110)",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698510863",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 20",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698510683",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿650)",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698502978",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 20",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698502808",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿650)",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698490026",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 20",
-      "createdAt": "3/11/69 16:34 น."
-    },
-    {
-      "id": "log-1793698489888",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿650)",
-      "createdAt": "3/11/69 16:34 น."
     }
   ],
   "pakdee_dev_meter_readings": [
+    {
+      "id": "mtr-1793756289640-room-prop-1793250152420-101-1793698554393-s9l1",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "room_number": "101",
+      "billing_month": "2026-11",
+      "electric_prev": 25,
+      "electric_curr": 50,
+      "electric_units": 25,
+      "water_prev": 4,
+      "water_curr": 8,
+      "water_units": 4,
+      "recorded_at": "4/11/2569 08:38:09"
+    },
+    {
+      "id": "mtr-1793756288539-room-prop-1793250152420-110-1793698554393-ywsi",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-110-1793698554393-ywsi",
+      "room_number": "110",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288538-room-prop-1793250152420-109-1793698554393-6w4i",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-109-1793698554393-6w4i",
+      "room_number": "109",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288536-room-prop-1793250152420-108-1793698554393-ln5j",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-108-1793698554393-ln5j",
+      "room_number": "108",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288534-room-prop-1793250152420-107-1793698554393-kwza",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-107-1793698554393-kwza",
+      "room_number": "107",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288533-room-prop-1793250152420-106-1793698554393-7l7q",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-106-1793698554393-7l7q",
+      "room_number": "106",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288532-room-prop-1793250152420-105-1793698554393-v0p2",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-105-1793698554393-v0p2",
+      "room_number": "105",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288531-room-prop-1793250152420-104-1793698554393-sv9d",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-104-1793698554393-sv9d",
+      "room_number": "104",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288530-room-prop-1793250152420-103-1793698554393-fs4u",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-103-1793698554393-fs4u",
+      "room_number": "103",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288528-room-prop-1793250152420-102-1793698554393-2jbm",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-102-1793698554393-2jbm",
+      "room_number": "102",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288513-room-prop-1793250152420-101-1793698554393-s9l1",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "room_number": "101",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
     {
       "id": "mtr-1793699030821-room-prop-1793250152420-101-1793698554393-s9l1",
       "property_id": "prop-1793250152420",
@@ -4224,14 +4608,19 @@
       "monthlyRate": 4000,
       "dailyRate": 650,
       "status": "occupied",
-      "currentElectricMeter": 100,
-      "currentWaterMeter": 38,
+      "currentElectricMeter": 50,
+      "currentWaterMeter": 8,
       "currentTenant": {
-        "id": "t-1793755500000",
+        "id": "t-1793756277702",
         "propertyId": "prop-1793250152420",
         "fullName": "ข้าวหอม",
         "phone": "097-110-3327",
-        "idCard": "-"
+        "idCard": "-",
+        "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
+        "roomNumber": "101",
+        "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
+        "lineDisplayName": "ผู้เช่าห้อง 101",
+        "lineLinkedAt": "2026-11-04T01:53:23.221Z"
       },
       "leaseEndDate": "2027-11-04"
     },
@@ -4245,8 +4634,8 @@
       "monthlyRate": 4000,
       "dailyRate": 650,
       "status": "occupied",
-      "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
+      "currentElectricMeter": 25,
+      "currentWaterMeter": 4,
       "currentTenant": {
         "id": "t-1793698927358",
         "propertyId": "prop-1793250152420",
@@ -4362,6 +4751,276 @@
     }
   ],
   "activity_logs": [
+    {
+      "id": "log-1793757203273",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ข้าวหอม)",
+      "createdAt": "4/11/69 08:53 น."
+    },
+    {
+      "id": "log-1793756782022",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "INVOICE",
+      "description": "ส่งบิลเข้า LINE ทั้งหมด 2 ห้อง (1 บัญชีจริง, 1 รอผู้เช่าผูก)",
+      "createdAt": "4/11/69 08:46 น."
+    },
+    {
+      "id": "log-1793756770076",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "ROOM",
+      "description": "ส่งบรอดแคสต์ LINE: ⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา (2 ห้อง)",
+      "createdAt": "4/11/69 08:46 น."
+    },
+    {
+      "id": "log-1793756750606",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "SEND",
+      "entity": "ROOM",
+      "description": "ส่งบรอดแคสต์ LINE: ⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา (2 ห้อง)",
+      "createdAt": "4/11/69 08:45 น."
+    },
+    {
+      "id": "log-1793756292270",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้ INV-202611-102 ห้อง 102 (฿4,450)",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756292234",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้ INV-202611-101 ห้อง 101 (฿4,450)",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289667",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 110: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289665",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 109: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289664",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 108: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289663",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 107: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289662",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 106: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289660",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 105: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289659",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 104: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289658",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 103: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289657",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 8",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756289641",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 8",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288539",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 110: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288538",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 109: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288536",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 108: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288535",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 107: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288533",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 106: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288532",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 105: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288531",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 104: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288530",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 103: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288529",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 102: ไฟ 25, น้ำ 4",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756288514",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 25, น้ำ 4",
+      "createdAt": "4/11/69 08:38 น."
+    },
+    {
+      "id": "log-1793756277614",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "TENANT",
+      "description": "ลงทะเบียนผู้เช่าใหม่: ข้าวหอม (097-110-3327)",
+      "createdAt": "4/11/69 08:37 น."
+    },
+    {
+      "id": "log-1793756197130",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "METER",
+      "description": "จดมิเตอร์ห้อง 101: ไฟ 0, น้ำ 0",
+      "createdAt": "4/11/69 08:36 น."
+    },
+    {
+      "id": "log-1793756197128",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "CREATE",
+      "entity": "INVOICE",
+      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-OUT-101-7032 ห้อง 101 (฿500)",
+      "createdAt": "4/11/69 08:36 น."
+    },
+    {
+      "id": "log-1793756197031",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "ROOM",
+      "description": "สรุปย้ายออกห้อง ID: room-prop-1793250152420-101-1793698554393-s9l1 และส่งต่อแผนกแม่บ้าน",
+      "createdAt": "4/11/69 08:36 น."
+    },
     {
       "id": "log-1793755500001",
       "propertyId": "prop-1793250152420",
@@ -4541,276 +5200,6 @@
       "entity": "METER",
       "description": "จดมิเตอร์ห้อง 102: ไฟ 25, น้ำ 4",
       "createdAt": "3/11/69 16:43 น."
-    },
-    {
-      "id": "log-1793699030822",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 100, น้ำ 38",
-      "createdAt": "3/11/69 16:43 น."
-    },
-    {
-      "id": "log-1793698927359",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "CONTRACT",
-      "description": "สร้างสัญญาเช่าห้อง 102 ผู้เช่า: บีคลัช",
-      "createdAt": "3/11/69 16:42 น."
-    },
-    {
-      "id": "log-1793698927224",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "TENANT",
-      "description": "ลงทะเบียนผู้เช่าใหม่: บีคลัช (085-156-4316)",
-      "createdAt": "3/11/69 16:42 น."
-    },
-    {
-      "id": "log-1793698868532",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 110: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868531",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 109: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868530",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 108: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868529",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 107: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868528",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 106: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868527",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 105: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868526",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 104: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868524",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 103: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868522",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 0, น้ำ 0",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698868508",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 75, น้ำ 34",
-      "createdAt": "3/11/69 16:41 น."
-    },
-    {
-      "id": "log-1793698693260",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698693128",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿650)",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698680506",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698680328",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿650)",
-      "createdAt": "3/11/69 16:38 น."
-    },
-    {
-      "id": "log-1793698676523",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698676359",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿650)",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698645373",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 101: ไฟ 50, น้ำ 30",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698645118",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-101 ห้อง 101 (฿1,750)",
-      "createdAt": "3/11/69 16:37 น."
-    },
-    {
-      "id": "log-1793698598983",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "TENANT",
-      "description": "ลงทะเบียนผู้เช่าใหม่: บี (095-321-6421)",
-      "createdAt": "3/11/69 16:36 น."
-    },
-    {
-      "id": "log-1793698598980",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "ROOM",
-      "description": "บันทึกการจองรายวันห้อง 101 (บี)",
-      "createdAt": "3/11/69 16:36 น."
-    },
-    {
-      "id": "log-1793698554456",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "ROOM",
-      "description": "เพิ่มห้องพักเป็นชุด 10 ห้อง (101, 102, 103, 104, 105, 106, 107, 108, 109, 110)",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698510863",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 20",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698510683",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿650)",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698502978",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 20",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698502808",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿650)",
-      "createdAt": "3/11/69 16:35 น."
-    },
-    {
-      "id": "log-1793698490026",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "UPDATE",
-      "entity": "METER",
-      "description": "จดมิเตอร์ห้อง 102: ไฟ 50, น้ำ 20",
-      "createdAt": "3/11/69 16:34 น."
-    },
-    {
-      "id": "log-1793698489888",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿650)",
-      "createdAt": "3/11/69 16:34 น."
     }
   ],
   "properties": [
@@ -4931,6 +5320,28 @@
   ],
   "tenants": [
     {
+      "id": "t-1793756277601",
+      "propertyId": "prop-1793250152420",
+      "fullName": "ข้าวหอม",
+      "phone": "097-110-3327",
+      "idCard": "1-1040-00063-45-3",
+      "gender": "FEMALE",
+      "age": 24,
+      "invoiceLang": "TH",
+      "depositAmount": 8000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": []
+    },
+    {
       "id": "t-1793755499887",
       "propertyId": "prop-1793250152420",
       "fullName": "ข้าวหอม",
@@ -5025,9 +5436,130 @@
       "idCard": "-",
       "lineDisplayName": "ผู้เช่าห้อง 101",
       "lineLinkedAt": "2026-11-04T01:12:31.654Z"
+    },
+    {
+      "id": "t-1793756277702",
+      "propertyId": "prop-1793250152420",
+      "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "roomNumber": "101",
+      "fullName": "ข้าวหอม",
+      "phone": "097-110-3327",
+      "idCard": "-",
+      "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
+      "lineDisplayName": "ผู้เช่าห้อง 101",
+      "lineLinkedAt": "2026-11-04T01:53:23.221Z"
     }
   ],
   "contracts": [
+    {
+      "id": "cnt-1793756277701",
+      "propertyId": "prop-1793250152420",
+      "contractNumber": "CT-2026-101-935",
+      "roomNumber": "101",
+      "tenantName": "ข้าวหอม",
+      "tenantPhone": "097-110-3327",
+      "startDate": "2026-11-04",
+      "endDate": "2027-11-04",
+      "monthlyRent": 4000,
+      "depositAmount": 8000,
+      "advanceRent": 4000,
+      "hasTv": false,
+      "tvRentalFee": 0,
+      "hasFridge": false,
+      "fridgeRentalFee": 0,
+      "hasCommonFee": false,
+      "commonFee": 0,
+      "hasWifi": false,
+      "wifiFee": 0,
+      "hasParking": false,
+      "parkingFee": 0,
+      "additionalFees": [],
+      "paymentDueDay": 5,
+      "lateFeePerDay": 100,
+      "electricalEquipmentFee": 0,
+      "furnitureFee": 0,
+      "isContinuous": false,
+      "noticeDays": 30,
+      "depositRefundDays": 7,
+      "overdueGraceDays": 7,
+      "allowPets": false,
+      "noSmoking": true,
+      "additionalRules": [],
+      "clauses": [
+        {
+          "id": 1,
+          "title": "ห้องพักที่เช่า",
+          "content": "ผู้เช่าตกลงเช่าและผู้ให้เช่าตกลงให้เช่าห้องพักเลขที่ [หมายเลขห้อง] ชั้น [ชั้น] ตั้งอยู่ที่ [ที่อยู่หอพัก] เพื่อใช้เป็นที่พักอาศัยเท่านั้น ห้ามใช้เพื่อประโยชน์อื่นใดโดยมิได้รับความยินยอมเป็นลายลักษณ์อักษรจากผู้ให้เช่า"
+        },
+        {
+          "id": 2,
+          "title": "ระยะเวลาการเช่า",
+          "content": "สัญญาเช่าฉบับนี้กำหนดระยะเวลา ตั้งแต่วันที่ [วันเริ่มสัญญา] ถึงวันที่ [วันสิ้นสุดสัญญา] หากผู้เช่าประสงค์จะต่อสัญญา จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า 30 วันก่อนวันสิ้นสุดสัญญา"
+        },
+        {
+          "id": 3,
+          "title": "ค่าเช่า",
+          "content": "ผู้เช่าตกลงชำระค่าเช่าให้แก่ผู้ให้เช่าเดือนละ [ค่าเช่า] บาท ([ค่าเช่าตัวอักษร]) ภายในวันที่ [วันกำหนดชำระ] ของทุกเดือน หากชำระล่าช้าจะต้องเสียค่าปรับวันละ [ค่าปรับ] บาท"
+        },
+        {
+          "id": 4,
+          "title": "เงินประกัน",
+          "content": "ผู้เช่าได้วางเงินประกันจำนวน [เงินประกัน] บาท ให้แก่ผู้ให้เช่า เงินประกันจะคืนให้ภายใน [จำนวนวันคืนเงินประกัน] วัน หลังจากวันสิ้นสุดสัญญาและย้ายออก หากไม่มีค่าเสียหายหรือค่าน้ำไฟค้างชำระ"
+        },
+        {
+          "id": 5,
+          "title": "ค่าสาธารณูปโภค",
+          "content": "ผู้เช่าตกลงชำระค่าสาธารณูปโภค ได้แก่ ค่าน้ำประปา ค่าไฟฟ้า ค่าบริการส่วนกลาง ค่าอินเทอร์เน็ต ตามอัตราที่หอพักกำหนด โดยชำระพร้อมกับค่าเช่าประจำเดือน"
+        },
+        {
+          "id": 6,
+          "title": "เฟอร์นิเจอร์และอุปกรณ์",
+          "content": "ผู้เช่าตกลงรับมอบห้องพักพร้อมเฟอร์นิเจอร์และอุปกรณ์ตามรายการที่ตรวจรับ ผู้เช่าจะบำรุงรักษาทรัพย์สินดังกล่าวให้อยู่ในสภาพดี หากเกิดความเสียหายต้องรับผิดชอบค่าซ่อมแซมหรือชดใช้"
+        },
+        {
+          "id": 7,
+          "title": "การดูแลรักษาห้องพัก",
+          "content": "ผู้เช่าจะต้องดูแลรักษาห้องพักให้มีสุขอนามัยเรียบร้อย สะอาด ไม่ทำลายทรัพย์สินของผู้ให้เช่า และไม่ดัดแปลงหรือต่อเติมห้องพักโดยไม่ได้รับอนุญาต"
+        },
+        {
+          "id": 8,
+          "title": "การใช้ห้องพัก",
+          "content": "ผู้เช่าจะไม่กระทำการอันเป็นการรบกวนความสงบสุขของผู้อื่น ไม่ประกอบกิจกรรมผิดกฎหมาย เก็บวัตถุอันตรายหรือสารเสพติด และต้องไม่กระทำการใดๆ ที่เป็นการรบกวนผู้อยู่อาศัยอื่น"
+        },
+        {
+          "id": 9,
+          "title": "ผู้พักอาศัย",
+          "content": "ผู้เช่าจะพักอาศัยตามจำนวนคนที่ตกลงไว้ หากมีบุคคลอื่นมาพักร่วมจะต้องได้รับอนุญาตและแจ้งให้ทราบและเสียค่าบริการเพิ่มเติม ห้ามนำบุคคลภายนอกเข้ามาพักอาศัยโดยพลการ"
+        },
+        {
+          "id": 10,
+          "title": "การซ่อมแซม",
+          "content": "หากมีความชำรุดเสียหายจากการใช้งานปกติ ผู้ให้เช่าจะเป็นผู้รับผิดชอบซ่อมแซม แต่หากเกิดจากความผิดของผู้เช่า ผู้เช่าต้องเป็นผู้รับผิดชอบค่าซ่อมแซมเอง"
+        },
+        {
+          "id": 11,
+          "title": "การตรวจสอบห้องพัก",
+          "content": "ผู้ให้เช่ามีสิทธิ์เข้าตรวจสอบห้องพักได้ โดยแจ้งให้ผู้เช่าทราบล่วงหน้าอย่างน้อย 24 ชั่วโมง ยกเว้นกรณีฉุกเฉิน"
+        },
+        {
+          "id": 12,
+          "title": "การบอกเลิกสัญญา",
+          "content": "หากผู้เช่าประสงค์จะบอกเลิกสัญญาก่อนครบกำหนด จะต้องแจ้งให้ผู้ให้เช่าทราบล่วงหน้าไม่น้อยกว่า [จำนวนวันแจ้งล่วงหน้า] วัน มิฉะนั้นจะถูกริบเงินประกัน"
+        },
+        {
+          "id": 13,
+          "title": "การผิดสัญญา",
+          "content": "หากผู้เช่าผิดข้อตกลงในสัญญาข้อใดข้อหนึ่ง ผู้ให้เช่ามีสิทธิ์บอกเลิกสัญญาได้ทันที โดยผู้เช่าไม่มีสิทธิ์เรียกร้องค่าเสียหายใดๆ"
+        },
+        {
+          "id": 14,
+          "title": "ข้อตกลงทั่วไป",
+          "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
+        }
+      ],
+      "status": "active",
+      "createdAt": "2026-11-04"
+    },
     {
       "id": "cnt-1793755500000",
       "propertyId": "prop-1793250152420",
@@ -5134,7 +5666,7 @@
           "content": "สัญญาฉบับนี้ทำขึ้นเป็นสองฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและเข้าใจข้อความในสัญญาโดยละเอียดแล้ว จึงลงลายมือชื่อไว้เป็นหลักฐานต่อหน้าพยาน"
         }
       ],
-      "status": "active",
+      "status": "terminated",
       "createdAt": "2026-11-04"
     },
     {
@@ -5347,6 +5879,66 @@
   },
   "invoices": [
     {
+      "id": "inv-prop-1793250152420-1793756292209-101",
+      "propertyId": "prop-1793250152420",
+      "invoiceNumber": "INV-202611-101",
+      "roomNumber": "101",
+      "tenantName": "ข้าวหอม",
+      "tenantPhone": "097-110-3327",
+      "billingDate": "2026-11-25",
+      "dueDate": "2026-11-05",
+      "totalAmount": 4450,
+      "status": "unpaid",
+      "items": [
+        {
+          "name": "ค่าเช่าห้องพัก (ห้อง 101)",
+          "amount": 4000
+        },
+        {
+          "name": "ค่าไฟ 25 หน่วย (25 - 50)",
+          "units": 25,
+          "rate": 10,
+          "amount": 250,
+          "meterPrev": 25,
+          "meterCurr": 50
+        },
+        {
+          "name": "ค่าน้ำประปา 4 หน่วย (4 - 8)",
+          "units": 4,
+          "rate": 20,
+          "amount": 100,
+          "meterPrev": 4,
+          "meterCurr": 8
+        },
+        {
+          "name": "ค่าส่วนกลางและขยะ",
+          "amount": 100
+        }
+      ],
+      "lineDeliveryStatus": "sent",
+      "lineSentAt": "4/11/69 08:46 น."
+    },
+    {
+      "id": "inv-checkout-1793756197032-101",
+      "propertyId": "prop-1793250152420",
+      "invoiceNumber": "INV-OUT-101-7032",
+      "roomNumber": "101",
+      "tenantName": "ข้าวหอม",
+      "tenantPhone": "097-110-3327",
+      "billingDate": "2026-11-04",
+      "dueDate": "2026-11-04",
+      "items": [
+        {
+          "name": "ค่าบริการทำความสะอาดห้องพัก (ย้ายออก)",
+          "amount": 500
+        }
+      ],
+      "totalAmount": 500,
+      "status": "paid",
+      "paidAt": "4/11/2569 (หักชำระจากเงินประกันมัดจำ)",
+      "invoiceType": "custom"
+    },
+    {
       "id": "inv-prop-1793250152420-1793699033900-102",
       "propertyId": "prop-1793250152420",
       "invoiceNumber": "INV-202611-102",
@@ -5363,20 +5955,20 @@
           "amount": 4000
         },
         {
-          "name": "ค่าไฟ 25 หน่วย (0 - 25)",
+          "name": "ค่าไฟ 25 หน่วย (25 - 50)",
           "units": 25,
           "rate": 10,
           "amount": 250,
-          "meterPrev": 0,
-          "meterCurr": 25
+          "meterPrev": 25,
+          "meterCurr": 50
         },
         {
-          "name": "ค่าน้ำประปา 4 หน่วย (0 - 4)",
+          "name": "ค่าน้ำประปา 4 หน่วย (4 - 8)",
           "units": 4,
           "rate": 20,
           "amount": 100,
-          "meterPrev": 0,
-          "meterCurr": 4
+          "meterPrev": 4,
+          "meterCurr": 8
         },
         {
           "name": "ค่าส่วนกลางและขยะ",
@@ -5384,7 +5976,7 @@
         }
       ],
       "lineDeliveryStatus": "sent",
-      "lineSentAt": "3/11/69 16:53 น."
+      "lineSentAt": "4/11/69 08:46 น."
     },
     {
       "id": "inv-daily-1793698693104-101",
@@ -5614,6 +6206,28 @@
       "title": "⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา",
       "message": "เรียนผู้พักอาศัยทุกท่าน ทางการไฟฟ้าฯ จะดำเนินการตัดกระแสไฟฟ้าเพื่อปรับปรุงระบบหม้อแปลงในวันพฤหัสบดีที่ 30 ต.ค. เวลา 09:00 - 12:00 น. ขออภัยในความไม่สะดวก",
       "targetType": "all",
+      "recipientCount": 2,
+      "propertyId": "prop-1793250152420",
+      "id": "bc-1793756770075",
+      "sentAt": "4/11/69 08:46 น.",
+      "status": "sent"
+    },
+    {
+      "template": "power",
+      "title": "⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา",
+      "message": "เรียนผู้พักอาศัยทุกท่าน ทางการไฟฟ้าฯ จะดำเนินการตัดกระแสไฟฟ้าเพื่อปรับปรุงระบบหม้อแปลงในวันพฤหัสบดีที่ 30 ต.ค. เวลา 09:00 - 12:00 น. ขออภัยในความไม่สะดวก",
+      "targetType": "all",
+      "recipientCount": 2,
+      "propertyId": "prop-1793250152420",
+      "id": "bc-1793756750596",
+      "sentAt": "4/11/69 08:45 น.",
+      "status": "sent"
+    },
+    {
+      "template": "power",
+      "title": "⚡ ประกาศดับกระแสไฟฟ้าชั่วคราวเพื่อบำรุงรักษา",
+      "message": "เรียนผู้พักอาศัยทุกท่าน ทางการไฟฟ้าฯ จะดำเนินการตัดกระแสไฟฟ้าเพื่อปรับปรุงระบบหม้อแปลงในวันพฤหัสบดีที่ 30 ต.ค. เวลา 09:00 - 12:00 น. ขออภัยในความไม่สะดวก",
+      "targetType": "all",
       "recipientCount": 1,
       "propertyId": "prop-1793250152420",
       "id": "bc-1793698852431",
@@ -5644,6 +6258,160 @@
     }
   ],
   "meter_readings": [
+    {
+      "id": "mtr-1793756289640-room-prop-1793250152420-101-1793698554393-s9l1",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "room_number": "101",
+      "billing_month": "2026-11",
+      "electric_prev": 25,
+      "electric_curr": 50,
+      "electric_units": 25,
+      "water_prev": 4,
+      "water_curr": 8,
+      "water_units": 4,
+      "recorded_at": "4/11/2569 08:38:09"
+    },
+    {
+      "id": "mtr-1793756288539-room-prop-1793250152420-110-1793698554393-ywsi",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-110-1793698554393-ywsi",
+      "room_number": "110",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288538-room-prop-1793250152420-109-1793698554393-6w4i",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-109-1793698554393-6w4i",
+      "room_number": "109",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288536-room-prop-1793250152420-108-1793698554393-ln5j",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-108-1793698554393-ln5j",
+      "room_number": "108",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288534-room-prop-1793250152420-107-1793698554393-kwza",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-107-1793698554393-kwza",
+      "room_number": "107",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288533-room-prop-1793250152420-106-1793698554393-7l7q",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-106-1793698554393-7l7q",
+      "room_number": "106",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288532-room-prop-1793250152420-105-1793698554393-v0p2",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-105-1793698554393-v0p2",
+      "room_number": "105",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288531-room-prop-1793250152420-104-1793698554393-sv9d",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-104-1793698554393-sv9d",
+      "room_number": "104",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288530-room-prop-1793250152420-103-1793698554393-fs4u",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-103-1793698554393-fs4u",
+      "room_number": "103",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 0,
+      "electric_units": 0,
+      "water_prev": 0,
+      "water_curr": 0,
+      "water_units": 0,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288528-room-prop-1793250152420-102-1793698554393-2jbm",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-102-1793698554393-2jbm",
+      "room_number": "102",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
+    {
+      "id": "mtr-1793756288513-room-prop-1793250152420-101-1793698554393-s9l1",
+      "property_id": "prop-1793250152420",
+      "room_id": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "room_number": "101",
+      "billing_month": "2026-11",
+      "electric_prev": 0,
+      "electric_curr": 25,
+      "electric_units": 25,
+      "water_prev": 0,
+      "water_curr": 4,
+      "water_units": 4,
+      "recorded_at": "4/11/2569 08:38:08"
+    },
     {
       "id": "mtr-1793699030821-room-prop-1793250152420-101-1793698554393-s9l1",
       "property_id": "prop-1793250152420",

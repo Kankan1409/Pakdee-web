@@ -2056,4 +2056,22 @@ export const DatabaseService = {
       return false;
     }
   },
+
+  mergeRemoteDb(remoteData: Record<string, any>): void {
+    if (!remoteData || typeof remoteData !== "object") return;
+    Object.assign(memoryDb, remoteData);
+    if (typeof window === "undefined") {
+      try {
+        const fs = eval("require")("fs");
+        const filePath = getDbFilePath();
+        if (filePath) {
+          fs.writeFileSync(filePath, JSON.stringify(memoryDb, null, 2), "utf8");
+          lastDbMtime = fs.statSync(filePath).mtimeMs;
+          isServerSynced = true;
+        }
+      } catch (e) {
+        console.warn("[DatabaseService] mergeRemoteDb write error:", e);
+      }
+    }
+  },
 };
