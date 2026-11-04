@@ -266,9 +266,35 @@ export const DatabaseService = {
       return true;
     }
 
-    // Activate live real-time subscription for automatic cross-tab and cross-device sync
+    // 1. Activate live real-time subscription on Supabase Cloud
     setupRealtimeSync();
 
+    // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
+    try {
+      const { data: cloudStore, error } = await supabase
+        .from("pakdee_store")
+        .select("key, value");
+
+      if (!error && cloudStore && cloudStore.length > 0) {
+        cloudStore.forEach((row: any) => {
+          memoryDb[row.key] = row.value;
+          const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
+          memoryDb[normKey] = row.value;
+          try {
+            localStorage.setItem(row.key, JSON.stringify(row.value));
+          } catch {}
+        });
+        isServerSynced = true;
+        console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
+        return true;
+      } else if (error) {
+        console.warn("[Supabase Cloud Direct] Supabase query warning:", error.message);
+      }
+    } catch (e: any) {
+      console.warn("[Supabase Cloud Direct] Cloud fetch failed, falling back to local server:", e?.message);
+    }
+
+    // 3. Fallback to local server /api/db only when offline
     try {
       const res = await fetch("/api/db", { cache: "no-store" });
       if (res.ok) {
@@ -285,7 +311,7 @@ export const DatabaseService = {
         }
       }
     } catch (err) {
-      console.warn("[DatabaseService] Init sync fallback to local storage:", err);
+      console.warn("[DatabaseService] Offline fallback to localStorage:", err);
     }
     return false;
   },
@@ -310,19 +336,36 @@ export const DatabaseService = {
       }
     });
 
-    // 2. Persist directly to Host Machine Database via /api/db in ONE atomic write
+    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq)
+    try {
+      const rows = Object.entries(data).map(([k, v]) => ({
+        key: k,
+        value: v,
+        updated_at: new Date().toISOString(),
+      }));
+      supabase
+        .from("pakdee_store")
+        .upsert(rows)
+        .then(({ error }: any) => {
+          if (error) console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
+        });
+    } catch (e: any) {
+      console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
+    }
+
+    // 3. Secondary: Background sync to local /api/db mirror
     if (typeof window !== "undefined") {
       try {
-        const res = await fetch("/api/db", {
+        fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data }),
-        });
-        return res.ok;
-      } catch (err) {
-        console.warn("[HostDB] Batch sync failed:", err);
-      }
+          keepalive: true,
+        }).catch(() => {});
+      } catch {}
     }
+
+    return true;
     return true;
   },
 
