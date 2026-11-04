@@ -7,7 +7,7 @@ import { Invoice, Property, RepairItem, BranchSettingsDetail } from "@/types/dor
 import { formatCurrency, formatDateThai } from "@/lib/utils";
 
 /**
- * 1. สร้าง Flex Message การ์ดใบแจ้งหนี้ พร้อม Dynamic PromptPay QR Code
+ * 1. สร้าง Flex Message การ์ดใบแจ้งหนี้แบบ 1:1 ถอดแบบจาก Template ใบแจ้งหนี้หน้าเว็บ (Invoice Modal)
  */
 export function buildInvoiceFlexMessage(
   invoice: Invoice,
@@ -15,42 +15,66 @@ export function buildInvoiceFlexMessage(
   branchSettings?: BranchSettingsDetail | null,
   qrCodeUrl?: string
 ) {
-  const branchName = branchSettings?.branchName || property?.name || "พักดี แมนชั่น";
-  const dueDateStr = invoice.dueDate ? formatDateThai(invoice.dueDate) : "วันที่ 5 ของเดือน";
-  const billingMonth = invoice.billingDate || "รอบเดือนปัจจุบัน";
+  const branchName = branchSettings?.branchName || property?.name || "วิภาวรรณ 1";
+  const branchAddress = branchSettings?.address || property?.address || "";
+  const branchPhone = branchSettings?.phone || property?.phone || "";
+  const promptpayNumber = branchSettings?.promptpayNumber || property?.promptpayNumber || "0854625145";
+  const promptpayName = branchSettings?.promptpayName || property?.promptpayName || branchName;
+  const dueDateStr = invoice.dueDate || "2026-11-05";
+  const billingDateStr = invoice.billingDate || "2026-11-25";
+  const tenantPhone = invoice.tenantPhone || "-";
+  const buildingName = (property as any)?.buildingName || "อาคาร A";
 
-  // Build items rows
-  const itemBoxes = invoice.items.map((item) => {
-    let detailText = "";
-    const rateVal = item.rate ?? (item as any).ratePerUnit;
-    if (item.units !== undefined && rateVal !== undefined) {
-      detailText = ` (${item.units} หน่วย @฿${rateVal})`;
-    }
+  // Build items rows (4 คอลัมน์เหมือนหน้าเว็บ: รายการ | หน่วยที่ใช้ | ราคา/หน่วย | จำนวนเงิน)
+  const itemRows = invoice.items.map((item) => {
     const itemName = item.name || (item as any).description || "รายการ";
+    const unitsStr = item.units !== undefined && item.units !== null ? `${item.units}` : "-";
+    const rateVal = item.rate ?? (item as any).ratePerUnit;
+    const rateStr = rateVal !== undefined && rateVal > 0 ? Number(rateVal).toFixed(2) : "-";
+    const amountStr = item.amount.toLocaleString("th-TH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
 
     return {
       type: "box",
       layout: "horizontal",
+      margin: "sm",
       contents: [
         {
           type: "text",
-          text: `• ${itemName}${detailText}`,
-          size: "xs",
-          color: "#475569",
-          flex: 7,
+          text: itemName,
+          size: "xxs",
+          color: "#334155",
+          flex: 5,
           wrap: true,
         },
         {
           type: "text",
-          text: `฿${item.amount.toLocaleString()}`,
-          size: "xs",
-          color: "#0f172a",
-          weight: "bold",
+          text: unitsStr,
+          size: "xxs",
+          color: "#64748B",
+          flex: 2,
+          align: "center",
+        },
+        {
+          type: "text",
+          text: rateStr,
+          size: "xxs",
+          color: "#64748B",
+          flex: 2,
           align: "end",
+        },
+        {
+          type: "text",
+          text: amountStr,
+          size: "xxs",
+          color: "#0F172A",
+          weight: "bold",
           flex: 3,
+          align: "end",
         },
       ],
-      margin: "sm",
     };
   });
 
@@ -60,73 +84,104 @@ export function buildInvoiceFlexMessage(
     contents: {
       type: "bubble",
       size: "giga",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#059669",
-        paddingAll: "20px",
-        contents: [
-          {
-            type: "box",
-            layout: "horizontal",
-            contents: [
-              {
-                type: "text",
-                text: "🏢 " + branchName,
-                color: "#A7F3D0",
-                size: "xs",
-                weight: "bold",
-                flex: 1,
-              },
-              {
-                type: "text",
-                text: "ใบแจ้งหนี้",
-                color: "#FFFFFF",
-                size: "xs",
-                align: "end",
-                weight: "bold",
-              },
-            ],
-          },
-          {
-            type: "text",
-            text: `ห้องพักเลขที่ ${invoice.roomNumber}`,
-            color: "#FFFFFF",
-            size: "xl",
-            weight: "bold",
-            margin: "sm",
-          },
-          {
-            type: "text",
-            text: `ผู้เช่า: ${invoice.tenantName || "ผู้พักอาศัย"}`,
-            color: "#D1FAE5",
-            size: "xs",
-            margin: "xs",
-          },
-        ],
-      },
       body: {
         type: "box",
         layout: "vertical",
-        paddingAll: "20px",
         backgroundColor: "#FFFFFF",
+        paddingAll: "16px",
         contents: [
+          // 1. Header (เหมือนหน้าเว็บ: ชื่อหอพัก ที่อยู่ เบอร์โทร ซ้าย / ป้าย INVOICE เลขที่ วันที่ ขวา)
           {
             type: "box",
             layout: "horizontal",
             contents: [
               {
-                type: "text",
-                text: `เลขที่: ${invoice.invoiceNumber}`,
-                size: "xxs",
-                color: "#64748B",
+                type: "box",
+                layout: "vertical",
+                flex: 6,
+                contents: [
+                  {
+                    type: "text",
+                    text: `🏢 ${branchName}`,
+                    weight: "bold",
+                    size: "md",
+                    color: "#0F172A",
+                    wrap: true,
+                  },
+                  ...(branchAddress
+                    ? [
+                        {
+                          type: "text",
+                          text: branchAddress,
+                          size: "xxs",
+                          color: "#64748B",
+                          wrap: true,
+                          margin: "xs",
+                        },
+                      ]
+                    : []),
+                  ...(branchPhone
+                    ? [
+                        {
+                          type: "text",
+                          text: `โทร: ${branchPhone}`,
+                          size: "xxs",
+                          color: "#64748B",
+                          margin: "xs",
+                        },
+                      ]
+                    : []),
+                ],
               },
               {
-                type: "text",
-                text: `รอบบิล: ${billingMonth}`,
-                size: "xxs",
-                color: "#64748B",
-                align: "end",
+                type: "box",
+                layout: "vertical",
+                flex: 5,
+                alignItems: "flex-end",
+                contents: [
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    backgroundColor: "#0F172A",
+                    cornerRadius: "sm",
+                    paddingStart: "8px",
+                    paddingEnd: "8px",
+                    paddingTop: "3px",
+                    paddingBottom: "3px",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "ใบแจ้งหนี้ / INVOICE",
+                        color: "#FFFFFF",
+                        size: "xxs",
+                        weight: "bold",
+                      },
+                    ],
+                  },
+                  {
+                    type: "text",
+                    text: `เลขที่: ${invoice.invoiceNumber}`,
+                    size: "xxs",
+                    color: "#64748B",
+                    margin: "xs",
+                    align: "end",
+                  },
+                  {
+                    type: "text",
+                    text: `วันที่ออก: ${billingDateStr}`,
+                    size: "xxs",
+                    color: "#64748B",
+                    align: "end",
+                  },
+                  {
+                    type: "text",
+                    text: `กำหนดชำระ: ${dueDateStr}`,
+                    size: "xxs",
+                    weight: "bold",
+                    color: "#DC2626",
+                    align: "end",
+                  },
+                ],
               },
             ],
           },
@@ -135,19 +190,93 @@ export function buildInvoiceFlexMessage(
             margin: "md",
             color: "#E2E8F0",
           },
-          // Items List
+
+          // 2. Tenant Box (กรอบข้อมูลผู้เช่า - เหมือนในเว็บ)
           {
             type: "box",
-            layout: "vertical",
+            layout: "horizontal",
+            backgroundColor: "#F8FAFC",
+            cornerRadius: "md",
+            borderColor: "#E2E8F0",
+            borderWidth: "light",
+            paddingAll: "10px",
             margin: "md",
-            contents: itemBoxes,
+            contents: [
+              {
+                type: "box",
+                layout: "vertical",
+                flex: 6,
+                contents: [
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "ผู้เช่า: ",
+                        size: "xs",
+                        color: "#64748B",
+                        flex: 0,
+                      },
+                      {
+                        type: "text",
+                        text: invoice.tenantName || "ผู้พักอาศัย",
+                        size: "xs",
+                        weight: "bold",
+                        color: "#0F172A",
+                        wrap: true,
+                      },
+                    ],
+                  },
+                  {
+                    type: "text",
+                    text: `เบอร์โทร: ${tenantPhone}`,
+                    size: "xxs",
+                    color: "#64748B",
+                    margin: "xs",
+                  },
+                ],
+              },
+              {
+                type: "box",
+                layout: "vertical",
+                flex: 4,
+                alignItems: "flex-end",
+                contents: [
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "ห้องพัก: ",
+                        size: "xs",
+                        color: "#64748B",
+                        flex: 0,
+                      },
+                      {
+                        type: "text",
+                        text: invoice.roomNumber,
+                        size: "sm",
+                        weight: "bold",
+                        color: "#047857",
+                      },
+                    ],
+                  },
+                  {
+                    type: "text",
+                    text: buildingName,
+                    size: "xxs",
+                    color: "#64748B",
+                    margin: "xs",
+                    align: "end",
+                  },
+                ],
+              },
+            ],
           },
-          {
-            type: "separator",
-            margin: "lg",
-            color: "#CBD5E1",
-          },
-          // Total Amount Section
+
+          // 3. Table Header (4 คอลัมน์)
           {
             type: "box",
             layout: "horizontal",
@@ -155,88 +284,183 @@ export function buildInvoiceFlexMessage(
             contents: [
               {
                 type: "text",
-                text: "ยอดรวมที่ต้องชำระ",
-                size: "sm",
+                text: "รายการ",
+                size: "xxs",
                 weight: "bold",
-                color: "#0F172A",
-                align: "start",
-                gravity: "center",
+                color: "#475569",
+                flex: 5,
               },
               {
                 type: "text",
-                text: `฿${invoice.totalAmount.toLocaleString()}`,
-                size: "xxl",
+                text: "หน่วยที่ใช้",
+                size: "xxs",
                 weight: "bold",
-                color: "#059669",
+                color: "#475569",
+                flex: 2,
+                align: "center",
+              },
+              {
+                type: "text",
+                text: "ราคา/หน่วย",
+                size: "xxs",
+                weight: "bold",
+                color: "#475569",
+                flex: 2,
+                align: "end",
+              },
+              {
+                type: "text",
+                text: "จำนวนเงิน (บาท)",
+                size: "xxs",
+                weight: "bold",
+                color: "#475569",
+                flex: 3,
                 align: "end",
               },
             ],
           },
           {
+            type: "separator",
+            margin: "xs",
+            color: "#CBD5E1",
+          },
+
+          // 4. Table Rows
+          ...itemRows,
+
+          {
+            type: "separator",
+            margin: "md",
+            color: "#CBD5E1",
+          },
+
+          // 5. Total Row (ยอดรวมทั้งสิ้น)
+          {
             type: "box",
             layout: "horizontal",
-            margin: "xs",
+            margin: "md",
             contents: [
               {
                 type: "text",
-                text: `⏰ กำหนดชำระภายใน: ${dueDateStr}`,
+                text: "ยอดรวมทั้งสิ้นที่ต้องชำระ:",
                 size: "xs",
-                color: "#E11D48",
                 weight: "bold",
+                color: "#0F172A",
+                flex: 6,
+                gravity: "center",
+              },
+              {
+                type: "text",
+                text: `฿${invoice.totalAmount.toLocaleString("th-TH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`,
+                size: "md",
+                weight: "bold",
+                color: "#047857",
+                flex: 6,
+                align: "end",
               },
             ],
           },
-          // QR Code Image if available (strictly validate that it is an HTTPS URL to comply with LINE API rules)
-          ...(qrCodeUrl && qrCodeUrl.startsWith("https://")
-            ? [
-                {
-                  type: "separator",
-                  margin: "lg",
-                  color: "#E2E8F0",
-                },
-                {
-                  type: "box",
-                  layout: "vertical",
-                  margin: "md",
-                  alignItems: "center",
-                  contents: [
+
+          // 6. PromptPay QR Code Box (กล่องรับชำระเงินสีเขียวอ่อนเหมือนหน้าเว็บ)
+          {
+            type: "box",
+            layout: "vertical",
+            backgroundColor: "#ECFDF5",
+            cornerRadius: "lg",
+            borderColor: "#A7F3D0",
+            borderWidth: "light",
+            paddingAll: "12px",
+            margin: "md",
+            contents: [
+              ...(qrCodeUrl && qrCodeUrl.startsWith("https://")
+                ? [
                     {
-                      type: "text",
-                      text: "สแกน QR Code พร้อมเพย์ชำระได้ทันที",
-                      size: "xs",
-                      weight: "bold",
-                      color: "#334155",
-                      margin: "none",
+                      type: "box",
+                      layout: "vertical",
+                      alignItems: "center",
+                      contents: [
+                        {
+                          type: "image",
+                          url: qrCodeUrl,
+                          size: "lg",
+                          aspectRatio: "1:1",
+                        },
+                        {
+                          type: "text",
+                          text: `พร้อมเพย์: ${promptpayNumber}`,
+                          size: "xxs",
+                          weight: "bold",
+                          color: "#334155",
+                          align: "center",
+                          margin: "xs",
+                        },
+                      ],
                     },
                     {
-                      type: "text",
-                      text: "(ยอดเงินถูกล็อกตามบิล ไม่ต้องระบุยอดเอง)",
-                      size: "xxs",
-                      color: "#64748B",
-                      margin: "xs",
+                      type: "separator",
+                      margin: "sm",
+                      color: "#A7F3D0",
                     },
-                    {
-                      type: "image",
-                      url: qrCodeUrl,
-                      size: "lg",
-                      aspectRatio: "1:1",
-                      margin: "md",
-                    },
-                  ],
-                },
-              ]
-            : []),
+                  ]
+                : []),
+              {
+                type: "text",
+                text: "📲 สแกน QR ชำระเงินผ่าน Mobile Banking",
+                size: "xs",
+                weight: "bold",
+                color: "#065F46",
+                margin: "xs",
+              },
+              {
+                type: "text",
+                text: "• ธนาคาร: พร้อมเพย์ (PromptPay)",
+                size: "xxs",
+                color: "#047857",
+                margin: "xs",
+              },
+              {
+                type: "text",
+                text: `• ชื่อบัญชี: ${promptpayName}`,
+                size: "xxs",
+                color: "#047857",
+                margin: "xs",
+              },
+              {
+                type: "text",
+                text: `• ยอดชำระ: ฿${invoice.totalAmount.toLocaleString("th-TH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`,
+                size: "xs",
+                weight: "bold",
+                color: "#065F46",
+                margin: "xs",
+              },
+              {
+                type: "text",
+                text: "⚠️ เมื่อโอนแล้ว ระบบจะตรวจสลิปและปรับสถานะอัตโนมัติ",
+                size: "xxs",
+                weight: "bold",
+                color: "#DC2626",
+                margin: "xs",
+                wrap: true,
+              },
+            ],
+          },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
         backgroundColor: "#F8FAFC",
-        paddingAll: "16px",
+        paddingAll: "10px",
         contents: [
           {
             type: "text",
-            text: "💡 เมื่อโอนเงินแล้ว กรุณาส่งรูปสลิปเข้ามาในช่องแชทนี้ ระบบ AI จะตรวจสอบและออกใบเสร็จให้อัตโนมัติครับ",
+            text: "💡 เมื่อโอนเงินแล้ว กรุณาส่งรูปสลิปเข้ามาในช่องแชทนี้ ระบบ AI จะตรวจสอบและบันทึกใบเสร็จให้อัตโนมัติครับ",
             size: "xxs",
             color: "#64748B",
             wrap: true,
