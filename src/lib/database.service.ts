@@ -1157,26 +1157,7 @@ export const DatabaseService = {
   // 4. TENANTS (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   async getTenants(propertyId?: string): Promise<Tenant[]> {
-    let tenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    if (tenants.length === 0) {
-      tenants = [
-        {
-          id: "t-101",
-          propertyId: "prop-1",
-          fullName: "นายสมชาย สุขสบาย",
-          phone: "089-999-8888",
-          idCard: "1100200300400",
-          gender: "MALE",
-          age: 28,
-          lineId: "somchai_suk",
-          emergencyContact: "นางสมศรี สุขสบาย (081-111-2222)",
-          vehiclePlate: "1กข 1234 กทม.",
-          invoiceLang: "TH",
-        },
-      ];
-      setLocal(KEYS.TENANTS, tenants);
-    }
-
+    const tenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
     if (propertyId) {
       return tenants.filter((t) => (t.propertyId || "prop-1") === propertyId);
     }
@@ -1390,49 +1371,9 @@ export const DatabaseService = {
   // 5. INVOICES & BILLING (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   getAllRawInvoices(): Invoice[] {
-    let invoices = getLocal<Invoice[]>(KEYS.INVOICES, []);
+    const invoices = getLocal<Invoice[]>(KEYS.INVOICES, []);
     if (invoices.length === 0) {
-      invoices = [
-        {
-          id: "inv-202610-101",
-          propertyId: "prop-1",
-          invoiceNumber: "INV-202610-101",
-          roomNumber: "101",
-          tenantName: "นายสมชาย สุขสบาย",
-          tenantPhone: "089-999-8888",
-          billingDate: "2026-10-25",
-          dueDate: "2026-11-05",
-          totalAmount: 5064,
-          status: "paid",
-          paidAt: "2026-10-26 10:15 น.",
-          items: [
-            { name: "ค่าเช่าห้องพักประจำเดือน (ห้อง 101)", units: 1, rate: 4000, amount: 4000 },
-            { name: "ค่าไฟฟ้า (เลข 1420 ถึง 1485)", units: 65, rate: 8, amount: 520, meterPrev: 1420, meterCurr: 1485 },
-            { name: "ค่าน้ำประปา (เลข 320 ถึง 328)", units: 8, rate: 18, amount: 144, meterPrev: 320, meterCurr: 328 },
-            { name: "ค่าบริการส่วนกลางและเก็บขยะ", amount: 400 },
-          ],
-        },
-        {
-          id: "inv-202610-105",
-          propertyId: "prop-1",
-          invoiceNumber: "INV-202610-105",
-          roomNumber: "105",
-          tenantName: "นายเอกชัย รุ่งโรจน์วิริยะ",
-          tenantPhone: "087-777-6655",
-          billingDate: "2026-10-25",
-          dueDate: "2026-10-20",
-          totalAmount: 4924,
-          status: "unpaid",
-          items: [
-            { name: "ค่าเช่าห้องพักประจำเดือน (ห้อง 105)", units: 1, rate: 4000, amount: 4000 },
-            { name: "ค่าไฟฟ้า (60 หน่วย)", units: 60, rate: 8, amount: 480 },
-            { name: "ค่าน้ำประปา (8 หน่วย)", units: 8, rate: 18, amount: 144 },
-            { name: "ค่าส่วนกลาง", amount: 300 },
-          ],
-        },
-      ];
-      setLocal(KEYS.INVOICES, invoices);
-      return invoices;
+      return [];
     }
 
     // Auto migrate any legacy invoices missing propertyId into prop-1 and sanitize 0-unit charges
@@ -1694,7 +1635,7 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getContracts(propertyId?: string): Promise<ContractItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
     return all.filter((c) => (c.propertyId || "prop-1") === targetPropId);
   },
 
@@ -1702,7 +1643,7 @@ export const DatabaseService = {
     item: Omit<ContractItem, "id" | "createdAt" | "contractNumber"> & { propertyId?: string }
   ): Promise<ContractItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
     const newContract: ContractItem = {
       ...item,
       id: "cnt-" + Date.now(),
@@ -1961,7 +1902,7 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getRepairs(propertyId?: string): Promise<RepairItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, initialRepairs);
+    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
     return all.filter((r) => (r.propertyId || "prop-1") === targetPropId);
   },
 
@@ -1969,7 +1910,7 @@ export const DatabaseService = {
     item: Omit<RepairItem, "id" | "reportedAt"> & { propertyId?: string }
   ): Promise<RepairItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, initialRepairs);
+    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
     const newRepair: RepairItem = {
       ...item,
       id: "rep-" + Date.now(),
@@ -1982,7 +1923,7 @@ export const DatabaseService = {
   },
 
   async updateRepairStatus(id: string, status: RepairItem["status"]): Promise<boolean> {
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, initialRepairs);
+    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
     const updated = all.map((r) =>
       r.id === id
         ? {
@@ -2001,7 +1942,7 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getExpenses(propertyId?: string): Promise<ExpenseItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
     return all.filter((e) => (e.propertyId || "prop-1") === targetPropId);
   },
 
@@ -2009,7 +1950,7 @@ export const DatabaseService = {
     item: Omit<ExpenseItem, "id"> & { propertyId?: string }
   ): Promise<ExpenseItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
     const newExpense: ExpenseItem = {
       ...item,
       id: "exp-" + Date.now(),
@@ -2022,7 +1963,7 @@ export const DatabaseService = {
 
   async deleteExpense(id: string, propertyId?: string): Promise<boolean> {
     const propId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
     const target = all.find((e) => e.id === id);
     const updated = all.filter((e) => e.id !== id);
     setLocal(KEYS.EXPENSES, updated);
@@ -2037,7 +1978,7 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getBroadcasts(propertyId?: string): Promise<BroadcastItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<BroadcastItem[]>(KEYS.BROADCASTS, initialBroadcasts);
+    const all = getLocal<BroadcastItem[]>(KEYS.BROADCASTS, []);
     return all.filter((b) => (b.propertyId || "prop-1") === targetPropId);
   },
 
@@ -2045,7 +1986,7 @@ export const DatabaseService = {
     item: Omit<BroadcastItem, "id" | "sentAt" | "status"> & { propertyId?: string }
   ): Promise<BroadcastItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<BroadcastItem[]>(KEYS.BROADCASTS, initialBroadcasts);
+    const all = getLocal<BroadcastItem[]>(KEYS.BROADCASTS, []);
     const newBroadcast: BroadcastItem = {
       ...item,
       id: "bc-" + Date.now(),
@@ -2063,7 +2004,7 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getActivityLogs(propertyId?: string): Promise<ActivityLogItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ActivityLogItem[]>(KEYS.ACTIVITY_LOGS, initialActivityLogs);
+    const all = getLocal<ActivityLogItem[]>(KEYS.ACTIVITY_LOGS, []);
     return all.filter((l) => (l.propertyId || "prop-1") === targetPropId);
   },
 
@@ -2284,19 +2225,48 @@ export const DatabaseService = {
       KEYS.BROADCASTS,
       KEYS.ACTIVITY_LOGS,
     ];
-    allKeysToReset.forEach((k) => setLocal(k, []));
 
     const batchPayload: Record<string, any> = {};
     allKeysToReset.forEach((k) => {
+      const normKey = k.replace(/^pakdee_(dev|test)_/, "");
+      memoryDb[k] = [];
+      memoryDb[normKey] = [];
       batchPayload[k] = [];
+      batchPayload[normKey] = [];
     });
+
     await this.persistBatch(batchPayload);
+
+    // Also clear all rows in separate Supabase relational tables in FK order
+    const relationalTablesToClear = [
+      "invoice_items",
+      "invoices",
+      "contracts",
+      "meter_readings",
+      "repairs",
+      "expenses",
+      "daily_bookings",
+      "rooms",
+      "tenants",
+      "activity_logs",
+    ];
+    for (const table of relationalTablesToClear) {
+      supabase
+        .from(table)
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000")
+        .then(() => {});
+    }
+
     return true;
   },
 
   resetToCleanSlate(): void {
     if (typeof window === "undefined") return;
-    Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
+    Object.values(KEYS).forEach((k) => {
+      localStorage.removeItem(k);
+      localStorage.removeItem(k.replace(/^pakdee_(dev|test)_/, ""));
+    });
   },
 
   exportDatabaseToJson(): string {

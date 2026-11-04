@@ -19,100 +19,8 @@
   ],
   "pakdee_dev_active_property_id": "prop-1",
   "pakdee_dev_rooms": [],
-  "pakdee_dev_tenants": [
-    {
-      "id": "t-101",
-      "age": 28,
-      "phone": "089-999-8888",
-      "gender": "MALE",
-      "idCard": "1100200300400",
-      "lineId": "somchai_suk",
-      "fullName": "นายสมชาย สุขสบาย",
-      "propertyId": "prop-1",
-      "invoiceLang": "TH",
-      "vehiclePlate": "1กข 1234 กทม.",
-      "emergencyContact": "นางสมศรี สุขสบาย (081-111-2222)"
-    }
-  ],
-  "pakdee_dev_invoices": [
-    {
-      "id": "inv-202610-101",
-      "items": [
-        {
-          "name": "ค่าเช่าห้องพักประจำเดือน (ห้อง 101)",
-          "rate": 4000,
-          "units": 1,
-          "amount": 4000
-        },
-        {
-          "name": "ค่าไฟฟ้า (เลข 1420 ถึง 1485)",
-          "rate": 8,
-          "units": 65,
-          "amount": 520,
-          "meterCurr": 1485,
-          "meterPrev": 1420
-        },
-        {
-          "name": "ค่าน้ำประปา (เลข 320 ถึง 328)",
-          "rate": 18,
-          "units": 8,
-          "amount": 144,
-          "meterCurr": 328,
-          "meterPrev": 320
-        },
-        {
-          "name": "ค่าบริการส่วนกลางและเก็บขยะ",
-          "amount": 400
-        }
-      ],
-      "paidAt": "2026-10-26 10:15 น.",
-      "status": "paid",
-      "dueDate": "2026-11-05",
-      "propertyId": "prop-1",
-      "roomNumber": "101",
-      "tenantName": "นายสมชาย สุขสบาย",
-      "billingDate": "2026-10-25",
-      "tenantPhone": "089-999-8888",
-      "totalAmount": 5064,
-      "invoiceNumber": "INV-202610-101"
-    },
-    {
-      "id": "inv-202610-105",
-      "items": [
-        {
-          "name": "ค่าเช่าห้องพักประจำเดือน (ห้อง 105)",
-          "rate": 4000,
-          "units": 1,
-          "amount": 4000
-        },
-        {
-          "name": "ค่าไฟฟ้า (60 หน่วย)",
-          "rate": 8,
-          "units": 60,
-          "amount": 480
-        },
-        {
-          "name": "ค่าน้ำประปา (8 หน่วย)",
-          "rate": 18,
-          "units": 8,
-          "amount": 144
-        },
-        {
-          "name": "ค่าส่วนกลาง",
-          "amount": 300
-        }
-      ],
-      "status": "unpaid",
-      "dueDate": "2026-10-20",
-      "propertyId": "prop-1",
-      "roomNumber": "105",
-      "tenantName": "นายเอกชัย รุ่งโรจน์วิริยะ",
-      "billingDate": "2026-10-25",
-      "tenantPhone": "087-777-6655",
-      "totalAmount": 4924,
-      "invoiceNumber": "INV-202610-105"
-    }
-  ],
+  "pakdee_dev_tenants": [],
+  "pakdee_dev_invoices": [],
   "pakdee_dev_contracts": [],
   "pakdee_dev_repairs": [],
   "pakdee_dev_expenses": [],
@@ -272,21 +180,7 @@
     "lineChannelAccessToken": "qKsCOa6uRWKLAHJcrs/QljDmKls4sZgZHYrkIcXZ5LQ0CYSOpNKBxxF+aL/pIyXXrljrFz5wqZfCPhMFWTaRtIE0PXT/53dqod9MzjfS48Dx3ZH7nABvX6d/nrtcw6c1aGSWCIZoHtsRv9kcKFwCYAdB04t89/1O/w1cDnyilFU="
   },
   "daily_bookings": [],
-  "tenants": [
-    {
-      "id": "t-101",
-      "age": 28,
-      "phone": "089-999-8888",
-      "gender": "MALE",
-      "idCard": "1100200300400",
-      "lineId": "somchai_suk",
-      "fullName": "นายสมชาย สุขสบาย",
-      "propertyId": "prop-1",
-      "invoiceLang": "TH",
-      "vehiclePlate": "1กข 1234 กทม.",
-      "emergencyContact": "นางสมศรี สุขสบาย (081-111-2222)"
-    }
-  ],
+  "tenants": [],
   "contracts": [],
   "branch_settings": {
     "id": "settings-prop-1",
@@ -420,85 +314,7 @@
     "lineChannelSecret": "5a3c837da6ba0045ed0073e06cc45de6",
     "lineChannelAccessToken": "qKsCOa6uRWKLAHJcrs/QljDmKls4sZgZHYrkIcXZ5LQ0CYSOpNKBxxF+aL/pIyXXrljrFz5wqZfCPhMFWTaRtIE0PXT/53dqod9MzjfS48Dx3ZH7nABvX6d/nrtcw6c1aGSWCIZoHtsRv9kcKFwCYAdB04t89/1O/w1cDnyilFU="
   },
-  "invoices": [
-    {
-      "id": "inv-202610-101",
-      "items": [
-        {
-          "name": "ค่าเช่าห้องพักประจำเดือน (ห้อง 101)",
-          "rate": 4000,
-          "units": 1,
-          "amount": 4000
-        },
-        {
-          "name": "ค่าไฟฟ้า (เลข 1420 ถึง 1485)",
-          "rate": 8,
-          "units": 65,
-          "amount": 520,
-          "meterCurr": 1485,
-          "meterPrev": 1420
-        },
-        {
-          "name": "ค่าน้ำประปา (เลข 320 ถึง 328)",
-          "rate": 18,
-          "units": 8,
-          "amount": 144,
-          "meterCurr": 328,
-          "meterPrev": 320
-        },
-        {
-          "name": "ค่าบริการส่วนกลางและเก็บขยะ",
-          "amount": 400
-        }
-      ],
-      "paidAt": "2026-10-26 10:15 น.",
-      "status": "paid",
-      "dueDate": "2026-11-05",
-      "propertyId": "prop-1",
-      "roomNumber": "101",
-      "tenantName": "นายสมชาย สุขสบาย",
-      "billingDate": "2026-10-25",
-      "tenantPhone": "089-999-8888",
-      "totalAmount": 5064,
-      "invoiceNumber": "INV-202610-101"
-    },
-    {
-      "id": "inv-202610-105",
-      "items": [
-        {
-          "name": "ค่าเช่าห้องพักประจำเดือน (ห้อง 105)",
-          "rate": 4000,
-          "units": 1,
-          "amount": 4000
-        },
-        {
-          "name": "ค่าไฟฟ้า (60 หน่วย)",
-          "rate": 8,
-          "units": 60,
-          "amount": 480
-        },
-        {
-          "name": "ค่าน้ำประปา (8 หน่วย)",
-          "rate": 18,
-          "units": 8,
-          "amount": 144
-        },
-        {
-          "name": "ค่าส่วนกลาง",
-          "amount": 300
-        }
-      ],
-      "status": "unpaid",
-      "dueDate": "2026-10-20",
-      "propertyId": "prop-1",
-      "roomNumber": "105",
-      "tenantName": "นายเอกชัย รุ่งโรจน์วิริยะ",
-      "billingDate": "2026-10-25",
-      "tenantPhone": "087-777-6655",
-      "totalAmount": 4924,
-      "invoiceNumber": "INV-202610-105"
-    }
-  ],
+  "invoices": [],
   "broadcasts": [],
   "meter_readings": [],
   "repairs": [],
