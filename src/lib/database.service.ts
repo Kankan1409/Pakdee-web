@@ -133,19 +133,26 @@ function writeServerDb(key: string, value: any): void {
     } catch {}
 
     // Also sync server-side changes (e.g. LINE webhook room bindings & invoice status) to Supabase
-    const nowIso = new Date().toISOString();
-    const rowsToUpsert = [{ key, value, updated_at: nowIso }];
-    if (normKey !== key) {
-      rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
-    }
     supabase
       .from("pakdee_store")
-      .upsert(rowsToUpsert)
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" })
       .then(() => {});
-    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+    scheduleRelationalSync(normKey, value);
   } catch (e) {
     console.warn("[DatabaseService] writeServerDb warning:", e);
   }
+}
+
+const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+function scheduleRelationalSync(normKey: string, value: any): void {
+  if (normKey === "activity_logs" || normKey === "active_property_id") return;
+  if (relationalSyncTimers[normKey]) {
+    clearTimeout(relationalSyncTimers[normKey]);
+  }
+  relationalSyncTimers[normKey] = setTimeout(() => {
+    delete relationalSyncTimers[normKey];
+    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+  }, 1200);
 }
 
 // Safe Local & Server-Synchronized Storage Helper
@@ -214,7 +221,7 @@ function setLocal<T>(key: string, value: T): void {
     console.warn(`[HostDB] Sync failed for [${key}]:`, err);
   });
 
-  // 5. Live persist to Supabase Cloud pakdee_store + relational tables mirror
+  // 5. Live persist to Supabase Cloud pakdee_store + debounced relational table mirror
   try {
     const nowIso = new Date().toISOString();
     supabase
@@ -223,13 +230,7 @@ function setLocal<T>(key: string, value: T): void {
       .then(({ error }: any) => {
         if (error) console.warn(`[Supabase] Client upsert error [${key}]:`, error.message);
       });
-    if (normKey !== key) {
-      supabase
-        .from("pakdee_store")
-        .upsert({ key: normKey, value, updated_at: nowIso }, { onConflict: "key" })
-        .then(() => {});
-    }
-    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+    scheduleRelationalSync(normKey, value);
   } catch (err) {
     console.warn(`[Supabase] Client upsert skipped [${key}]:`, err);
   }
@@ -356,11 +357,6 @@ export const DatabaseService = {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ data: memoryDb, localOnly: true }),
               }).catch(() => {});
-
-              // Gentle background mirror to separate Supabase relational tables after initial load settles
-              setTimeout(() => {
-                syncAllToRelationalTables(memoryDb).catch(() => {});
-              }, 1500);
             }
 
             console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
@@ -380,12 +376,7 @@ export const DatabaseService = {
                   localStorage.setItem(k, JSON.stringify(v));
                 } catch {}
               });
-              if (!isServerSynced) {
-                isServerSynced = true;
-                setTimeout(() => {
-                  syncAllToRelationalTables(memoryDb).catch(() => {});
-                }, 1500);
-              }
+              isServerSynced = true;
               return true;
             }
           }
@@ -419,7 +410,7 @@ export const DatabaseService = {
       }
     });
 
-    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + relational tables mirror
+    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + debounced relational mirror
     try {
       const nowIso = new Date().toISOString();
       Object.entries(data).forEach(([k, v]) => {
@@ -430,13 +421,7 @@ export const DatabaseService = {
           .then(({ error }: any) => {
             if (error) console.warn(`[Supabase Cloud Direct] Upsert warning [${k}]:`, error.message);
           });
-        if (normKey !== k) {
-          supabase
-            .from("pakdee_store")
-            .upsert({ key: normKey, value: v, updated_at: nowIso }, { onConflict: "key" })
-            .then(() => {});
-        }
-        syncKeyToRelationalTable(normKey, v, memoryDb).catch(() => {});
+        scheduleRelationalSync(normKey, v);
       });
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
