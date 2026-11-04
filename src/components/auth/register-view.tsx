@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { PakdeeLogo } from "@/components/ui/pakdee-logo";
-import { useAuth, UserRole } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { formatThaiPhone, isValidThaiPhone, isValidEmail } from "@/lib/validators";
 import {
   Lock,
@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
-  Building2,
   Sparkles,
   Sun,
   FileText,
@@ -22,8 +21,6 @@ import {
   User,
   Mail,
   UserPlus,
-  Crown,
-  UserCheck,
   X,
   Check,
   ArrowLeft,
@@ -33,11 +30,9 @@ export function RegisterView() {
   const { register } = useAuth();
 
   // Form States
-  const [role, setRole] = useState<UserRole>("owner");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [dormitoryName, setDormitoryName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(true);
@@ -94,11 +89,6 @@ export function RegisterView() {
       return;
     }
 
-    if (role === "owner" && !dormitoryName.trim()) {
-      setErrorMessage("กรุณาระบุชื่อหอพักหรืออพาร์ตเมนต์ของคุณ");
-      return;
-    }
-
     if (!password || password.length < 6) {
       setErrorMessage("กรุณากำหนดรหัสผ่านอย่างน้อย 6 ตัวอักษร");
       return;
@@ -120,8 +110,6 @@ export function RegisterView() {
         fullName: fullName.trim(),
         phone: phone.trim(),
         email: email.trim() || undefined,
-        dormitoryName: dormitoryName.trim() || undefined,
-        role,
         password,
       });
 
@@ -173,7 +161,7 @@ export function RegisterView() {
 
       {/* 3. Main Center Bento Section */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8 z-10 my-4">
-        <div className="w-full max-w-2xl">
+        <div className="w-full max-w-xl">
           {/* Main Sunlight Bento Card */}
           <div className="bg-white/95 border border-amber-200/80 rounded-3xl p-6 sm:p-10 shadow-2xl shadow-amber-950/5 backdrop-blur-xl relative ring-1 ring-slate-900/5">
             {/* Top Brand Header */}
@@ -190,7 +178,7 @@ export function RegisterView() {
               </div>
 
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
-                สมัครสมาชิกผู้ใช้งานระบบหอพัก
+                สมัครสมาชิกผู้ใช้งานใหม่
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-md leading-relaxed">
                 เริ่มต้นใช้งานระบบบริหารหอพักยุคใหม่ จัดการผังห้องพัก สัญญาเช่าดิจิทัล และบิลพร้อมเพย์ในที่เดียว
@@ -228,109 +216,31 @@ export function RegisterView() {
 
                 {/* Registration Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Role Selection Bento Selector */}
+                  {/* Full Name */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-2">
-                      เลือกประเภทบัญชีผู้ใช้งาน (Account Role) <span className="text-rose-500">*</span>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      ชื่อ-นามสกุล (Full Name) <span className="text-rose-500">*</span>
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setRole("owner")}
-                        className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 cursor-pointer ${
-                          role === "owner"
-                            ? "bg-emerald-50/90 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs"
-                            : "bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-white"
-                        }`}
-                      >
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                            role === "owner"
-                              ? "bg-emerald-600 text-white shadow-xs"
-                              : "bg-slate-200/80 text-slate-600"
-                          }`}
-                        >
-                          <Crown className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-black text-slate-900">
-                              เจ้าของหอพัก (Owner)
-                            </span>
-                            {role === "owner" && (
-                              <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center">
-                                <Check className="w-2.5 h-2.5" />
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                            สิทธิ์สูงสุด บริหารทุกสาขา ตั้งค่าบัญชีและดูงบกำไร-ขาดทุน
-                          </p>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setRole("manager")}
-                        className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 cursor-pointer ${
-                          role === "manager"
-                            ? "bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/20 shadow-xs"
-                            : "bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-white"
-                        }`}
-                      >
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                            role === "manager"
-                              ? "bg-amber-500 text-white shadow-xs"
-                              : "bg-slate-200/80 text-slate-600"
-                          }`}
-                        >
-                          <UserCheck className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-black text-slate-900">
-                              ผู้จัดการหอพัก (Manager)
-                            </span>
-                            {role === "manager" && (
-                              <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center">
-                                <Check className="w-2.5 h-2.5" />
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                            ดูแลผังห้องพัก จดมิเตอร์ ออกใบแจ้งหนี้ และรับแจ้งซ่อม
-                          </p>
-                        </div>
-                      </button>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="เช่น คุณพักดี มีสุข"
+                        autoComplete="name"
+                        required
+                        className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition font-medium"
+                      />
                     </div>
                   </div>
 
-                  {/* Two-Column Personal Info: Full Name & Phone */}
+                  {/* Two-Column Phone & Email */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Full Name */}
-                    <div>
-                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        ชื่อ-นามสกุล (Full Name) <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                        <input
-                          type="text"
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
-                          placeholder="เช่น คุณพักดี มีสุข"
-                          autoComplete="name"
-                          required
-                          className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition font-medium"
-                        />
-                      </div>
-                    </div>
-
                     {/* Phone Number */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        เบอร์โทรศัพท์ (ใช้เข้าสู่ระบบ) <span className="text-rose-500">*</span>
+                        เบอร์โทรศัพท์ (Phone Number) <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -342,32 +252,6 @@ export function RegisterView() {
                           autoComplete="tel"
                           required
                           className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition font-medium tracking-wide"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Two-Column Dormitory Name & Email */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Dormitory Name */}
-                    <div>
-                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        ชื่อหอพัก / อพาร์ตเมนต์{" "}
-                        {role === "owner" ? (
-                          <span className="text-rose-500">*</span>
-                        ) : (
-                          <span className="text-slate-400 font-normal">(ถ้ามี)</span>
-                        )}
-                      </label>
-                      <div className="relative">
-                        <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                        <input
-                          type="text"
-                          value={dormitoryName}
-                          onChange={(e) => setDormitoryName(e.target.value)}
-                          placeholder="เช่น พักดี เรสซิเดนซ์"
-                          required={role === "owner"}
-                          className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition font-medium"
                         />
                       </div>
                     </div>
@@ -519,7 +403,7 @@ export function RegisterView() {
                     {isLoading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>กำลังสร้างบัญชีและเตรียมระบบหอพัก...</span>
+                        <span>กำลังสร้างบัญชีผู้ใช้งาน...</span>
                       </>
                     ) : (
                       <>

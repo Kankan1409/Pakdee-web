@@ -27,7 +27,7 @@ export interface RegisterPayload {
   phone: string;
   email?: string;
   dormitoryName?: string;
-  role: UserRole;
+  role?: UserRole;
   password: string;
 }
 
@@ -346,13 +346,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      const isOwner = payload.role === "owner";
+      const assignedRole: UserRole = payload.role || "owner";
+      const isOwner = assignedRole === "owner";
       const newUser: AuthUser = {
         id: `usr-${Date.now()}`,
         name: payload.fullName.trim(),
         email: cleanEmail || `${cleanPhone}@pakdee.com`,
         phone: payload.phone.trim(),
-        role: payload.role,
+        role: assignedRole,
         roleTitle: isOwner
           ? "เจ้าของหอพัก (Owner / Super Admin)"
           : "ผู้จัดการหอพัก (Manager / Branch Admin)",
