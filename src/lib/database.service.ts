@@ -54,92 +54,13 @@ const KEYS = {
   DAILY_BOOKINGS: "pakdee_dev_daily_bookings",
 };
 
-// In-Memory Host Synchronized Cache
+// In-Memory Supabase Cloud Synchronized Cache (Local file data/db_port3000.json disabled)
 const memoryDb: Record<string, any> = {};
 let isServerSynced = false;
-let lastDbMtime = 0;
 
-// Resolve DB file path when running in Node.js server context
-function getDbFilePath(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = eval("require")("fs");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = eval("require")("path");
-    const candidates = [
-      path.join(process.cwd(), "data", "db_port3000.json"),
-      path.join(process.cwd(), "Pakdee", "data", "db_port3000.json"),
-      "D:\\DESKTOP\\Pakdee\\data\\db_port3000.json",
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) return c;
-    }
-    return candidates[0];
-  } catch {
-    return "";
-  }
-}
-
-// Synchronize in-memory cache with host file DB when running on the server
-function syncServerDbIfNeeded(): void {
-  if (typeof window !== "undefined") return;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = eval("require")("fs");
-    const filePath = getDbFilePath();
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const stats = fs.statSync(filePath);
-    if (stats.mtimeMs > lastDbMtime) {
-      lastDbMtime = stats.mtimeMs;
-      const raw = fs.readFileSync(filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      Object.assign(memoryDb, parsed);
-      isServerSynced = true;
-    }
-  } catch (e) {
-    console.warn("[DatabaseService] syncServerDbIfNeeded warning:", e);
-  }
-}
-
-// Write to host file DB when running on the server
-function writeServerDb(key: string, value: any): void {
-  if (typeof window !== "undefined") return;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = eval("require")("fs");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = eval("require")("path");
-    const filePath = getDbFilePath() || path.join(process.cwd(), "data", "db_port3000.json");
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    let currentDb: Record<string, any> = {};
-    if (fs.existsSync(filePath)) {
-      try {
-        currentDb = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      } catch {}
-    }
-    currentDb[key] = value;
-    const normKey = key.replace(/^pakdee_(dev|test)_/, "");
-    currentDb[normKey] = value;
-    fs.writeFileSync(filePath, JSON.stringify(currentDb, null, 2), "utf8");
-    try {
-      lastDbMtime = fs.statSync(filePath).mtimeMs;
-    } catch {}
-  } catch (e) {
-    console.warn("[DatabaseService] writeServerDb warning:", e);
-  }
-}
-
-// Safe Local & Server-Synchronized Storage Helper
+// Safe In-Memory & Client Cache Helper (Backed by Supabase Cloud)
 function getLocal<T>(key: string, fallback: T): T {
-  // 1. Sync from server DB file if in Node.js runtime
-  if (typeof window === "undefined") {
-    syncServerDbIfNeeded();
-  }
-
-  // 2. In-memory cache synced from Host Server has highest priority
+  // 1. In-memory cache synced from Supabase Cloud has highest priority
   if (memoryDb[key] !== undefined && memoryDb[key] !== null) {
     return memoryDb[key] as T;
   }
@@ -148,11 +69,10 @@ function getLocal<T>(key: string, fallback: T): T {
     return memoryDb[normKey] as T;
   }
 
-  // 3. Client-side LocalStorage fallback
+  // 2. Client-side LocalStorage cache fallback
   if (typeof window === "undefined") return fallback;
   try {
     let raw = localStorage.getItem(key) || localStorage.getItem(normKey);
-    // Backward compatibility: If dev key not found yet, check legacy key
     if (!raw && key.startsWith("pakdee_dev_")) {
       const legacyKey = key.replace("pakdee_dev_", "pakdee_");
       raw = localStorage.getItem(legacyKey);
@@ -175,30 +95,16 @@ function setLocal<T>(key: string, value: T): void {
   const normKey = key.replace(/^pakdee_(dev|test)_/, "");
   memoryDb[normKey] = value;
 
-  // 2. Server-side Node.js File Database Sync
-  if (typeof window === "undefined") {
-    writeServerDb(key, value);
-    return;
+  // 2. Save to client LocalStorage (browser session cache)
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.warn(`Failed to save to localStorage [${key}]:`, e);
+    }
   }
 
-  // 3. Save to client LocalStorage (cache mirror)
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn(`Failed to save to localStorage [${key}]:`, e);
-  }
-
-  // 4. Persist directly to Host Machine Database via /api/db
-  fetch("/api/db", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, value }),
-    keepalive: true,
-  }).catch((err) => {
-    console.warn(`[HostDB] Sync failed for [${key}]:`, err);
-  });
-
-  // 5. Live persist to Supabase Cloud pakdee_store
+  // 3. Persist directly to Supabase Cloud pakdee_store (both Client & Server)
   try {
     supabase
       .from("pakdee_store")
@@ -208,10 +114,10 @@ function setLocal<T>(key: string, value: T): void {
         updated_at: new Date().toISOString(),
       })
       .then(({ error }: any) => {
-        if (error) console.warn(`[Supabase] Client upsert error [${key}]:`, error.message);
+        if (error) console.warn(`[Supabase] Upsert error [${key}]:`, error.message);
       });
   } catch (err) {
-    console.warn(`[Supabase] Client upsert skipped [${key}]:`, err);
+    console.warn(`[Supabase] Upsert skipped [${key}]:`, err);
   }
 }
 
@@ -279,19 +185,16 @@ function setupRealtimeSync(): void {
 
 export const DatabaseService = {
   /**
-   * Initialize and synchronize with Supabase Cloud & Host Machine Database (/api/db)
-   * Ensures devices connecting via Cloud or LAN always have the authoritative live data
+   * Initialize and synchronize 100% with Supabase Cloud (pakdee_store)
+   * Local file data/db_port3000.json is disabled
    */
   async init(): Promise<boolean> {
-    if (typeof window === "undefined") {
-      syncServerDbIfNeeded();
-      return true;
+    if (typeof window !== "undefined") {
+      // Activate live real-time subscription on Supabase Cloud
+      setupRealtimeSync();
     }
 
-    // 1. Activate live real-time subscription on Supabase Cloud
-    setupRealtimeSync();
-
-    // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
+    // Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
     try {
       const { data: cloudStore, error } = await supabase
         .from("pakdee_store")
@@ -302,9 +205,11 @@ export const DatabaseService = {
           memoryDb[row.key] = row.value;
           const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
           memoryDb[normKey] = row.value;
-          try {
-            localStorage.setItem(row.key, JSON.stringify(row.value));
-          } catch {}
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(row.key, JSON.stringify(row.value));
+            } catch {}
+          }
         });
         isServerSynced = true;
         console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
@@ -313,28 +218,9 @@ export const DatabaseService = {
         console.warn("[Supabase Cloud Direct] Supabase query warning:", error.message);
       }
     } catch (e: any) {
-      console.warn("[Supabase Cloud Direct] Cloud fetch failed, falling back to local server:", e?.message);
+      console.warn("[Supabase Cloud Direct] Cloud fetch failed:", e?.message);
     }
 
-    // 3. Fallback to local server /api/db only when offline
-    try {
-      const res = await fetch("/api/db", { cache: "no-store" });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          Object.entries(json.data).forEach(([k, v]) => {
-            memoryDb[k] = v;
-            try {
-              localStorage.setItem(k, JSON.stringify(v));
-            } catch {}
-          });
-          isServerSynced = true;
-          return true;
-        }
-      }
-    } catch (err) {
-      console.warn("[DatabaseService] Offline fallback to localStorage:", err);
-    }
     return false;
   },
 
@@ -343,7 +229,7 @@ export const DatabaseService = {
   },
 
   /**
-   * Atomically persist multiple keys to memory, localStorage, and Host Machine Database (/api/db)
+   * Atomically persist multiple keys directly to Supabase Cloud (pakdee_store)
    */
   async persistBatch(data: Record<string, any>): Promise<boolean> {
     // 1. Update in-memory cache and localStorage
@@ -358,36 +244,21 @@ export const DatabaseService = {
       }
     });
 
-    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq)
+    // 2. Persist directly to Supabase Cloud pakdee_store
     try {
       const rows = Object.entries(data).map(([k, v]) => ({
         key: k,
         value: v,
         updated_at: new Date().toISOString(),
       }));
-      supabase
-        .from("pakdee_store")
-        .upsert(rows)
-        .then(({ error }: any) => {
-          if (error) console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
-        });
+      const { error } = await supabase.from("pakdee_store").upsert(rows);
+      if (error) {
+        console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
+      }
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
     }
 
-    // 3. Secondary: Background sync to local /api/db mirror
-    if (typeof window !== "undefined") {
-      try {
-        fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data }),
-          keepalive: true,
-        }).catch(() => {});
-      } catch {}
-    }
-
-    return true;
     return true;
   },
 
