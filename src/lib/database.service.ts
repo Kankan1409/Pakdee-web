@@ -24,6 +24,7 @@ import {
   initialBranchSettings,
 } from "@/lib/mock-data";
 import { BranchItem } from "@/components/branch/branch-selector-view";
+import { supabase } from "@/lib/supabase";
 
 /**
  * PAKDEE LOCAL-FIRST DATABASE ENGINE
@@ -32,7 +33,7 @@ import { BranchItem } from "@/components/branch/branch-selector-view";
  * บันทึกและดึงข้อมูลจาก LocalStorage ทันที ไม่มี Network Latency
  * รองรับการย้ายขึ้น Supabase ในอนาคตผ่านสคริปต์ supabase_schema_complete.sql
  */
-export const IS_LOCAL_MODE = true;
+export const IS_LOCAL_MODE = false;
 
 // Storage Keys - Dedicated Isolated Database for Port 3000 (Dev Environment)
 const KEYS = {
@@ -196,18 +197,104 @@ function setLocal<T>(key: string, value: T): void {
   }).catch((err) => {
     console.warn(`[HostDB] Sync failed for [${key}]:`, err);
   });
+
+  // 5. Live persist to Supabase Cloud pakdee_store
+  try {
+    supabase
+      .from("pakdee_store")
+      .upsert({
+        key,
+        value,
+        updated_at: new Date().toISOString(),
+      })
+      .then(({ error }: any) => {
+        if (error) console.warn(`[Supabase] Client upsert error [${key}]:`, error.message);
+      });
+  } catch (err) {
+    console.warn(`[Supabase] Client upsert skipped [${key}]:`, err);
+  }
+}
+
+// Realtime Channel Handle for Supabase Live Cloud Updates
+let realtimeChannel: any = null;
+
+function setupRealtimeSync(): void {
+  if (typeof window === "undefined" || realtimeChannel) return;
+  try {
+    realtimeChannel = supabase
+      .channel("pakdee_store_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pakdee_store",
+        },
+        (payload: any) => {
+          if (payload?.new && payload.new.key) {
+            const { key, value } = payload.new;
+            memoryDb[key] = value;
+            const normKey = key.replace(/^pakdee_(dev|test)_/, "");
+            memoryDb[normKey] = value;
+            try {
+              localStorage.setItem(key, JSON.stringify(value));
+            } catch {}
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("pakdee_db_updated", { detail: { key, value } })
+              );
+            }
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("[Supabase Realtime] pakdee_store subscription status:", status);
+      });
+  } catch (err) {
+    console.warn("[Supabase Realtime] setup failed:", err);
+  }
 }
 
 export const DatabaseService = {
   /**
-   * Initialize and synchronize with Host Machine Database (/api/db)
-   * Ensures devices connecting via LAN always have the host machine's authoritative data
+   * Initialize and synchronize with Supabase Cloud & Host Machine Database (/api/db)
+   * Ensures devices connecting via Cloud or LAN always have the authoritative live data
    */
   async init(): Promise<boolean> {
     if (typeof window === "undefined") {
       syncServerDbIfNeeded();
       return true;
     }
+
+    // 1. Activate live real-time subscription on Supabase Cloud
+    setupRealtimeSync();
+
+    // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
+    try {
+      const { data: cloudStore, error } = await supabase
+        .from("pakdee_store")
+        .select("key, value");
+
+      if (!error && cloudStore && cloudStore.length > 0) {
+        cloudStore.forEach((row: any) => {
+          memoryDb[row.key] = row.value;
+          const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
+          memoryDb[normKey] = row.value;
+          try {
+            localStorage.setItem(row.key, JSON.stringify(row.value));
+          } catch {}
+        });
+        isServerSynced = true;
+        console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
+        return true;
+      } else if (error) {
+        console.warn("[Supabase Cloud Direct] Supabase query warning:", error.message);
+      }
+    } catch (e: any) {
+      console.warn("[Supabase Cloud Direct] Cloud fetch failed, falling back to local server:", e?.message);
+    }
+
+    // 3. Fallback to local server /api/db only when offline
     try {
       const res = await fetch("/api/db", { cache: "no-store" });
       if (res.ok) {
@@ -224,7 +311,7 @@ export const DatabaseService = {
         }
       }
     } catch (err) {
-      console.warn("[HostDB] Init sync fallback to local storage:", err);
+      console.warn("[DatabaseService] Offline fallback to localStorage:", err);
     }
     return false;
   },
@@ -249,19 +336,36 @@ export const DatabaseService = {
       }
     });
 
-    // 2. Persist directly to Host Machine Database via /api/db in ONE atomic write
+    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq)
+    try {
+      const rows = Object.entries(data).map(([k, v]) => ({
+        key: k,
+        value: v,
+        updated_at: new Date().toISOString(),
+      }));
+      supabase
+        .from("pakdee_store")
+        .upsert(rows)
+        .then(({ error }: any) => {
+          if (error) console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
+        });
+    } catch (e: any) {
+      console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
+    }
+
+    // 3. Secondary: Background sync to local /api/db mirror
     if (typeof window !== "undefined") {
       try {
-        const res = await fetch("/api/db", {
+        fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data }),
-        });
-        return res.ok;
-      } catch (err) {
-        console.warn("[HostDB] Batch sync failed:", err);
-      }
+          keepalive: true,
+        }).catch(() => {});
+      } catch {}
     }
+
+    return true;
     return true;
   },
 

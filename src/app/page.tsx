@@ -530,6 +530,22 @@ export default function HomePage() {
 
   useEffect(() => {
     loadData();
+
+    // Supabase Live Cloud Realtime listener
+    const handleRealtimeUpdate = (e: any) => {
+      console.log("[App] Live Realtime DB update received from Supabase:", e?.detail?.key);
+      loadData();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("pakdee_db_updated", handleRealtimeUpdate);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pakdee_db_updated", handleRealtimeUpdate);
+      }
+    };
   }, [loadData]);
 
   // Clean URL Routing & Dynamic Page Title Map (No ?tab= or ?view=)
@@ -2673,7 +2689,7 @@ export default function HomePage() {
                 {toast.type === "success" ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 ) : toast.type === "warning" ? (
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 ) : (
                   <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                 )}
@@ -2689,15 +2705,15 @@ export default function HomePage() {
           )}
 
           {/* Database Connection Status Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 px-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-900 dark:text-emerald-200">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="font-bold">
                 {DatabaseService.isLocalMode()
                   ? "โหมดฐานข้อมูล: Host Machine Server Database (เซฟตรงลงเครื่องโฮสต์ ⚡ รองรับทุกเครื่องในวง LAN)"
                   : isDbConnected
-                  ? "เชื่อมต่อ Supabase Live Cloud สำเร็จ 🟢"
-                  : "กำลังเชื่อมต่อ..."}
+                  ? "เชื่อมต่อ Supabase Live Cloud สำเร็จ 🟢 (Realtime Sync อัตโนมัติ)"
+                  : "กำลังเชื่อมต่อ Supabase Live Cloud..."}
               </span>
               <span className="text-[11px] text-[var(--muted)]">
                 | หอพัก: {property.name} ({rooms.length} ห้องในระบบ)
@@ -2707,7 +2723,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => setIsDbInspectorOpen(true)}
-                className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-100 transition cursor-pointer"
+                className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300 hover:text-emerald-600 dark:hover:text-emerald-100 transition cursor-pointer"
                 title="เปิดหน้าต่างดูข้อมูลจริงทุกตารางในระบบ"
               >
                 <Database className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
