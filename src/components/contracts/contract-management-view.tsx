@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatDateThai } from "@/lib/utils";
 import { isDateAfter, isValidThaiPhone, formatThaiPhone } from "@/lib/validators";
+import { numberToThaiBahtText, STANDARD_14_CLAUSES } from "@/components/contracts/contract-print-view";
 
 interface ContractManagementViewProps {
   contracts: ContractItem[];
@@ -616,163 +617,493 @@ export function ContractManagementView({
       )}
 
       {/* Contract Preview Modal */}
-      {previewContract && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden p-6 sm:p-8 space-y-5 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b pb-4 shrink-0">
-              <div>
-                <h2 className="text-lg font-bold">สัญญาเช่าห้องพักอาศัย (Residential Lease Agreement)</h2>
-                <div className="text-xs text-slate-500">เลขที่สัญญา: {previewContract.contractNumber}</div>
-              </div>
-              <button
-                onClick={() => setPreviewContract(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition text-xs font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+      {previewContract && (() => {
+        const matchedRoom = rooms.find((r) => r.roomNumber === previewContract.roomNumber);
+        const roomFloor = matchedRoom?.floor || 1;
+        const roomType = matchedRoom?.type || "ห้องแอร์";
+        const tenantInfo = matchedRoom?.currentTenant;
 
-            <div className="space-y-4 text-xs leading-relaxed overflow-y-auto pr-1 flex-1">
-              <p>
-                สัญญาฉบับนี้ทำขึ้น ณ หอพัก พักดี แมนชั่น ระหว่าง ผู้ให้เช่า และ <strong>{previewContract.tenantName}</strong> (ผู้เช่า)
-                เบอร์โทรศัพท์ <strong>{previewContract.tenantPhone}</strong>
-              </p>
+        const startThai = formatDateThai(previewContract.startDate);
+        const endThai = previewContract.isContinuous
+          ? "ไม่มีกำหนด (สัญญาเช่าต่อเนื่อง)"
+          : formatDateThai(previewContract.endDate);
+        const rentVal = Number(previewContract.monthlyRent) || 0;
+        const depositVal = Number(previewContract.depositAmount) || 0;
+        const dueDay = previewContract.paymentDueDay || 5;
+        const lateFee = previewContract.lateFeePerDay ?? 100;
+        const refundDays = previewContract.depositRefundDays || 7;
+        const noticeDays = previewContract.noticeDays || 30;
+        const graceDays = previewContract.overdueGraceDays || 7;
 
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                <div className="font-bold text-slate-800 text-xs border-b border-slate-200 pb-1.5">
-                  รายละเอียดห้องพักและการเงิน
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  <div><strong>ห้องพักเลขที่:</strong> {previewContract.roomNumber}</div>
-                  <div><strong>ค่าเช่ารายเดือน:</strong> {formatCurrency(previewContract.monthlyRent)} / เดือน</div>
-                  <div><strong>เงินมัดจำประกัน:</strong> {formatCurrency(previewContract.depositAmount)}</div>
-                  <div>
-                    <strong>ระยะเวลาสัญญา:</strong> {formatDateThai(previewContract.startDate)} ถึง{" "}
-                    {previewContract.isContinuous ? "สัญญาต่อเนื่อง" : formatDateThai(previewContract.endDate)}
+        const petSmokeRules: string[] = [];
+        petSmokeRules.push(
+          previewContract.allowPets
+            ? "อนุญาตให้เลี้ยงสัตว์ได้ตามข้อตกลง"
+            : "ห้ามนำสัตว์เลี้ยงทุกชนิดเข้ามาเลี้ยงในอาคาร"
+        );
+        if (previewContract.noSmoking !== false) {
+          petSmokeRules.push("ห้ามสูบบุหรี่ภายในห้องพักและตัวอาคารโดยเด็ดขาด");
+        }
+
+        // แทนค่าตัวแปร [หมายเลขห้อง], [ชั้น], [ค่าเช่า] ฯลฯ ในข้อสัญญาทั้ง 14 ข้ออัตโนมัติ
+        const rawClauses =
+          previewContract.clauses && previewContract.clauses.length > 0
+            ? previewContract.clauses
+            : STANDARD_14_CLAUSES;
+
+        const resolvedClauses = rawClauses.map((cl) => ({
+          ...cl,
+          resolvedContent: cl.content
+            .replace(/\[หมายเลขห้อง\]/g, previewContract.roomNumber)
+            .replace(/\[ชั้น\]/g, String(roomFloor))
+            .replace(/\[ประเภทห้อง\]/g, roomType)
+            .replace(/\[ที่อยู่หอพัก\]/g, "หอพัก พักดี แมนชั่น")
+            .replace(/\[วันเริ่มสัญญา\]/g, startThai)
+            .replace(/\[วันสิ้นสุดสัญญา\]/g, endThai)
+            .replace(/\[ค่าเช่า\]/g, rentVal.toLocaleString("th-TH"))
+            .replace(/\[ค่าเช่าตัวอักษร\]/g, numberToThaiBahtText(rentVal))
+            .replace(/\[วันกำหนดชำระ\]/g, String(dueDay))
+            .replace(/\[ค่าปรับ\]/g, lateFee.toLocaleString("th-TH"))
+            .replace(/\[จำนวนวันค้างชำระที่อนุญาต\]/g, String(graceDays))
+            .replace(/\[เงินประกัน\]/g, depositVal.toLocaleString("th-TH"))
+            .replace(/\[เงินประกันตัวอักษร\]/g, numberToThaiBahtText(depositVal))
+            .replace(/\[จำนวนวันคืนเงินประกัน\]/g, String(refundDays))
+            .replace(/\[จำนวนวันแจ้งล่วงหน้า\]/g, String(noticeDays))
+            .replace(/\[ค่าน้ำ\]/g, "18")
+            .replace(/\[ค่าไฟ\]/g, "8")
+            .replace(/\[เงื่อนไขสัตว์เลี้ยงและบุหรี่\]/g, petSmokeRules.join(" และ")),
+        }));
+
+        // สร้างรายการในตารางค่าใช้จ่าย เฉพาะรายการที่เปิดใช้งานเท่านั้น (หากไม่เช่าทีวี/ตู้เย็น/บริการเสริม จะไม่แสดงในเอกสาร)
+        const tableRows: {
+          id: string;
+          title: string;
+          detail: string;
+          paymentType: string;
+          isMonthly: boolean;
+          amount: number;
+        }[] = [
+          {
+            id: "rent",
+            title: `ค่าเช่าห้องพักรายเดือน (ห้อง ${previewContract.roomNumber} ชั้น ${roomFloor} - ${roomType})`,
+            detail: `ชำระภายในวันที่ ${dueDay} ของทุกเดือน`,
+            paymentType: "รายเดือน (ล่วงหน้า 1 เดือน)",
+            isMonthly: true,
+            amount: rentVal,
+          },
+        ];
+
+        if (depositVal > 0) {
+          tableRows.push({
+            id: "deposit",
+            title: "เงินประกันมัดจำความเสียหาย (Security Deposit)",
+            detail: `คืนภายใน ${refundDays} วันหลังสิ้นสุดสัญญาและย้ายออก`,
+            paymentType: "ชำระแรกเข้าวันทำสัญญา",
+            isMonthly: false,
+            amount: depositVal,
+          });
+        }
+
+        if (previewContract.hasTv && Number(previewContract.tvRentalFee) > 0) {
+          tableRows.push({
+            id: "tv",
+            title: "ค่าบริการเช่าทีวี (Smart TV Rental)",
+            detail: "บริการเสริมรายเดือน",
+            paymentType: "บริการเสริมรายเดือน",
+            isMonthly: true,
+            amount: Number(previewContract.tvRentalFee),
+          });
+        }
+
+        if (previewContract.hasFridge && Number(previewContract.fridgeRentalFee) > 0) {
+          tableRows.push({
+            id: "fridge",
+            title: "ค่าบริการเช่าตู้เย็น (Refrigerator Rental)",
+            detail: "บริการเสริมรายเดือน",
+            paymentType: "บริการเสริมรายเดือน",
+            isMonthly: true,
+            amount: Number(previewContract.fridgeRentalFee),
+          });
+        }
+
+        if (Number(previewContract.electricalEquipmentFee) > 0) {
+          tableRows.push({
+            id: "elec-equip",
+            title: "ค่าอุปกรณ์ไฟฟ้า",
+            detail: "ชำระวันทำสัญญา",
+            paymentType: "ชำระแรกเข้าวันทำสัญญา",
+            isMonthly: false,
+            amount: Number(previewContract.electricalEquipmentFee),
+          });
+        }
+
+        if (Number(previewContract.furnitureFee) > 0) {
+          tableRows.push({
+            id: "furniture",
+            title: "ค่าครุภัณฑ์และเฟอร์นิเจอร์",
+            detail: "ชำระวันทำสัญญา",
+            paymentType: "ชำระแรกเข้าวันทำสัญญา",
+            isMonthly: false,
+            amount: Number(previewContract.furnitureFee),
+          });
+        }
+
+        if (previewContract.additionalFees && previewContract.additionalFees.length > 0) {
+          previewContract.additionalFees
+            .filter((f) => f.isEnabled && Number(f.amount) > 0)
+            .forEach((f) => {
+              tableRows.push({
+                id: f.id,
+                title: f.name || "ค่าบริการเพิ่มเติม",
+                detail: "บริการเสริมรายเดือน",
+                paymentType: "บริการเสริมรายเดือน",
+                isMonthly: true,
+                amount: Number(f.amount),
+              });
+            });
+        } else {
+          if (previewContract.hasCommonFee && Number(previewContract.commonFee) > 0) {
+            tableRows.push({
+              id: "common-fee",
+              title: "ค่าบริการส่วนกลาง",
+              detail: "บริการเสริมรายเดือน",
+              paymentType: "บริการเสริมรายเดือน",
+              isMonthly: true,
+              amount: Number(previewContract.commonFee),
+            });
+          }
+          if (previewContract.hasWifi && Number(previewContract.wifiFee) > 0) {
+            tableRows.push({
+              id: "wifi-fee",
+              title: "ค่าอินเทอร์เน็ต WiFi",
+              detail: "บริการเสริมรายเดือน",
+              paymentType: "บริการเสริมรายเดือน",
+              isMonthly: true,
+              amount: Number(previewContract.wifiFee),
+            });
+          }
+          if (previewContract.hasParking && Number(previewContract.parkingFee) > 0) {
+            tableRows.push({
+              id: "parking-fee",
+              title: "ค่าที่จอดรถ",
+              detail: "บริการเสริมรายเดือน",
+              paymentType: "บริการเสริมรายเดือน",
+              isMonthly: true,
+              amount: Number(previewContract.parkingFee),
+            });
+          }
+        }
+
+        const totalUpfrontAmount = tableRows.reduce((sum, r) => sum + r.amount, 0);
+        const totalMonthlyAmount = tableRows
+          .filter((r) => r.isMonthly)
+          .reduce((sum, r) => sum + r.amount, 0);
+
+        const createdDateObj = new Date(previewContract.createdAt || previewContract.startDate || new Date());
+        const thaiDay = String(createdDateObj.getDate());
+        const thaiMonth = createdDateObj.toLocaleDateString("th-TH", { month: "long" });
+        const thaiYear = String(createdDateObj.getFullYear() + 543);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:p-0 print:bg-white">
+            <div className="bg-white text-black rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden p-6 sm:p-10 space-y-5 max-h-[92vh] flex flex-col print:max-h-none print:shadow-none print:rounded-none print:p-0">
+              {/* Top Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0 print:hidden">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                    สัญญาเช่าห้องพักอาศัย (Residential Lease Agreement)
+                  </h2>
+                  <div className="text-xs text-slate-500">
+                    เลขที่สัญญา: <span className="font-mono font-semibold text-purple-700">{previewContract.contractNumber}</span>
                   </div>
-                  <div><strong>วันกำหนดชำระ:</strong> วันที่ {previewContract.paymentDueDay || 5} ของเดือน</div>
-                  <div><strong>ค่าปรับล่าช้า:</strong> {previewContract.lateFeePerDay || 100} บาท/วัน</div>
                 </div>
-
-                {/* Additional Services */}
-                <div className="pt-2 border-t border-slate-200 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600">
-                  {previewContract.additionalFees && previewContract.additionalFees.length > 0 ? (
-                    previewContract.additionalFees.map((fee) => (
-                      <div key={fee.id}>
-                        <strong>{fee.name || "ค่าบริการเพิ่มเติม"}:</strong> {fee.isEnabled ? formatCurrency(fee.amount) : "ไม่เปิดใช้"}
-                      </div>
-                    ))
-                  ) : (
-                    <>
-                      <div><strong>ค่าส่วนกลาง:</strong> {previewContract.hasCommonFee ? formatCurrency(previewContract.commonFee || 0) : "ไม่เรียกเก็บ"}</div>
-                      <div><strong>ค่าเน็ต WiFi:</strong> {previewContract.hasWifi ? formatCurrency(previewContract.wifiFee || 0) : "ไม่ใช้"}</div>
-                      <div><strong>ค่าที่จอดรถ:</strong> {previewContract.hasParking ? formatCurrency(previewContract.parkingFee || 0) : "ไม่ใช้"}</div>
-                    </>
-                  )}
-                  <div><strong>ค่าเช่าทีวี:</strong> {previewContract.hasTv ? formatCurrency(previewContract.tvRentalFee || 0) : "ไม่เช่า"}</div>
-                  <div><strong>ค่าเช่าตู้เย็น:</strong> {previewContract.hasFridge ? formatCurrency(previewContract.fridgeRentalFee || 0) : "ไม่เช่า"}</div>
-                  <div><strong>สัตว์เลี้ยง / บุหรี่:</strong> {previewContract.allowPets ? "เลี้ยงได้" : "ห้ามเลี้ยง"} • {previewContract.noSmoking !== false ? "ห้ามสูบบุหรี่" : "-"}</div>
-                </div>
+                <button
+                  onClick={() => setPreviewContract(null)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition text-xs font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
 
-              {/* Lease Clauses (14 ข้อ) */}
-              <div className="space-y-2 pt-1">
-                <div className="font-bold text-slate-800 text-xs">
-                  ข้อกำหนดและเงื่อนไขสัญญา ({previewContract.clauses?.length || 14} ข้อ):
+              {/* Printable Document Content (ตามรูปแบบ ตัวอย่างสัญญาเช่า.pdf + ตารางสรุปยอดชำระ) */}
+              <div className="space-y-4 text-[13px] leading-[1.8] overflow-y-auto pr-1 flex-1 text-black">
+                {/* ชื่อเรื่องสัญญา */}
+                <div className="text-center space-y-0.5">
+                  <h1 className="text-xl font-bold text-black">สัญญาเช่าห้องพักอาศัย</h1>
+                  <div className="text-xs text-slate-600">
+                    เลขที่สัญญา <span className="font-semibold text-black">{previewContract.contractNumber}</span> • ห้องพักเลขที่{" "}
+                    <span className="font-semibold text-black">{previewContract.roomNumber}</span> (ชั้น {roomFloor} - {roomType})
+                  </div>
                 </div>
-                <div className="space-y-2 bg-slate-50/70 p-4 rounded-2xl border border-slate-200">
-                  {(previewContract.clauses && previewContract.clauses.length > 0
-                    ? previewContract.clauses
-                    : [
-                        { id: 1, title: "ห้องพักที่เช่า", content: `ผู้เช่าตกลงเช่าห้องพักเลขที่ ${previewContract.roomNumber} เพื่อใช้เป็นที่พักอาศัยเท่านั้น` },
-                        { id: 2, title: "ระยะเวลาการเช่า", content: `สัญญาเริ่มตั้งแต่วันที่ ${formatDateThai(previewContract.startDate)} ถึง ${previewContract.isContinuous ? "สัญญาต่อเนื่อง" : formatDateThai(previewContract.endDate)}` },
-                        { id: 3, title: "ค่าเช่า", content: `ชำระค่าเช่าเดือนละ ${formatCurrency(previewContract.monthlyRent)} ภายในวันที่ ${previewContract.paymentDueDay || 5} ของทุกเดือน` },
-                        { id: 4, title: "เงินประกัน", content: `ผู้เช่าวางเงินประกัน ${formatCurrency(previewContract.depositAmount)} บาท คืนให้ภายใน ${previewContract.depositRefundDays || 7} วันหลังย้ายออก` },
-                        { id: 5, title: "ค่าสาธารณูปโภค", content: "ผู้เช่าตกลงชำระค่าน้ำประปา ค่าไฟฟ้า ค่าบริการส่วนกลาง ค่าอินเทอร์เน็ต ตามอัตราที่หอพักกำหนด" },
-                        { id: 6, title: "การดูแลรักษาห้องพัก", content: "ผู้เช่าจะต้องดูแลรักษาห้องพักให้เรียบร้อย สะอาด และไม่ดัดแปลงต่อเติมห้องพัก" },
-                      ]
-                  ).map((cl, idx) => (
-                    <div key={cl.id || idx} className="text-[11px] leading-relaxed text-slate-700">
-                      <strong>ข้อ {idx + 1} {cl.title}:</strong> {cl.content}
+
+                {/* ทำที่ / วันที่ เดือน พ.ศ. */}
+                <div className="flex justify-end">
+                  <div className="w-full sm:w-[60%] space-y-1 text-xs sm:text-[13px]">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="shrink-0">ทำที่</span>
+                      <span className="flex-1 border-b border-dotted border-slate-500 px-2 font-semibold text-black">
+                        หอพัก พักดี แมนชั่น
+                      </span>
                     </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="shrink-0">วันที่</span>
+                      <span className="w-12 text-center border-b border-dotted border-slate-500 font-semibold text-black">
+                        {thaiDay}
+                      </span>
+                      <span className="shrink-0">เดือน</span>
+                      <span className="flex-1 text-center border-b border-dotted border-slate-500 font-semibold text-black">
+                        {thaiMonth}
+                      </span>
+                      <span className="shrink-0">พ.ศ.</span>
+                      <span className="w-16 text-center border-b border-dotted border-slate-500 font-semibold text-black">
+                        {thaiYear}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ข้อมูลคู่สัญญา */}
+                <div className="space-y-1.5 text-justify">
+                  <p className="indent-8">
+                    สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง{" "}
+                    <span className="border-b border-dotted border-slate-500 px-2 font-bold">
+                      หอพัก พักดี แมนชั่น
+                    </span>{" "}
+                    ซึ่งต่อไปในสัญญานี้จะเรียกว่า <strong>&ldquo;ผู้ให้เช่า&rdquo;</strong> ฝ่ายหนึ่ง กับ{" "}
+                    <span className="border-b border-dotted border-slate-500 px-2 font-bold">
+                      {previewContract.tenantName}
+                    </span>{" "}
+                    โทรศัพท์{" "}
+                    <span className="border-b border-dotted border-slate-500 px-2 font-semibold">
+                      {previewContract.tenantPhone || "-"}
+                    </span>
+                    {tenantInfo?.idCard ? (
+                      <>
+                        {" "}
+                        เลขประจำตัวประชาชน{" "}
+                        <span className="border-b border-dotted border-slate-500 px-2 font-semibold">
+                          {tenantInfo.idCard}
+                        </span>
+                      </>
+                    ) : null}
+                    {tenantInfo?.address ? (
+                      <>
+                        {" "}
+                        อยู่บ้านเลขที่{" "}
+                        <span className="border-b border-dotted border-slate-500 px-2 font-semibold">
+                          {tenantInfo.address}
+                        </span>
+                      </>
+                    ) : null}{" "}
+                    ซึ่งต่อไปในสัญญานี้จะเรียกว่า <strong>&ldquo;ผู้เช่า&rdquo;</strong> อีกฝ่ายหนึ่ง
+                    ทั้งสองฝ่ายได้ตกลงทำสัญญาเช่ากันมีข้อความดังนี้:
+                  </p>
+                </div>
+
+                {/* ข้อกำหนดและเงื่อนไขสัญญา (14 ข้อ ที่แทนค่าตัวแปรจริงครบถ้วน) */}
+                <div className="space-y-1.5 text-justify">
+                  {resolvedClauses.map((cl, idx) => (
+                    <p key={cl.id || idx} className="indent-8 leading-[1.75]">
+                      <strong>
+                        ข้อ {idx + 1}. ({cl.title})
+                      </strong>{" "}
+                      {cl.resolvedContent}
+                    </p>
                   ))}
 
                   {previewContract.additionalRules && previewContract.additionalRules.length > 0 && (
-                    <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-700">
-                      <strong>กฎระเบียบเพิ่มเติม:</strong>
-                      <ul className="list-disc list-inside mt-1 space-y-0.5">
-                        {previewContract.additionalRules.map((rule, rIdx) => (
-                          <li key={rIdx}>{rule}</li>
-                        ))}
-                      </ul>
-                    </div>
+                    <p className="indent-8 leading-[1.75]">
+                      <strong>กฎระเบียบเพิ่มเติมแนบท้ายสัญญา:</strong>{" "}
+                      {previewContract.additionalRules.map((rule, rIdx) => `(${rIdx + 1}) ${rule}`).join(" ")}
+                    </p>
                   )}
                 </div>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-8 pt-8 border-t text-center text-xs">
-              <div>
-                <div className="min-h-[64px] flex items-center justify-center border-b border-dashed border-slate-400 mb-2 pb-1">
-                  <div className="text-[11px] text-slate-400 italic">ฝ่ายบริหารจัดการหอพัก</div>
+                {/* ตารางสรุปรายการค่าใช้จ่ายที่ต้องชำระ (แสดงเฉพาะรายการที่เปิดใช้งาน) */}
+                <div className="pt-2">
+                  <div className="font-bold text-black text-xs sm:text-[13px] mb-1.5">
+                    ตารางสรุปรายการค่าเช่า เงินประกัน และค่าบริการที่ต้องชำระตามสัญญา (ห้อง {previewContract.roomNumber})
+                  </div>
+                  <table className="w-full border-collapse border border-slate-800 text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-black font-bold">
+                        <th className="border border-slate-800 py-1.5 px-2 text-center w-12">ลำดับ</th>
+                        <th className="border border-slate-800 py-1.5 px-3 text-left">รายการค่าใช้จ่ายที่ต้องชำระ</th>
+                        <th className="border border-slate-800 py-1.5 px-2.5 text-center w-40">ประเภทการชำระ</th>
+                        <th className="border border-slate-800 py-1.5 px-3 text-right w-32">จำนวนเงิน (บาท)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableRows.map((row, index) => (
+                        <tr key={row.id}>
+                          <td className="border border-slate-800 py-1.5 px-2 text-center font-medium">
+                            {index + 1}
+                          </td>
+                          <td className="border border-slate-800 py-1.5 px-3">
+                            <div className="font-semibold text-black">{row.title}</div>
+                            <div className="text-[11px] text-slate-600">{row.detail}</div>
+                          </td>
+                          <td className="border border-slate-800 py-1.5 px-2.5 text-center text-slate-700">
+                            {row.paymentType}
+                          </td>
+                          <td className="border border-slate-800 py-1.5 px-3 text-right font-bold text-black">
+                            {row.amount.toLocaleString("th-TH", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-bold text-black">
+                        <td className="border border-slate-800 py-2 px-3" colSpan={3}>
+                          <div>รวมจำนวนเงินที่ต้องชำระทั้งสิ้น ณ วันทำสัญญา</div>
+                          <div className="text-[11px] font-normal text-slate-700">
+                            ตัวอักษร: <strong>({numberToThaiBahtText(totalUpfrontAmount)})</strong>
+                          </div>
+                        </td>
+                        <td className="border border-slate-800 py-2 px-3 text-right text-sm font-black text-black">
+                          {totalUpfrontAmount.toLocaleString("th-TH", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                      </tr>
+                      <tr className="bg-white text-[11px] text-slate-700">
+                        <td className="border border-slate-800 py-1.5 px-3" colSpan={3}>
+                          <strong>ยอดชำระรายเดือนรอบบิลถัดไป</strong> (ชำระภายในวันที่ {dueDay} ของทุกเดือน ไม่รวมค่าน้ำประปาและค่าไฟฟ้าตามมิเตอร์จริง)
+                        </td>
+                        <td className="border border-slate-800 py-1.5 px-3 text-right font-bold text-black">
+                          {totalMonthlyAmount.toLocaleString("th-TH", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          / เดือน
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-                <div>(ลงชื่อ).................................................... ผู้ให้เช่า</div>
-              </div>
-              <div>
-                <div className="min-h-[64px] flex items-center justify-center border-b border-dashed border-slate-400 mb-2 pb-1">
-                  {previewContract.signatureUrl ? (
-                    <div className="flex flex-col items-center">
-                      <img
-                        src={previewContract.signatureUrl}
-                        alt="ลายเซ็นผู้เช่า"
-                        className="h-12 max-w-[180px] object-contain"
-                      />
-                      <span className="text-[9px] text-emerald-600 font-semibold mt-0.5">
-                        ✓ ลายเซ็นอิเล็กทรอนิกส์ยืนยันแล้ว
-                      </span>
+
+                {/* ช่องลงลายมือชื่อ */}
+                <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-200 text-center text-xs">
+                  <div>
+                    <div className="min-h-[64px] flex items-center justify-center border-b border-dashed border-slate-400 mb-2 pb-1">
+                      <div className="text-[11px] text-slate-400 italic">ฝ่ายบริหารจัดการหอพัก</div>
                     </div>
-                  ) : (
+                    <div>ลงชื่อ.................................................... ผู้ให้เช่า</div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">( หอพัก พักดี แมนชั่น )</div>
+                  </div>
+                  <div>
+                    <div className="min-h-[64px] flex items-center justify-center border-b border-dashed border-slate-400 mb-2 pb-1">
+                      {previewContract.signatureUrl ? (
+                        <div className="flex flex-col items-center">
+                          <img
+                            src={previewContract.signatureUrl}
+                            alt="ลายเซ็นผู้เช่า"
+                            className="h-12 max-w-[180px] object-contain"
+                          />
+                          <span className="text-[9px] text-emerald-600 font-semibold mt-0.5">
+                            ✓ ลายเซ็นอิเล็กทรอนิกส์ยืนยันแล้ว
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSigningContract(previewContract);
+                            setHasSignatureDrawn(false);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 text-xs font-semibold transition cursor-pointer print:hidden"
+                        >
+                          <PenTool className="w-3.5 h-3.5" />
+                          <span>คลิกเพื่อลงลายเซ็นออนไลน์</span>
+                        </button>
+                      )}
+                    </div>
+                    <div>ลงชื่อ.................................................... ผู้เช่า</div>
+                    <div className="text-[11px] text-slate-800 font-semibold mt-0.5">
+                      ( {previewContract.tenantName} )
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer Buttons (Hidden when printing) */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-slate-200 shrink-0 print:hidden">
+                <div>
+                  {!previewContract.signatureUrl && (
                     <button
-                      type="button"
                       onClick={() => {
                         setSigningContract(previewContract);
                         setHasSignatureDrawn(false);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 text-xs font-semibold transition cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold text-xs border border-purple-200 flex items-center gap-1.5 cursor-pointer"
                     >
-                      <PenTool className="w-3.5 h-3.5" />
-                      <span>คลิกเพื่อลงลายเซ็นออนไลน์</span>
+                      <PenTool className="w-3.5 h-3.5" /> ลงลายเซ็นอิเล็กทรอนิกส์
                     </button>
                   )}
                 </div>
-                <div>(ลงชื่อ) <strong>{previewContract.tenantName}</strong> ผู้เช่า</div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 pt-4 border-t">
-              <div>
-                {!previewContract.signatureUrl && (
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
-                      setSigningContract(previewContract);
-                      setHasSignatureDrawn(false);
+                      try {
+                        const draft = {
+                          contractNumber: previewContract.contractNumber,
+                          contractDate: previewContract.startDate,
+                          roomNumber: previewContract.roomNumber,
+                          floor: roomFloor,
+                          roomType,
+                          monthlyRate: rentVal,
+                          fullName: previewContract.tenantName,
+                          phone: previewContract.tenantPhone,
+                          idCard: tenantInfo?.idCard || "1-1005-01234-56-7",
+                          address: tenantInfo?.address || "",
+                          startDate: previewContract.startDate,
+                          endDate: previewContract.endDate,
+                          isContinuous: Boolean(previewContract.isContinuous),
+                          paymentDueDay: dueDay,
+                          lateFeePerDay: lateFee,
+                          electricalEquipmentFee: Number(previewContract.electricalEquipmentFee) || 0,
+                          furnitureFee: Number(previewContract.furnitureFee) || 0,
+                          hasDeposit: depositVal > 0,
+                          depositAmount: depositVal,
+                          hasTv: Boolean(previewContract.hasTv),
+                          tvRentalFee: Number(previewContract.tvRentalFee) || 300,
+                          hasFridge: Boolean(previewContract.hasFridge),
+                          fridgeRentalFee: Number(previewContract.fridgeRentalFee) || 300,
+                          additionalFees: previewContract.additionalFees || [],
+                          noticeDays,
+                          depositRefundDays: refundDays,
+                          overdueGraceDays: graceDays,
+                          allowPets: Boolean(previewContract.allowPets),
+                          noSmoking: previewContract.noSmoking !== false,
+                          additionalRules: previewContract.additionalRules || [],
+                          clauses: rawClauses,
+                        };
+                        localStorage.setItem("pakdee_contract_print_draft", JSON.stringify(draft));
+                      } catch {
+                        // ignore
+                      }
+                      window.location.href = "/contracts/print";
                     }}
-                    className="px-3.5 py-2 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold text-xs border border-purple-200 flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
                   >
-                    <PenTool className="w-3.5 h-3.5" /> ลงลายเซ็นอิเล็กทรอนิกส์
+                    <Eye className="w-3.5 h-3.5 text-emerald-600" /> เปิดหน้าพิมพ์ A4 เต็มจอ
                   </button>
-                )}
+                  <button
+                    onClick={() => window.print()}
+                    className="px-4 py-2 rounded-xl bg-purple-600 text-white font-semibold text-xs shadow-md hover:bg-purple-700 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> พิมพ์สัญญา
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-purple-600 text-white font-semibold text-xs shadow-md hover:bg-purple-700 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" /> พิมพ์สัญญา
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* E-Signature Drawing Modal */}
       {signingContract && (

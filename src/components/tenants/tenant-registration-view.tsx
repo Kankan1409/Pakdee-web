@@ -44,6 +44,7 @@ import {
   isDateAfter,
 } from "@/lib/validators";
 import { globalPopup } from "@/lib/popup-context";
+import { numberToThaiBahtText } from "@/components/contracts/contract-print-view";
 
 // Standard 14 Legal Clauses (ข้อสัญญามาตรฐาน 14 ข้อ)
 const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
@@ -457,6 +458,23 @@ export function TenantRegistrationView({
 
     setIsSubmitting(true);
     try {
+      const resolvedClauses = clauses.map((c) => ({
+        ...c,
+        content: c.content
+          .replace(/\[หมายเลขห้อง\]/g, selectedRoom?.roomNumber || "-")
+          .replace(/\[ชั้น\]/g, String(selectedRoom?.floor || 1))
+          .replace(/\[ที่อยู่หอพัก\]/g, "หอพัก พักดี แมนชั่น")
+          .replace(/\[วันเริ่มสัญญา\]/g, startDate)
+          .replace(/\[วันสิ้นสุดสัญญา\]/g, isContinuous ? "สัญญาต่อเนื่อง" : endDate)
+          .replace(/\[ค่าเช่า\]/g, roomRent.toLocaleString("th-TH"))
+          .replace(/\[ค่าเช่าตัวอักษร\]/g, numberToThaiBahtText(roomRent))
+          .replace(/\[วันกำหนดชำระ\]/g, String(paymentDueDay))
+          .replace(/\[ค่าปรับ\]/g, lateFeePerDay.toLocaleString("th-TH"))
+          .replace(/\[เงินประกัน\]/g, actualDeposit.toLocaleString("th-TH"))
+          .replace(/\[จำนวนวันคืนเงินประกัน\]/g, String(depositRefundDays))
+          .replace(/\[จำนวนวันแจ้งล่วงหน้า\]/g, String(noticeDays)),
+      }));
+
       await onSubmit({
         roomId,
         fullName: fullName.trim(),
@@ -499,7 +517,7 @@ export function TenantRegistrationView({
         allowPets,
         noSmoking,
         additionalRules,
-        clauses,
+        clauses: resolvedClauses,
       });
     } catch (err) {
       console.error(err);
@@ -1653,63 +1671,65 @@ export function TenantRegistrationView({
               </div>
             </div>
 
-            {/* Detailed Itemized Upfront Breakdown */}
-            <div className="space-y-2.5 text-xs border-b border-[var(--border)] pb-4">
-              <div className="flex justify-between items-center text-[var(--foreground)]">
-                <span className="text-[var(--muted)]">ค่าเช่าห้องพักล่วงหน้า (เดือนแรก):</span>
-                <span className="font-bold">฿{roomRent.toLocaleString()}</span>
-              </div>
+            {/* Detailed Itemized Upfront Breakdown Table (แสดงเฉพาะรายการที่เปิดใช้งาน) */}
+            <div className="border border-[var(--border)] rounded-xl overflow-hidden text-xs">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[11px] font-bold text-[var(--muted)]">
+                    <th className="py-2 px-3">รายการที่ต้องชำระ</th>
+                    <th className="py-2 px-3 text-right">จำนวนเงิน</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
+                  <tr>
+                    <td className="py-2 px-3">ค่าเช่าห้องพักล่วงหน้า (เดือนแรก)</td>
+                    <td className="py-2 px-3 text-right font-bold">฿{roomRent.toLocaleString()}</td>
+                  </tr>
 
-              <div className="flex justify-between items-center text-[var(--foreground)]">
-                <span className="text-[var(--muted)] flex items-center gap-1">
-                  <span>เงินประกันมัดจำ:</span>
-                  {!hasDeposit && <span className="text-[10px] text-amber-500">(ยกเว้น)</span>}
-                </span>
-                <span className={`font-bold ${hasDeposit ? "text-[var(--foreground)]" : "text-slate-400"}`}>
-                  {hasDeposit ? `฿${actualDeposit.toLocaleString()}` : "฿0"}
-                </span>
-              </div>
+                  {hasDeposit && actualDeposit > 0 && (
+                    <tr>
+                      <td className="py-2 px-3">เงินประกันมัดจำความเสียหาย</td>
+                      <td className="py-2 px-3 text-right font-bold">฿{actualDeposit.toLocaleString()}</td>
+                    </tr>
+                  )}
 
-              <div className="flex justify-between items-center text-[var(--foreground)]">
-                <span className="text-[var(--muted)] flex items-center gap-1">
-                  <span>ค่าบริการเช่าทีวีเดือนแรก:</span>
-                  {!hasTv && <span className="text-[10px] text-slate-400">(ไม่เช่า)</span>}
-                </span>
-                <span className={`font-bold ${hasTv ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
-                  {hasTv ? `฿${actualTv.toLocaleString()}` : "฿0"}
-                </span>
-              </div>
+                  {hasTv && actualTv > 0 && (
+                    <tr>
+                      <td className="py-2 px-3">ค่าบริการเช่าทีวีเดือนแรก</td>
+                      <td className="py-2 px-3 text-right font-bold text-blue-600 dark:text-blue-400">
+                        ฿{actualTv.toLocaleString()}
+                      </td>
+                    </tr>
+                  )}
 
-              <div className="flex justify-between items-center text-[var(--foreground)]">
-                <span className="text-[var(--muted)] flex items-center gap-1">
-                  <span>ค่าบริการเช่าตู้เย็นเดือนแรก:</span>
-                  {!hasFridge && <span className="text-[10px] text-slate-400">(ไม่เช่า)</span>}
-                </span>
-                <span className={`font-bold ${hasFridge ? "text-cyan-600 dark:text-cyan-400" : "text-slate-400"}`}>
-                  {hasFridge ? `฿${actualFridge.toLocaleString()}` : "฿0"}
-                </span>
-              </div>
+                  {hasFridge && actualFridge > 0 && (
+                    <tr>
+                      <td className="py-2 px-3">ค่าบริการเช่าตู้เย็นเดือนแรก</td>
+                      <td className="py-2 px-3 text-right font-bold text-cyan-600 dark:text-cyan-400">
+                        ฿{actualFridge.toLocaleString()}
+                      </td>
+                    </tr>
+                  )}
 
-              {/* Dynamic Additional Fees in Summary */}
-              {activeAdditionalFees.map((fee) => (
-                <div key={fee.id} className="flex justify-between items-center text-[var(--foreground)] animate-in fade-in">
-                  <span className="text-[var(--muted)] flex items-center gap-1">
-                    <span>{fee.name || "ค่าบริการเพิ่มเติม"} เดือนแรก:</span>
-                  </span>
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                    ฿{(Number(fee.amount) || 0).toLocaleString()}
-                  </span>
-                </div>
-              ))}
+                  {activeAdditionalFees.map((fee) => (
+                    <tr key={fee.id} className="animate-in fade-in">
+                      <td className="py-2 px-3">{fee.name || "ค่าบริการเพิ่มเติม"} เดือนแรก</td>
+                      <td className="py-2 px-3 text-right font-bold text-indigo-600 dark:text-indigo-400">
+                        ฿{(Number(fee.amount) || 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
 
-              {(actualEquipment > 0 || actualFurniture > 0) && (
-                <div className="flex justify-between items-center text-[var(--foreground)]">
-                  <span className="text-[var(--muted)]">ค่าอุปกรณ์ & ครุภัณฑ์แรกเข้า:</span>
-                  <span className="font-bold text-amber-600 dark:text-amber-400">
-                    ฿{(actualEquipment + actualFurniture).toLocaleString()}
-                  </span>
-                </div>
-              )}
+                  {(actualEquipment > 0 || actualFurniture > 0) && (
+                    <tr>
+                      <td className="py-2 px-3">ค่าอุปกรณ์ & ครุภัณฑ์แรกเข้า</td>
+                      <td className="py-2 px-3 text-right font-bold text-amber-600 dark:text-amber-400">
+                        ฿{(actualEquipment + actualFurniture).toLocaleString()}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
             {/* Big Total Upfront Payment */}
