@@ -402,42 +402,43 @@ export async function POST(req: NextRequest) {
         .catch(reject);
     });
 
-    // 2. Async persist to Supabase Cloud pakdee_store & relational tables
-    try {
-      if (supabase) {
-        const now = new Date().toISOString();
-        if (body.key && body.value !== undefined) {
-          const norm = normalizeKey(body.key);
-          const rows = [
-            { key: body.key, value: body.value, updated_at: now },
-            ...(norm !== body.key ? [{ key: norm, value: body.value, updated_at: now }] : []),
-          ];
-          supabase
-            .from("pakdee_store")
-            .upsert(rows, { onConflict: "key" })
-            .then(({ error }: any) => {
-              if (error) console.warn("[HostDB] Supabase upsert error:", error.message);
+    // 2. Async persist to Supabase Cloud pakdee_store & relational tables (skipped when localOnly === true)
+    if (!body.localOnly) {
+      try {
+        if (supabase) {
+          const now = new Date().toISOString();
+          if (body.key && body.value !== undefined) {
+            const norm = normalizeKey(body.key);
+            supabase
+              .from("pakdee_store")
+              .upsert({ key: body.key, value: body.value, updated_at: now }, { onConflict: "key" })
+              .then(({ error }: any) => {
+                if (error) console.warn("[HostDB] Supabase upsert error:", error.message);
+              });
+            if (norm !== body.key) {
+              supabase
+                .from("pakdee_store")
+                .upsert({ key: norm, value: body.value, updated_at: now }, { onConflict: "key" })
+                .then(() => {});
+            }
+            import("@/lib/supabase-relational")
+              .then(({ syncKeyToRelationalTable }) => syncKeyToRelationalTable(norm, body.value, currentDb))
+              .catch(() => {});
+          } else if (body.data && typeof body.data === "object") {
+            // Upsert per key individually to avoid large batch statement timeouts
+            Object.entries(body.data).forEach(([k, v]) => {
+              supabase
+                .from("pakdee_store")
+                .upsert({ key: k, value: v, updated_at: now }, { onConflict: "key" })
+                .then(({ error }: any) => {
+                  if (error) console.warn(`[HostDB] Supabase key upsert warning [${k}]:`, error.message);
+                });
             });
-          import("@/lib/supabase-relational")
-            .then(({ syncKeyToRelationalTable }) => syncKeyToRelationalTable(norm, body.value, currentDb))
-            .catch(() => {});
-        } else if (body.data && typeof body.data === "object") {
-          const rowMap = new Map<string, any>();
-          Object.entries(body.data).forEach(([k, v]) => {
-            const norm = normalizeKey(k);
-            rowMap.set(k, { key: k, value: v, updated_at: now });
-            rowMap.set(norm, { key: norm, value: v, updated_at: now });
-          });
-          supabase
-            .from("pakdee_store")
-            .upsert(Array.from(rowMap.values()), { onConflict: "key" })
-            .then(({ error }: any) => {
-              if (error) console.warn("[HostDB] Supabase batch upsert error:", error.message);
-            });
+          }
         }
+      } catch (e: any) {
+        console.warn("[HostDB] Supabase Cloud persist skipped:", e?.message);
       }
-    } catch (e: any) {
-      console.warn("[HostDB] Supabase Cloud persist skipped:", e?.message);
     }
 
     return NextResponse.json({ success: true, message: "Saved to database successfully" });

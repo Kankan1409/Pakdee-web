@@ -204,29 +204,31 @@ function setLocal<T>(key: string, value: T): void {
     console.warn(`Failed to save to localStorage [${key}]:`, e);
   }
 
-  // 4. Persist directly to Host Machine Database via /api/db
+  // 4. Persist directly to Host Machine Database via /api/db (local mirror only; client persists to Supabase below)
   fetch("/api/db", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, value }),
+    body: JSON.stringify({ key, value, localOnly: true }),
     keepalive: true,
   }).catch((err) => {
     console.warn(`[HostDB] Sync failed for [${key}]:`, err);
   });
 
-  // 5. Live persist to Supabase Cloud pakdee_store (both prefixed and normalized key) + relational tables mirror
+  // 5. Live persist to Supabase Cloud pakdee_store + relational tables mirror
   try {
     const nowIso = new Date().toISOString();
-    const rowsToUpsert = [{ key, value, updated_at: nowIso }];
-    if (normKey !== key) {
-      rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
-    }
     supabase
       .from("pakdee_store")
-      .upsert(rowsToUpsert)
+      .upsert({ key, value, updated_at: nowIso }, { onConflict: "key" })
       .then(({ error }: any) => {
         if (error) console.warn(`[Supabase] Client upsert error [${key}]:`, error.message);
       });
+    if (normKey !== key) {
+      supabase
+        .from("pakdee_store")
+        .upsert({ key: normKey, value, updated_at: nowIso }, { onConflict: "key" })
+        .then(() => {});
+    }
     syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
   } catch (err) {
     console.warn(`[Supabase] Client upsert skipped [${key}]:`, err);
@@ -337,17 +339,19 @@ export const DatabaseService = {
           } catch {}
         });
 
-        // Background mirror to separate Supabase relational tables (non-blocking, write-only)
-        syncAllToRelationalTables(memoryDb).catch(() => {});
+        if (!isServerSynced) {
+          isServerSynced = true;
+          // Background mirror to separate Supabase relational tables once on initial load (non-blocking, write-only)
+          syncAllToRelationalTables(memoryDb).catch(() => {});
 
-        // Sync loaded cloud data to local server /api/db so server-side LINE routes (/api/line/send-invoice, /api/line/webhook) have latest data
-        fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: memoryDb }),
-        }).catch(() => {});
+          // Sync loaded cloud data to local server /api/db (localOnly: true so it doesn't re-upsert to Supabase!)
+          fetch("/api/db", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data: memoryDb, localOnly: true }),
+          }).catch(() => {});
+        }
 
-        isServerSynced = true;
         console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
         return true;
       } else if (error) {
@@ -402,39 +406,38 @@ export const DatabaseService = {
     // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + relational tables mirror
     try {
       const nowIso = new Date().toISOString();
-      const rowMap = new Map<string, { key: string; value: any; updated_at: string }>();
       Object.entries(data).forEach(([k, v]) => {
         const normKey = k.replace(/^pakdee_(dev|test)_/, "");
-        rowMap.set(k, { key: k, value: v, updated_at: nowIso });
+        supabase
+          .from("pakdee_store")
+          .upsert({ key: k, value: v, updated_at: nowIso }, { onConflict: "key" })
+          .then(({ error }: any) => {
+            if (error) console.warn(`[Supabase Cloud Direct] Upsert warning [${k}]:`, error.message);
+          });
         if (normKey !== k) {
-          rowMap.set(normKey, { key: normKey, value: v, updated_at: nowIso });
+          supabase
+            .from("pakdee_store")
+            .upsert({ key: normKey, value: v, updated_at: nowIso }, { onConflict: "key" })
+            .then(() => {});
         }
         syncKeyToRelationalTable(normKey, v, memoryDb).catch(() => {});
       });
-      const rows = Array.from(rowMap.values());
-      supabase
-        .from("pakdee_store")
-        .upsert(rows)
-        .then(({ error }: any) => {
-          if (error) console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
-        });
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
     }
 
-    // 3. Secondary: Background sync to local /api/db mirror
+    // 3. Secondary: Background sync to local /api/db mirror (localOnly: true to prevent duplicate Supabase upserts)
     if (typeof window !== "undefined") {
       try {
         fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data }),
+          body: JSON.stringify({ data, localOnly: true }),
           keepalive: true,
         }).catch(() => {});
       } catch {}
     }
 
-    return true;
     return true;
   },
 
@@ -978,7 +981,7 @@ export const DatabaseService = {
         await fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
           keepalive: true,
         });
       } catch (e) {
@@ -1022,7 +1025,7 @@ export const DatabaseService = {
         await fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
           keepalive: true,
         });
       } catch (e) {
@@ -1051,7 +1054,7 @@ export const DatabaseService = {
         await fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
           keepalive: true,
         });
       } catch (e) {
@@ -1077,7 +1080,7 @@ export const DatabaseService = {
         await fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
           keepalive: true,
         });
       } catch (e) {
@@ -1372,7 +1375,7 @@ export const DatabaseService = {
         await fetch("/api/db", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
           keepalive: true,
         });
       } catch (e) {
