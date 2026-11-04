@@ -153,7 +153,7 @@ export function RoomMatrix({
               <span>+ เพิ่มห้องพักใหม่</span>
             </button>
           )}
-          {onQuickGenerateStandardRooms && (
+          {/* {onQuickGenerateStandardRooms && (
             <button
               type="button"
               onClick={onQuickGenerateStandardRooms}
@@ -162,7 +162,7 @@ export function RoomMatrix({
               <Zap className="w-4 h-4 text-amber-500" />
               <span>⚡ สร้างผัง 24 ห้องมาตรฐาน (ชั้น 1-4)</span>
             </button>
-          )}
+          )} */}
         </div>
       </div>
     );
