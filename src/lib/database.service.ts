@@ -1121,8 +1121,6 @@ export const DatabaseService = {
 
     await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${activeName})`, propId);
     return targetTenant;
-  }
-    return null;
   },
 
   async getTenantByLineUser(lineUserId: string, propertyId?: string): Promise<Tenant | null> {
