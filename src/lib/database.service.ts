@@ -550,8 +550,8 @@ export const DatabaseService = {
   // 2. ROOMS MANAGEMENT (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   getAllRawRooms(): Room[] {
-    let rooms = getLocal<Room[]>(KEYS.ROOMS, []);
-    if (rooms.length === 0) {
+    const rooms = getLocal<Room[] | null>(KEYS.ROOMS, null);
+    if (rooms === null) {
       const seeded: Room[] = [];
       const tenantSeed = getLocal<Tenant[]>(KEYS.TENANTS, []);
       for (let floor = 1; floor <= 4; floor++) {
@@ -1030,11 +1030,22 @@ export const DatabaseService = {
     const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
 
     // 1. ค้นหาห้องจากหน้าแผนผัง (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
+    const norm = (num: string) => {
+      const clean = (num || "").trim();
+      const parsed = parseInt(clean, 10);
+      return isNaN(parsed) ? clean.toLowerCase() : String(parsed);
+    };
+    const reqNorm = norm(cleanRoom);
+
     let roomMatch = allRooms.find(
-      (r) => (r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom
+      (r) =>
+        (r.propertyId || "prop-1") === (propId || "prop-1") &&
+        (r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm)
     );
     if (!roomMatch) {
-      roomMatch = allRooms.find((r) => r.roomNumber.trim() === cleanRoom);
+      roomMatch = allRooms.find(
+        (r) => r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm
+      );
     }
 
     if (!roomMatch) {
@@ -2013,12 +2024,27 @@ export const DatabaseService = {
 
   async clearAllData(): Promise<boolean> {
     this.resetToCleanSlate();
-    setLocal(KEYS.ROOMS, []);
-    setLocal(KEYS.TENANTS, []);
-    setLocal(KEYS.INVOICES, []);
-    setLocal(KEYS.CONTRACTS, []);
-    setLocal(KEYS.REPAIRS, []);
-    setLocal(KEYS.EXPENSES, []);
+    const allKeysToReset = [
+      KEYS.ROOMS,
+      KEYS.TENANTS,
+      KEYS.INVOICES,
+      KEYS.CONTRACTS,
+      KEYS.REPAIRS,
+      KEYS.EXPENSES,
+      KEYS.DAILY_BOOKINGS,
+      KEYS.METER_READINGS,
+      KEYS.PAYMENTS,
+      KEYS.RECEIPTS,
+      KEYS.BROADCASTS,
+      KEYS.ACTIVITY_LOGS,
+    ];
+    allKeysToReset.forEach((k) => setLocal(k, []));
+
+    const batchPayload: Record<string, any> = {};
+    allKeysToReset.forEach((k) => {
+      batchPayload[k] = [];
+    });
+    await this.persistBatch(batchPayload);
     return true;
   },
 

@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
           const isExplicitBind = userText.startsWith("ผูก") || userText.startsWith("ห้อง") || /^[rR]oom/i.test(userText);
 
           // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง/ผูก
-          if (roomMatch && (isExplicitBind || /^\d{2,4}$/.test(cleanBindingText))) {
+          if (roomMatch && (isExplicitBind || /^\d{1,4}$/.test(cleanBindingText))) {
             const requestedRoom = roomMatch[1];
             console.log(`[LINE-WEBHOOK] Attempting room binding: room=${requestedRoom} user=${userId}`);
 
