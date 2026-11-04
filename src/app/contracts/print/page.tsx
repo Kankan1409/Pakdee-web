@@ -60,3 +60,4 @@ export default function ContractPrintPage() {
 
   return <ContractPrintView initialData={draftData} property={property} />;
 }
+
