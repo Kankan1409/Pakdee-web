@@ -62,6 +62,7 @@ const ROOM_STATUS_CONFIG: Record<
 
 interface HeaderProps {
   currentBuilding: string;
+  buildingName?: string;
   onBuildingChange: (bldg: string) => void;
   onOpenQuickMeter: () => void;
   onOpenNewContract: () => void;
@@ -87,6 +88,7 @@ interface HeaderProps {
 
 export function Header({
   currentBuilding,
+  buildingName,
   onBuildingChange,
   onOpenQuickMeter,
   onOpenNewContract,
@@ -258,7 +260,7 @@ export function Header({
                 : "text-[var(--muted)] hover:text-[var(--foreground)]"
             )}
           >
-            อาคาร A ({totalRooms || 24}{propertyPlan === "starter" ? "/30 ห้อง (Starter)" : " ห้อง"})
+            {buildingName || "อาคาร 1"} ({totalRooms ?? rooms.length}{propertyPlan === "starter" ? "/30 ห้อง (Starter)" : " ห้อง"})
           </button>
           <button
             onClick={() => {
