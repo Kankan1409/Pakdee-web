@@ -215,13 +215,32 @@ function setLocal<T>(key: string, value: T): void {
   }
 }
 
-// Realtime Channel Handle for Supabase Live Cloud Updates
+// Realtime Channel Handle for Supabase Live Cloud Updates (Singleton Safe)
 let realtimeChannel: any = null;
 
 function setupRealtimeSync(): void {
-  if (typeof window === "undefined" || realtimeChannel) return;
+  if (typeof window === "undefined") return;
+
+  // 1. Check window global to survive Hot Module Reloading (HMR) and Fast Refresh
+  if (realtimeChannel || (window as any).__PAKDEE_REALTIME_CHANNEL__) {
+    realtimeChannel = realtimeChannel || (window as any).__PAKDEE_REALTIME_CHANNEL__;
+    return;
+  }
+
   try {
-    realtimeChannel = supabase
+    // 2. Check if a channel with this topic is already active in Supabase client cache
+    const existing = supabase
+      .getChannels()
+      .find((c: any) => c.topic === "realtime:pakdee_store_changes" || c.topic === "pakdee_store_changes");
+
+    if (existing) {
+      realtimeChannel = existing;
+      (window as any).__PAKDEE_REALTIME_CHANNEL__ = existing;
+      return;
+    }
+
+    // 3. Create fresh channel only if no active channel exists
+    const channel = supabase
       .channel("pakdee_store_changes")
       .on(
         "postgres_changes",
@@ -250,8 +269,11 @@ function setupRealtimeSync(): void {
       .subscribe((status: string) => {
         console.log("[Supabase Realtime] pakdee_store subscription status:", status);
       });
-  } catch (err) {
-    console.warn("[Supabase Realtime] setup failed:", err);
+
+    realtimeChannel = channel;
+    (window as any).__PAKDEE_REALTIME_CHANNEL__ = channel;
+  } catch (err: any) {
+    console.warn("[Supabase Realtime] setup safely handled:", err?.message);
   }
 }
 
