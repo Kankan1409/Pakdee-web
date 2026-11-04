@@ -99,12 +99,36 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const nowIso = new Date().toISOString();
 
-    if (body.key && body.value !== undefined) {
-      const { error } = await supabase.from("pakdee_store").upsert({
-        key: body.key,
-        value: body.value,
-        updated_at: nowIso,
+    if (Array.isArray(body.deleteKeys) && body.deleteKeys.length > 0) {
+      const keysToDelete = new Set<string>();
+      body.deleteKeys.forEach((k: string) => {
+        keysToDelete.add(k);
+        keysToDelete.add(normalizeKey(k));
       });
+      await supabase
+        .from("pakdee_store")
+        .delete()
+        .in("key", Array.from(keysToDelete));
+    }
+
+    if (body.key && body.value !== undefined) {
+      const normKey = normalizeKey(body.key);
+      const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [
+        {
+          key: body.key,
+          value: body.value,
+          updated_at: nowIso,
+        },
+      ];
+      if (normKey !== body.key) {
+        rowsToUpsert.push({
+          key: normKey,
+          value: body.value,
+          updated_at: nowIso,
+        });
+      }
+
+      const { error } = await supabase.from("pakdee_store").upsert(rowsToUpsert);
 
       if (error) {
         console.warn("[Supabase API] Upsert error:", error.message);
@@ -114,12 +138,16 @@ export async function POST(req: NextRequest) {
         );
       }
     } else if (body.data && typeof body.data === "object") {
-      const rows = Object.entries(body.data).map(([k, v]) => ({
-        key: k,
-        value: v,
-        updated_at: nowIso,
-      }));
+      const rowMap = new Map<string, { key: string; value: any; updated_at: string }>();
+      Object.entries(body.data).forEach(([k, v]) => {
+        rowMap.set(k, { key: k, value: v, updated_at: nowIso });
+        const normKey = normalizeKey(k);
+        if (normKey !== k) {
+          rowMap.set(normKey, { key: normKey, value: v, updated_at: nowIso });
+        }
+      });
 
+      const rows = Array.from(rowMap.values());
       if (rows.length > 0) {
         const { error } = await supabase.from("pakdee_store").upsert(rows);
         if (error) {

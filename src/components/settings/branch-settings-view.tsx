@@ -231,11 +231,13 @@ export function BranchSettingsView({
       updatedList[0].isDefault = true;
     }
 
-    handleChange("roomTypes", updatedList);
+    const updatedForm = { ...formData, roomTypes: updatedList };
+    setFormData(updatedForm);
+    onSaveSettings(updatedForm);
     setIsRoomTypeModalOpen(false);
     globalPopup.info(
       editingRoomTypeId ? "แก้ไขประเภทห้องสำเร็จ" : "เพิ่มประเภทห้องสำเร็จ",
-      `บันทึกข้อมูลประเภทห้อง "${nameTrimmed}" เรียบร้อยแล้ว (กด "บันทึกการตั้งค่า" เพื่อนำไปใช้ถาวร)`
+      `บันทึกข้อมูลประเภทห้อง "${nameTrimmed}" ลงฐานข้อมูลเรียบร้อยแล้ว`
     );
   };
 
@@ -258,8 +260,10 @@ export function BranchSettingsView({
     if (rt.isDefault && updatedList.length > 0) {
       updatedList[0].isDefault = true;
     }
-    handleChange("roomTypes", updatedList);
-    globalPopup.info("ลบประเภทห้องแล้ว", `ลบประเภทห้อง "${rt.name}" เรียบร้อยแล้ว`);
+    const updatedForm = { ...formData, roomTypes: updatedList };
+    setFormData(updatedForm);
+    onSaveSettings(updatedForm);
+    globalPopup.info("ลบประเภทห้องแล้ว", `ลบประเภทห้อง "${rt.name}" ออกจากฐานข้อมูลเรียบร้อยแล้ว`);
   };
 
   const handleSetDefaultRoomType = (id: string) => {
@@ -267,12 +271,16 @@ export function BranchSettingsView({
       ...rt,
       isDefault: rt.id === id,
     }));
-    handleChange("roomTypes", updatedList);
+    const updatedForm = { ...formData, roomTypes: updatedList };
+    setFormData(updatedForm);
+    onSaveSettings(updatedForm);
     globalPopup.info("เปลี่ยนประเภทห้องเริ่มต้น", "ตั้งค่าประเภทห้องเริ่มต้นสำหรับสร้างห้องพักใหม่เรียบร้อยแล้ว");
   };
 
   const handleResetRoomTypesToDefault = () => {
-    handleChange("roomTypes", defaultRoomTypes);
+    const updatedForm = { ...formData, roomTypes: defaultRoomTypes };
+    setFormData(updatedForm);
+    onSaveSettings(updatedForm);
     globalPopup.info("คืนค่าเริ่มต้นสำเร็จ", "รีเซ็ตประเภทห้องพักเป็นค่ามาตรฐาน 4 ประเภทเรียบร้อยแล้ว");
   };
 

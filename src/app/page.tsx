@@ -890,17 +890,20 @@ export default function HomePage() {
       iconType: "delete",
       onConfirm: async () => {
         try {
-          setRooms((prev) => prev.filter((r) => r.id !== roomId));
-          if (selectedRoom?.id === roomId) {
-            setSelectedRoom(null);
-          }
-          const success = await DatabaseService.deleteRoom(roomId);
-          const freshProps = await DatabaseService.getAllProperties();
-          setBranches(freshProps);
-          if (success) {
+          const result = await DatabaseService.deleteRoom(roomId);
+          if (result.success) {
+            setRooms((prev) => prev.filter((r) => r.id !== roomId));
+            setInvoices((prev) => prev.filter((inv) => inv.roomNumber !== target.roomNumber));
+            setContracts((prev) => prev.filter((c) => c.roomNumber !== target.roomNumber));
+            setDailyBookings((prev) => prev.filter((b) => b.roomNumber !== target.roomNumber));
+            if (selectedRoom?.id === roomId) {
+              setSelectedRoom(null);
+            }
+            const freshProps = await DatabaseService.getAllProperties();
+            setBranches(freshProps);
             showToast(`ลบห้อง ${target.roomNumber} เรียบร้อยแล้ว`, "success");
           } else {
-            showToast("เกิดข้อผิดพลาดในการลบห้องจากฐานข้อมูล", "error");
+            showToast(result.error || "เกิดข้อผิดพลาดในการลบห้องจากฐานข้อมูล", "error");
           }
         } catch (err) {
           console.error("Error deleting room:", err);
@@ -942,17 +945,21 @@ export default function HomePage() {
       iconType: "delete",
       onConfirm: async () => {
         try {
-          setRooms((prev) => prev.filter((r) => !roomIds.includes(r.id)));
-          if (selectedRoom && roomIds.includes(selectedRoom.id)) {
-            setSelectedRoom(null);
-          }
-          const success = await DatabaseService.deleteRooms(roomIds);
-          const freshProps = await DatabaseService.getAllProperties();
-          setBranches(freshProps);
-          if (success) {
+          const deletedNumbers = new Set(targetRooms.map((r) => r.roomNumber));
+          const result = await DatabaseService.deleteRooms(roomIds);
+          if (result.success) {
+            setRooms((prev) => prev.filter((r) => !roomIds.includes(r.id)));
+            setInvoices((prev) => prev.filter((inv) => !deletedNumbers.has(inv.roomNumber)));
+            setContracts((prev) => prev.filter((c) => !deletedNumbers.has(c.roomNumber)));
+            setDailyBookings((prev) => prev.filter((b) => !deletedNumbers.has(b.roomNumber)));
+            if (selectedRoom && roomIds.includes(selectedRoom.id)) {
+              setSelectedRoom(null);
+            }
+            const freshProps = await DatabaseService.getAllProperties();
+            setBranches(freshProps);
             showToast(`ลบห้องพักจำนวน ${roomIds.length} ห้องเรียบร้อยแล้ว`, "success");
           } else {
-            showToast("เกิดข้อผิดพลาดในการลบห้องพักจากฐานข้อมูล", "error");
+            showToast(result.error || "เกิดข้อผิดพลาดในการลบห้องพักจากฐานข้อมูล", "error");
           }
         } catch (err) {
           console.error("Error batch deleting rooms:", err);
@@ -988,6 +995,13 @@ export default function HomePage() {
               waterRate: 18,
               plan: "starter",
             });
+            setRooms([]);
+            setInvoices([]);
+            setTenants([]);
+            setContracts([]);
+            setRepairs([]);
+            setExpenses([]);
+            setDailyBookings([]);
             setCurrentTab("branches");
             setIsBranchSelectorOpen(true);
           }
