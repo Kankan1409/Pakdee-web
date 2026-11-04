@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { PakdeeLogo } from "@/components/ui/pakdee-logo";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -24,6 +25,7 @@ import {
   HelpCircle,
   RefreshCw,
   Check,
+  UserPlus,
 } from "lucide-react";
 
 export function LoginView() {
@@ -309,6 +311,20 @@ export function LoginView() {
                 )}
               </button>
             </form>
+
+            {/* Register Link Section */}
+            <div className="mt-6 pt-5 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <span className="text-slate-500 font-medium">
+                ยังไม่มีบัญชีผู้ใช้งานในระบบ PAKDEE?
+              </span>
+              <Link
+                href="/register"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/80 text-emerald-800 font-bold transition cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                <span>สมัครสมาชิกใหม่ (Register)</span>
+              </Link>
+            </div>
           </div>
 
           {/* 5. Sunlight Bento Feature Highlights */}
