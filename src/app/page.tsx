@@ -537,18 +537,13 @@ export default function HomePage() {
       loadData();
     };
 
-    const handleSyncError = () => {
-      showToast("บันทึกลง Supabase ไม่สำเร็จ กรุณาลองใหม่", "error");
-    };
     if (typeof window !== "undefined") {
-      window.addEventListener("pakdee_sync_error", handleSyncError);
       window.addEventListener("pakdee_db_updated", handleRealtimeUpdate);
     }
 
     return () => {
       if (typeof window !== "undefined") {
         window.removeEventListener("pakdee_db_updated", handleRealtimeUpdate);
-        window.removeEventListener("pakdee_sync_error", handleSyncError);
       }
     };
   }, [loadData]);
@@ -896,20 +891,17 @@ export default function HomePage() {
       onConfirm: async () => {
         try {
           const result = await DatabaseService.deleteRoom(roomId);
-          if (result.success) {
-            setRooms((prev) => prev.filter((r) => r.id !== roomId));
-            setInvoices((prev) => prev.filter((inv) => inv.roomNumber !== target.roomNumber));
-            setContracts((prev) => prev.filter((c) => c.roomNumber !== target.roomNumber));
-            setDailyBookings((prev) => prev.filter((b) => b.roomNumber !== target.roomNumber));
-            if (selectedRoom?.id === roomId) {
-              setSelectedRoom(null);
-            }
-            const freshProps = await DatabaseService.getAllProperties();
-            setBranches(freshProps);
-            showToast(`ลบห้อง ${target.roomNumber} เรียบร้อยแล้ว`, "success");
-          } else {
+          if (!result.success) {
             showToast(result.error || "เกิดข้อผิดพลาดในการลบห้องจากฐานข้อมูล", "error");
+            return;
           }
+          setRooms((prev) => prev.filter((r) => r.id !== roomId));
+          if (selectedRoom?.id === roomId) {
+            setSelectedRoom(null);
+          }
+          const freshProps = await DatabaseService.getAllProperties();
+          setBranches(freshProps);
+          showToast(`ลบห้อง ${target.roomNumber} เรียบร้อยแล้ว`, "success");
         } catch (err) {
           console.error("Error deleting room:", err);
           showToast("เกิดข้อผิดพลาดในการลบห้อง", "error");
@@ -950,22 +942,18 @@ export default function HomePage() {
       iconType: "delete",
       onConfirm: async () => {
         try {
-          const deletedNumbers = new Set(targetRooms.map((r) => r.roomNumber));
           const result = await DatabaseService.deleteRooms(roomIds);
-          if (result.success) {
-            setRooms((prev) => prev.filter((r) => !roomIds.includes(r.id)));
-            setInvoices((prev) => prev.filter((inv) => !deletedNumbers.has(inv.roomNumber)));
-            setContracts((prev) => prev.filter((c) => !deletedNumbers.has(c.roomNumber)));
-            setDailyBookings((prev) => prev.filter((b) => !deletedNumbers.has(b.roomNumber)));
-            if (selectedRoom && roomIds.includes(selectedRoom.id)) {
-              setSelectedRoom(null);
-            }
-            const freshProps = await DatabaseService.getAllProperties();
-            setBranches(freshProps);
-            showToast(`ลบห้องพักจำนวน ${roomIds.length} ห้องเรียบร้อยแล้ว`, "success");
-          } else {
+          if (!result.success) {
             showToast(result.error || "เกิดข้อผิดพลาดในการลบห้องพักจากฐานข้อมูล", "error");
+            return;
           }
+          setRooms((prev) => prev.filter((r) => !roomIds.includes(r.id)));
+          if (selectedRoom && roomIds.includes(selectedRoom.id)) {
+            setSelectedRoom(null);
+          }
+          const freshProps = await DatabaseService.getAllProperties();
+          setBranches(freshProps);
+          showToast(`ลบห้องพักจำนวน ${roomIds.length} ห้องเรียบร้อยแล้ว`, "success");
         } catch (err) {
           console.error("Error batch deleting rooms:", err);
           showToast("เกิดข้อผิดพลาดในการลบห้องพัก", "error");
@@ -1000,13 +988,6 @@ export default function HomePage() {
               waterRate: 18,
               plan: "starter",
             });
-            setRooms([]);
-            setInvoices([]);
-            setTenants([]);
-            setContracts([]);
-            setRepairs([]);
-            setExpenses([]);
-            setDailyBookings([]);
             setCurrentTab("branches");
             setIsBranchSelectorOpen(true);
           }

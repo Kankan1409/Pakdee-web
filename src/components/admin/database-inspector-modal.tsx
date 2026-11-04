@@ -80,49 +80,35 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "json">("table");
 
-  // Fetch counts for all separate relational tables from Supabase
+  // Fetch counts for all tables (Supabase or Local fallback)
   const fetchCounts = async () => {
     const newCounts: Record<TableName, number> = { ...counts };
-    let storeMap: Record<string, any> = {};
-    try {
-      const { data: storeRows } = await supabase.from("pakdee_store").select("key, value, updated_at");
-      if (storeRows && Array.isArray(storeRows)) {
-        const sorted = [...storeRows].sort((a: any, b: any) => {
-          const tA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-          const tB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-          if (tA !== tB) return tA - tB;
-          const aPref = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
-          const bPref = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
-          return aPref - bPref;
-        });
-        sorted.forEach((r: any) => {
-          const norm = String(r.key).replace(/^pakdee_dev_/, "").replace(/^pakdee_/, "");
-          storeMap[norm] = r.value;
-        });
-      }
-    } catch {}
-
     for (const t of TABLES) {
       try {
         const { count, error } = await supabase.from(t.key).select("*", { count: "exact", head: true });
-        if (!error && count !== null && count > 0) {
+        if (!error && count !== null) {
           newCounts[t.key] = count;
           continue;
         }
       } catch {}
 
-      if (storeMap[t.key] !== undefined && storeMap[t.key] !== null) {
-        const val = storeMap[t.key];
-        newCounts[t.key] = Array.isArray(val) ? val.length : 1;
-        continue;
+      // Local storage fallback count (dedicated dev keys first)
+      if (typeof window !== "undefined") {
+        const localStored = localStorage.getItem("pakdee_dev_" + t.key) || localStorage.getItem("pakdee_" + t.key);
+        if (localStored) {
+          try {
+            const parsed = JSON.parse(localStored);
+            newCounts[t.key] = Array.isArray(parsed) ? parsed.length : 1;
+            continue;
+          } catch {}
+        }
       }
-
       newCounts[t.key] = 0;
     }
     setCounts(newCounts);
   };
 
-  // Fetch rows for active separate table from Supabase
+  // Fetch rows for active table
   const fetchTableData = async (tbl: TableName) => {
     setIsLoading(true);
     try {
@@ -133,26 +119,17 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
         return;
       }
 
-      const { data: storeRows, error: storeErr } = await supabase
-        .from("pakdee_store")
-        .select("key, value, updated_at")
-        .in("key", [`pakdee_dev_${tbl}`, tbl]);
-
-      if (!storeErr && storeRows && storeRows.length > 0) {
-        const sorted = [...storeRows].sort((a: any, b: any) => {
-          const tA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-          const tB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-          if (tA !== tB) return tB - tA;
-          const aPref = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
-          const bPref = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
-          return bPref - aPref;
-        });
-        const val = sorted[0].value;
-        if (val !== undefined && val !== null) {
-          const arrayData = Array.isArray(val) ? val : [val];
-          setData(arrayData);
-          setDataSource("supabase");
-          return;
+      // Check local storage fallback (dedicated dev keys first)
+      if (typeof window !== "undefined") {
+        const localStored = localStorage.getItem("pakdee_dev_" + tbl) || localStorage.getItem("pakdee_" + tbl);
+        if (localStored) {
+          try {
+            const parsed = JSON.parse(localStored);
+            const arrayData = Array.isArray(parsed) ? parsed : [parsed];
+            setData(arrayData);
+            setDataSource("local");
+            return;
+          } catch {}
         }
       }
 

@@ -26,10 +26,8 @@ import {
 import { BranchItem } from "@/components/branch/branch-selector-view";
 import { supabase } from "@/lib/supabase";
 import {
-  toUuid,
   syncKeyToRelationalTable,
-  loadFromRelationalTables,
-  collectUnifiedTenants,
+  syncAllToRelationalTables,
 } from "@/lib/supabase-relational";
 
 /**
@@ -60,59 +58,166 @@ const KEYS = {
   DAILY_BOOKINGS: "pakdee_dev_daily_bookings",
 };
 
-// In-Memory Supabase Cloud Synchronized Cache (Local file data/db_port3000.json disabled)
+// In-Memory Host Synchronized Cache
 const memoryDb: Record<string, any> = {};
 let isServerSynced = false;
+let lastDbMtime = 0;
 
-function normalizeKey(k: string): string {
-  return k.replace(/^pakdee_(dev|test)_/, "");
+// Resolve DB file path when running in Node.js server context
+function getDbFilePath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = eval("require")("fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = eval("require")("path");
+    const candidates = [
+      path.join(process.cwd(), "data", "db_port3000.json"),
+      path.join(process.cwd(), "Pakdee", "data", "db_port3000.json"),
+      "D:\\DESKTOP\\Pakdee\\data\\db_port3000.json",
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+    return candidates[0];
+  } catch {
+    return "";
+  }
 }
 
-function isValidUuid(str?: string | null): boolean {
-  if (!str) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+// Synchronize in-memory cache with host file DB when running on the server
+function syncServerDbIfNeeded(): void {
+  if (typeof window !== "undefined") return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = eval("require")("fs");
+    const filePath = getDbFilePath();
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const stats = fs.statSync(filePath);
+    if (stats.mtimeMs > lastDbMtime) {
+      lastDbMtime = stats.mtimeMs;
+      const raw = fs.readFileSync(filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      Object.assign(memoryDb, parsed);
+      isServerSynced = true;
+    }
+  } catch (e) {
+    console.warn("[DatabaseService] syncServerDbIfNeeded warning:", e);
+  }
 }
 
-// Safe In-Memory & Client Cache Helper (Backed 100% by Supabase Cloud)
+// Write to host file DB when running on the server
+function writeServerDb(key: string, value: any): void {
+  if (typeof window !== "undefined") return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = eval("require")("fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = eval("require")("path");
+    const filePath = getDbFilePath() || path.join(process.cwd(), "data", "db_port3000.json");
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    let currentDb: Record<string, any> = {};
+    if (fs.existsSync(filePath)) {
+      try {
+        currentDb = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      } catch {}
+    }
+    currentDb[key] = value;
+    const normKey = key.replace(/^pakdee_(dev|test)_/, "");
+    currentDb[normKey] = value;
+    fs.writeFileSync(filePath, JSON.stringify(currentDb, null, 2), "utf8");
+    try {
+      lastDbMtime = fs.statSync(filePath).mtimeMs;
+    } catch {}
+
+    // Also sync server-side changes (e.g. LINE webhook room bindings & invoice status) to Supabase
+    const nowIso = new Date().toISOString();
+    const rowsToUpsert = [{ key, value, updated_at: nowIso }];
+    if (normKey !== key) {
+      rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
+    }
+    supabase
+      .from("pakdee_store")
+      .upsert(rowsToUpsert)
+      .then(() => {});
+    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+  } catch (e) {
+    console.warn("[DatabaseService] writeServerDb warning:", e);
+  }
+}
+
+// Safe Local & Server-Synchronized Storage Helper
 function getLocal<T>(key: string, fallback: T): T {
-  // 1. In-memory cache synced from Supabase Cloud has highest priority
+  // 1. Sync from server DB file if in Node.js runtime
+  if (typeof window === "undefined") {
+    syncServerDbIfNeeded();
+  }
+
+  // 2. In-memory cache synced from Host Server has highest priority
   if (memoryDb[key] !== undefined && memoryDb[key] !== null) {
     return memoryDb[key] as T;
   }
-  const normKey = normalizeKey(key);
+  const normKey = key.replace(/^pakdee_(dev|test)_/, "");
   if (memoryDb[normKey] !== undefined && memoryDb[normKey] !== null) {
     return memoryDb[normKey] as T;
   }
 
-  return fallback;
-}
-
-function reportSyncFailure(error: unknown): void {
-  isServerSynced = false;
-  console.error("[Supabase] Save failed:", error);
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("pakdee_sync_error"));
+  // 3. Client-side LocalStorage fallback
+  if (typeof window === "undefined") return fallback;
+  try {
+    let raw = localStorage.getItem(key) || localStorage.getItem(normKey);
+    // Backward compatibility: If dev key not found yet, check legacy key
+    if (!raw && key.startsWith("pakdee_dev_")) {
+      const legacyKey = key.replace("pakdee_dev_", "pakdee_");
+      raw = localStorage.getItem(legacyKey);
+      if (raw) {
+        localStorage.setItem(key, raw);
+      }
+    }
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as T;
+    memoryDb[key] = parsed;
+    return parsed;
+  } catch {
+    return fallback;
   }
 }
 
 function setLocal<T>(key: string, value: T): void {
-  // 1. Immediately update in-memory cache for both prefixed and normalized key
-  const normKey = normalizeKey(key);
+  // 1. Immediately update in-memory cache
   memoryDb[key] = value;
+  const normKey = key.replace(/^pakdee_(dev|test)_/, "");
   memoryDb[normKey] = value;
 
-  // 2. Sync directly to the corresponding separate relational table in Supabase
-  // (properties, buildings, branch_settings, tenants, rooms, contracts, invoices, invoice_items, meter_readings, repairs, expenses, daily_bookings, activity_logs)
-  syncKeyToRelationalTable(normKey, value, memoryDb).catch((err) => {
-    reportSyncFailure(err);
+  // 2. Server-side Node.js File Database Sync
+  if (typeof window === "undefined") {
+    writeServerDb(key, value);
+    return;
+  }
+
+  // 3. Save to client LocalStorage (cache mirror)
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn(`Failed to save to localStorage [${key}]:`, e);
+  }
+
+  // 4. Persist directly to Host Machine Database via /api/db
+  fetch("/api/db", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, value }),
+    keepalive: true,
+  }).catch((err) => {
+    console.warn(`[HostDB] Sync failed for [${key}]:`, err);
   });
 
-  // 3. Also keep pakdee_store synced for extended JSON metadata (e.g. 14 clauses, roomTypes)
+  // 5. Live persist to Supabase Cloud pakdee_store (both prefixed and normalized key) + relational tables mirror
   try {
     const nowIso = new Date().toISOString();
-    const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [
-      { key, value, updated_at: nowIso },
-    ];
+    const rowsToUpsert = [{ key, value, updated_at: nowIso }];
     if (normKey !== key) {
       rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
     }
@@ -120,10 +225,11 @@ function setLocal<T>(key: string, value: T): void {
       .from("pakdee_store")
       .upsert(rowsToUpsert)
       .then(({ error }: any) => {
-        if (error) reportSyncFailure(error);
-      }, reportSyncFailure);
+        if (error) console.warn(`[Supabase] Client upsert error [${key}]:`, error.message);
+      });
+    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
   } catch (err) {
-    reportSyncFailure(err);
+    console.warn(`[Supabase] Client upsert skipped [${key}]:`, err);
   }
 }
 
@@ -151,7 +257,7 @@ function setupRealtimeSync(): void {
       return;
     }
 
-    // 3. Create fresh channel listening to all public tables in Supabase
+    // 3. Create fresh channel only if no active channel exists
     const channel = supabase
       .channel("pakdee_store_changes")
       .on(
@@ -159,23 +265,27 @@ function setupRealtimeSync(): void {
         {
           event: "*",
           schema: "public",
+          table: "pakdee_store",
         },
         (payload: any) => {
-          if (payload?.table === "pakdee_store" && payload?.new && payload.new.key) {
+          if (payload?.new && payload.new.key) {
             const { key, value } = payload.new;
-            const normKey = normalizeKey(key);
             memoryDb[key] = value;
+            const normKey = key.replace(/^pakdee_(dev|test)_/, "");
             memoryDb[normKey] = value;
-          }
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(
-              new CustomEvent("pakdee_db_updated", { detail: payload })
-            );
+            try {
+              localStorage.setItem(key, JSON.stringify(value));
+            } catch {}
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("pakdee_db_updated", { detail: { key, value } })
+              );
+            }
           }
         }
       )
       .subscribe((status: string) => {
-        console.log("[Supabase Realtime] relational tables subscription status:", status);
+        console.log("[Supabase Realtime] pakdee_store subscription status:", status);
       });
 
     realtimeChannel = channel;
@@ -187,44 +297,86 @@ function setupRealtimeSync(): void {
 
 export const DatabaseService = {
   /**
-   * Initialize and synchronize 100% with Supabase Cloud (pakdee_store)
-   * Local file data/db_port3000.json is disabled
+   * Initialize and synchronize with Supabase Cloud & Host Machine Database (/api/db)
+   * Ensures devices connecting via Cloud or LAN always have the authoritative live data
    */
   async init(): Promise<boolean> {
-    if (typeof window !== "undefined") {
-      // Activate live real-time subscription on Supabase Cloud
-      setupRealtimeSync();
+    if (typeof window === "undefined") {
+      syncServerDbIfNeeded();
+      return true;
     }
 
-    // Loading (including Realtime refreshes) must never write back to the cloud.
-    // Build a complete snapshot first so a failed read cannot replace good cache data.
+    // 1. Activate live real-time subscription on Supabase Cloud
+    setupRealtimeSync();
+
+    // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
     try {
       const { data: cloudStore, error } = await supabase
         .from("pakdee_store")
         .select("key, value, updated_at");
-      if (error) throw new Error(error.message, { cause: error });
-      const snapshot: Record<string, any> = {};
-      const sortedRows = [...(cloudStore || [])].sort((a, b) =>
-        (Date.parse(a.updated_at || "") || 0) - (Date.parse(b.updated_at || "") || 0)
-      );
-      for (const row of sortedRows) {
-        const key = normalizeKey(row.key);
-        snapshot[key] = row.value;
-        snapshot[`pakdee_dev_${key}`] = row.value;
+
+      if (!error && cloudStore && cloudStore.length > 0) {
+        const sortedRows = [...cloudStore].sort((a: any, b: any) => {
+          const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+          const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+          if (timeA !== timeB) return timeA - timeB;
+          const aIsDev = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
+          const bIsDev = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
+          return aIsDev - bIsDev;
+        });
+
+        sortedRows.forEach((row: any) => {
+          memoryDb[row.key] = row.value;
+          const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
+          memoryDb[normKey] = row.value;
+          if (row.key === normKey) {
+            memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
+          }
+          try {
+            localStorage.setItem(row.key, JSON.stringify(row.value));
+          } catch {}
+        });
+
+        // Background mirror to separate Supabase relational tables (non-blocking, write-only)
+        syncAllToRelationalTables(memoryDb).catch(() => {});
+
+        // Sync loaded cloud data to local server /api/db so server-side LINE routes (/api/line/send-invoice, /api/line/webhook) have latest data
+        fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: memoryDb }),
+        }).catch(() => {});
+
+        isServerSynced = true;
+        console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
+        return true;
+      } else if (error) {
+        console.warn("[Supabase Cloud Direct] Supabase query warning:", error.message);
       }
-      const { data: relationalData } = await loadFromRelationalTables(snapshot);
-      for (const [key, value] of Object.entries(relationalData)) {
-        snapshot[key] = value;
-        snapshot[`pakdee_dev_${key}`] = value;
-      }
-      for (const key of Object.keys(memoryDb)) delete memoryDb[key];
-      Object.assign(memoryDb, snapshot);
-      isServerSynced = true;
-      return true;
-    } catch (error) {
-      isServerSynced = false;
-      throw error;
+    } catch (e: any) {
+      console.warn("[Supabase Cloud Direct] Cloud fetch failed, falling back to local server:", e?.message);
     }
+
+    // 3. Fallback to local server /api/db only when offline
+    try {
+      const res = await fetch("/api/db", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          Object.entries(json.data).forEach(([k, v]) => {
+            memoryDb[k] = v;
+            try {
+              localStorage.setItem(k, JSON.stringify(v));
+            } catch {}
+          });
+          isServerSynced = true;
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn("[DatabaseService] Offline fallback to localStorage:", err);
+    }
+    return false;
   },
 
   isServerSynced(): boolean {
@@ -232,51 +384,57 @@ export const DatabaseService = {
   },
 
   /**
-   * Persist multiple keys directly to Supabase Cloud relational tables + pakdee_store
+   * Atomically persist multiple keys to memory, localStorage, and Host Machine Database (/api/db)
    */
   async persistBatch(data: Record<string, any>): Promise<boolean> {
-    // 1. Update in-memory cache for both prefixed and normalized keys
-    const nowIso = new Date().toISOString();
-    const rowMap = new Map<string, { key: string; value: any; updated_at: string }>();
-    const normEntries: [string, any][] = [];
-
+    // 1. Update in-memory cache and localStorage
     Object.entries(data).forEach(([key, val]) => {
-      const normKey = normalizeKey(key);
       memoryDb[key] = val;
+      const normKey = key.replace(/^pakdee_(dev|test)_/, "");
       memoryDb[normKey] = val;
-      normEntries.push([normKey, val]);
-      rowMap.set(key, { key, value: val, updated_at: nowIso });
-      if (normKey !== key) {
-        rowMap.set(normKey, { key: normKey, value: val, updated_at: nowIso });
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(key, JSON.stringify(val));
+        } catch {}
       }
     });
 
-    // 2. Persist to separate relational tables in Supabase
+    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + relational tables mirror
     try {
-      for (const [normKey, val] of normEntries) {
-        await syncKeyToRelationalTable(normKey, val, memoryDb);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Relational] Batch relational sync warning:", e?.message);
-      isServerSynced = false;
-      throw e;
-    }
-
-    // 3. Also persist to pakdee_store for extended metadata
-    try {
-      const rows = Array.from(rowMap.values());
-      if (rows.length > 0) {
-        const { error } = await supabase.from("pakdee_store").upsert(rows);
-        if (error) {
-          throw new Error(error.message, { cause: error });
+      const nowIso = new Date().toISOString();
+      const rowMap = new Map<string, { key: string; value: any; updated_at: string }>();
+      Object.entries(data).forEach(([k, v]) => {
+        const normKey = k.replace(/^pakdee_(dev|test)_/, "");
+        rowMap.set(k, { key: k, value: v, updated_at: nowIso });
+        if (normKey !== k) {
+          rowMap.set(normKey, { key: normKey, value: v, updated_at: nowIso });
         }
-      }
+        syncKeyToRelationalTable(normKey, v, memoryDb).catch(() => {});
+      });
+      const rows = Array.from(rowMap.values());
+      supabase
+        .from("pakdee_store")
+        .upsert(rows)
+        .then(({ error }: any) => {
+          if (error) console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
+        });
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
-      isServerSynced = false;
-      throw e;
     }
 
+    // 3. Secondary: Background sync to local /api/db mirror
+    if (typeof window !== "undefined") {
+      try {
+        fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data }),
+          keepalive: true,
+        }).catch(() => {});
+      } catch {}
+    }
+
+    return true;
     return true;
   },
 
@@ -520,23 +678,15 @@ export const DatabaseService = {
 
   async deleteBranch(propertyId: string): Promise<boolean> {
     const current = await this.getAllProperties();
-    const targetBranch = current.find((p) => p.id === propertyId);
     const filteredProps = current.filter((p) => p.id !== propertyId);
     setLocal(KEYS.PROPERTIES, filteredProps);
 
     // Clean up isolated data belonging to this branch
     const allRooms = this.getAllRawRooms();
-    const branchRoomNumbers = allRooms
-      .filter((r) => (r.propertyId || "prop-1") === propertyId)
-      .map((r) => r.roomNumber);
     const allInvoices = this.getAllRawInvoices();
     const allContracts = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
     const allRepairs = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
     const allExpenses = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
-    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const allDailyBookings = getLocal<DailyBooking[]>(KEYS.DAILY_BOOKINGS, []);
-    const allMeterReadings = getLocal<any[]>(KEYS.METER_READINGS, []);
-    const allBroadcasts = getLocal<BroadcastItem[]>(KEYS.BROADCASTS, []);
 
     const batchPayload: Record<string, any> = {
       [KEYS.PROPERTIES]: filteredProps,
@@ -545,10 +695,6 @@ export const DatabaseService = {
       [KEYS.CONTRACTS]: allContracts.filter((c) => (c.propertyId || "prop-1") !== propertyId),
       [KEYS.REPAIRS]: allRepairs.filter((r) => (r.propertyId || "prop-1") !== propertyId),
       [KEYS.EXPENSES]: allExpenses.filter((e) => (e.propertyId || "prop-1") !== propertyId),
-      [KEYS.TENANTS]: allTenants.filter((t) => (t.propertyId || "prop-1") !== propertyId),
-      [KEYS.DAILY_BOOKINGS]: allDailyBookings.filter((b) => (b.propertyId || "prop-1") !== propertyId),
-      [KEYS.METER_READINGS]: allMeterReadings.filter((m) => (m.property_id || "prop-1") !== propertyId),
-      [KEYS.BROADCASTS]: allBroadcasts.filter((b) => (b.propertyId || "prop-1") !== propertyId),
     };
 
     if (this.getActivePropertyId() === propertyId) {
@@ -562,24 +708,11 @@ export const DatabaseService = {
 
     await this.persistBatch(batchPayload);
 
-    // Remove branch-specific settings from memory and Supabase
-    const bKey = this.getBranchSettingsKey(propertyId);
-    const normBKey = normalizeKey(bKey);
-    delete memoryDb[normBKey];
-    try {
-      await supabase.from("pakdee_store").delete().in("key", [bKey, normBKey]);
-      if (isValidUuid(propertyId)) {
-        await supabase.from("properties").delete().eq("id", propertyId);
-      }
-      if (targetBranch?.name) {
-        await supabase.from("properties").delete().eq("name", targetBranch.name);
-        await supabase.from("branch_settings").delete().eq("branch_name", targetBranch.name);
-      }
-      if (branchRoomNumbers.length > 0) {
-        await supabase.from("rooms").delete().in("room_number", branchRoomNumbers);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete branch relational cleanup warning:", e?.message);
+    // Remove branch-specific settings from local cache
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(this.getBranchSettingsKey(propertyId));
+      } catch {}
     }
 
     await this.logActivity("DELETE", "SETTINGS", `ลบสาขาหอพัก ID: ${propertyId}`, propertyId);
@@ -866,118 +999,65 @@ export const DatabaseService = {
     const target = allRooms.find((r) => r.id === roomId);
     if (!target) return { success: false, error: "ไม่พบข้อมูลห้องพัก" };
 
-    // Safety Guard: Check if room has active tenant currently occupying the room
-    if (target.status === "occupied" || target.status === "daily" || target.status === "overdue" || !!target.currentTenant) {
+    // Safety Guard: Check if room has active tenant
+    if (target.status === "occupied" || target.status === "daily" || target.status === "overdue" || target.currentTenant) {
       return { success: false, error: `ไม่สามารถลบห้อง ${target.roomNumber} ได้เนื่องจากยังมีผู้เช่าพักอาศัยอยู่ กรุณาย้ายหรือเช็คเอาท์ผู้เช่าออกก่อน` };
     }
 
-    const targetPropId = target.propertyId || "prop-1";
-    const updatedRooms = allRooms.filter((r) => r.id !== roomId);
+    const updated = allRooms.filter((r) => r.id !== roomId);
+    setLocal(KEYS.ROOMS, updated);
 
-    // Clean up room's history (invoices, meter readings, contracts, daily bookings) for this branch as promised in UI
+    // Clean up any old invoices belonging to the deleted vacant room
     const allInvoices = this.getAllRawInvoices();
-    const updatedInvoices = allInvoices.filter(
-      (inv) => !((inv.propertyId || "prop-1") === targetPropId && inv.roomNumber === target.roomNumber)
+    const filteredInvoices = allInvoices.filter(
+      (inv) => !(inv.roomNumber === target.roomNumber && (!inv.propertyId || !target.propertyId || inv.propertyId === target.propertyId))
     );
-    const allContracts = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
-    const updatedContracts = allContracts.filter(
-      (c) => !((c.propertyId || "prop-1") === targetPropId && c.roomNumber === target.roomNumber)
-    );
-    const allDaily = getLocal<DailyBooking[]>(KEYS.DAILY_BOOKINGS, []);
-    const updatedDaily = allDaily.filter(
-      (b) => !((b.propertyId || "prop-1") === targetPropId && b.roomNumber === target.roomNumber)
-    );
-    const allMeters = getLocal<any[]>(KEYS.METER_READINGS, []);
-    const updatedMeters = allMeters.filter(
-      (m) => !(m.room_id === roomId || ((m.property_id || "prop-1") === targetPropId && m.room_number === target.roomNumber))
-    );
-
-    await this.persistBatch({
-      [KEYS.ROOMS]: updatedRooms,
-      [KEYS.INVOICES]: updatedInvoices,
-      [KEYS.CONTRACTS]: updatedContracts,
-      [KEYS.DAILY_BOOKINGS]: updatedDaily,
-      [KEYS.METER_READINGS]: updatedMeters,
-    });
-
-    // Delete from Supabase relational tables as well
-    try {
-      if (isValidUuid(roomId)) {
-        await supabase.from("rooms").delete().eq("id", roomId);
-      }
-      await supabase.from("rooms").delete().eq("room_number", target.roomNumber);
-      await supabase.from("contracts").delete().eq("room_number", target.roomNumber);
-      await supabase.from("daily_bookings").delete().eq("room_number", target.roomNumber);
-      await supabase.from("invoices").delete().eq("room_number", target.roomNumber);
-      await supabase.from("meter_readings").delete().eq("room_number", target.roomNumber);
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete room relational cleanup warning:", e?.message);
+    if (filteredInvoices.length !== allInvoices.length) {
+      setLocal(KEYS.INVOICES, filteredInvoices);
     }
 
+    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
+    if (typeof window !== "undefined") {
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          keepalive: true,
+        });
+      } catch (e) {
+        console.warn("[HostDB] Direct room status write error:", e);
+      }
+    }
     await this.logActivity("DELETE", "ROOM", `ลบห้องพัก ${target?.roomNumber || roomId}`, target?.propertyId);
     return { success: true };
   },
 
   async deleteRooms(roomIds: string[]): Promise<{ success: boolean; error?: string }> {
     const allRooms = this.getAllRawRooms();
-    const targetRooms: Room[] = [];
     // Safety check for all rooms
     for (const rid of roomIds) {
       const room = allRooms.find((r) => r.id === rid);
-      if (room) {
-        if (room.status === "occupied" || room.status === "daily" || room.status === "overdue" || !!room.currentTenant) {
-          return { success: false, error: `ไม่สามารถลบห้อง ${room.roomNumber} ได้เนื่องจากมีผู้เช่าอยู่` };
-        }
-        targetRooms.push(room);
+      if (room && (room.status === "occupied" || room.currentTenant)) {
+        return { success: false, error: `ไม่สามารถลบห้อง ${room.roomNumber} ได้เนื่องจากมีผู้เช่าอยู่` };
       }
     }
+    const updated = allRooms.filter((r) => !roomIds.includes(r.id));
+    setLocal(KEYS.ROOMS, updated);
 
-    const updatedRooms = allRooms.filter((r) => !roomIds.includes(r.id));
-    const deletedKeys = new Set(targetRooms.map((r) => `${r.propertyId || "prop-1"}:${r.roomNumber}`));
-    const deletedRoomNumbers = targetRooms.map((r) => r.roomNumber);
-
-    const allInvoices = this.getAllRawInvoices();
-    const updatedInvoices = allInvoices.filter(
-      (inv) => !deletedKeys.has(`${inv.propertyId || "prop-1"}:${inv.roomNumber}`)
-    );
-    const allContracts = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
-    const updatedContracts = allContracts.filter(
-      (c) => !deletedKeys.has(`${c.propertyId || "prop-1"}:${c.roomNumber}`)
-    );
-    const allDaily = getLocal<DailyBooking[]>(KEYS.DAILY_BOOKINGS, []);
-    const updatedDaily = allDaily.filter(
-      (b) => !deletedKeys.has(`${b.propertyId || "prop-1"}:${b.roomNumber}`)
-    );
-    const allMeters = getLocal<any[]>(KEYS.METER_READINGS, []);
-    const updatedMeters = allMeters.filter(
-      (m) => !roomIds.includes(m.room_id) && !deletedKeys.has(`${m.property_id || "prop-1"}:${m.room_number}`)
-    );
-
-    await this.persistBatch({
-      [KEYS.ROOMS]: updatedRooms,
-      [KEYS.INVOICES]: updatedInvoices,
-      [KEYS.CONTRACTS]: updatedContracts,
-      [KEYS.DAILY_BOOKINGS]: updatedDaily,
-      [KEYS.METER_READINGS]: updatedMeters,
-    });
-
-    // Delete from Supabase relational tables as well
-    try {
-      const validUuids = roomIds.filter(isValidUuid);
-      if (validUuids.length > 0) {
-        await supabase.from("rooms").delete().in("id", validUuids);
+    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
+    if (typeof window !== "undefined") {
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updated }),
+          keepalive: true,
+        });
+      } catch (e) {
+        console.warn("[HostDB] Direct room status write error:", e);
       }
-      if (deletedRoomNumbers.length > 0) {
-        await supabase.from("rooms").delete().in("room_number", deletedRoomNumbers);
-        await supabase.from("contracts").delete().in("room_number", deletedRoomNumbers);
-        await supabase.from("daily_bookings").delete().in("room_number", deletedRoomNumbers);
-        await supabase.from("invoices").delete().in("room_number", deletedRoomNumbers);
-        await supabase.from("meter_readings").delete().in("room_number", deletedRoomNumbers);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Batch delete rooms relational cleanup warning:", e?.message);
     }
-
     await this.logActivity("DELETE", "ROOM", `ลบห้องพักจำนวน ${roomIds.length} ห้องพร้อมกัน`);
     return { success: true };
   },
@@ -1073,45 +1153,41 @@ export const DatabaseService = {
   // 4. TENANTS (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   async getTenants(propertyId?: string): Promise<Tenant[]> {
-    const rawTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const rawRooms = getLocal<Room[]>(KEYS.ROOMS, []);
-    const rawContracts = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
-    const tenants = collectUnifiedTenants(rawTenants, rawRooms, rawContracts);
-    if (tenants.length !== rawTenants.length) {
+    let tenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    if (tenants.length === 0) {
+      tenants = [
+        {
+          id: "t-101",
+          propertyId: "prop-1",
+          fullName: "นายสมชาย สุขสบาย",
+          phone: "089-999-8888",
+          idCard: "1100200300400",
+          gender: "MALE",
+          age: 28,
+          lineId: "somchai_suk",
+          emergencyContact: "นางสมศรี สุขสบาย (081-111-2222)",
+          vehiclePlate: "1กข 1234 กทม.",
+          invoiceLang: "TH",
+        },
+      ];
       setLocal(KEYS.TENANTS, tenants);
     }
+
     if (propertyId) {
       return tenants.filter((t) => (t.propertyId || "prop-1") === propertyId);
     }
     return tenants;
   },
 
-  async deleteTenant(tenantId: string): Promise<boolean> {
-    const current = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const target = current.find((t) => t.id === tenantId || toUuid(t.id) === toUuid(tenantId));
-    const updated = current.filter((t) => t.id !== tenantId && toUuid(t.id) !== toUuid(tenantId));
-    await this.persistBatch({ [KEYS.TENANTS]: updated });
-    try {
-      await supabase.from("tenants").delete().eq("id", toUuid(tenantId));
-      if (target?.fullName) {
-        await supabase.from("tenants").delete().eq("full_name", target.fullName);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete tenant relational cleanup warning:", e?.message);
-    }
-    return true;
-  },
-
   async createTenant(tenantData: Omit<Tenant, "id"> & { propertyId?: string }): Promise<Tenant | null> {
     const propId = tenantData.propertyId || this.getActivePropertyId();
     const newTenant: Tenant = {
-      id: toUuid(`t-${Date.now()}-${tenantData.fullName}`),
+      id: `t-${Date.now()}`,
       propertyId: propId,
       ...tenantData,
     };
-    const current = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const updated = [newTenant, ...current.filter((t) => t.fullName !== newTenant.fullName)];
-    await this.persistBatch({ [KEYS.TENANTS]: updated });
+    const current = await this.getTenants();
+    setLocal(KEYS.TENANTS, [newTenant, ...current]);
     await this.logActivity("CREATE", "TENANT", `ลงทะเบียนผู้เช่าใหม่: ${newTenant.fullName} (${newTenant.phone})`, propId);
     return newTenant;
   },
@@ -1310,9 +1386,49 @@ export const DatabaseService = {
   // 5. INVOICES & BILLING (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   getAllRawInvoices(): Invoice[] {
-    const invoices = getLocal<Invoice[]>(KEYS.INVOICES, []);
+    let invoices = getLocal<Invoice[]>(KEYS.INVOICES, []);
     if (invoices.length === 0) {
-      return [];
+      invoices = [
+        {
+          id: "inv-202610-101",
+          propertyId: "prop-1",
+          invoiceNumber: "INV-202610-101",
+          roomNumber: "101",
+          tenantName: "นายสมชาย สุขสบาย",
+          tenantPhone: "089-999-8888",
+          billingDate: "2026-10-25",
+          dueDate: "2026-11-05",
+          totalAmount: 5064,
+          status: "paid",
+          paidAt: "2026-10-26 10:15 น.",
+          items: [
+            { name: "ค่าเช่าห้องพักประจำเดือน (ห้อง 101)", units: 1, rate: 4000, amount: 4000 },
+            { name: "ค่าไฟฟ้า (เลข 1420 ถึง 1485)", units: 65, rate: 8, amount: 520, meterPrev: 1420, meterCurr: 1485 },
+            { name: "ค่าน้ำประปา (เลข 320 ถึง 328)", units: 8, rate: 18, amount: 144, meterPrev: 320, meterCurr: 328 },
+            { name: "ค่าบริการส่วนกลางและเก็บขยะ", amount: 400 },
+          ],
+        },
+        {
+          id: "inv-202610-105",
+          propertyId: "prop-1",
+          invoiceNumber: "INV-202610-105",
+          roomNumber: "105",
+          tenantName: "นายเอกชัย รุ่งโรจน์วิริยะ",
+          tenantPhone: "087-777-6655",
+          billingDate: "2026-10-25",
+          dueDate: "2026-10-20",
+          totalAmount: 4924,
+          status: "unpaid",
+          items: [
+            { name: "ค่าเช่าห้องพักประจำเดือน (ห้อง 105)", units: 1, rate: 4000, amount: 4000 },
+            { name: "ค่าไฟฟ้า (60 หน่วย)", units: 60, rate: 8, amount: 480 },
+            { name: "ค่าน้ำประปา (8 หน่วย)", units: 8, rate: 18, amount: 144 },
+            { name: "ค่าส่วนกลาง", amount: 300 },
+          ],
+        },
+      ];
+      setLocal(KEYS.INVOICES, invoices);
+      return invoices;
     }
 
     // Auto migrate any legacy invoices missing propertyId into prop-1 and sanitize 0-unit charges
@@ -1574,79 +1690,34 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getContracts(propertyId?: string): Promise<ContractItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
     return all.filter((c) => (c.propertyId || "prop-1") === targetPropId);
   },
 
-  async deleteContract(id: string): Promise<boolean> {
-    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
-    const target = all.find((c) => c.id === id);
-    const updated = all.filter((c) => c.id !== id);
-    await this.persistBatch({ [KEYS.CONTRACTS]: updated });
-    try {
-      if (isValidUuid(id)) {
-        await supabase.from("contracts").delete().eq("id", id);
-      }
-      if (target?.contractNumber) {
-        await supabase.from("contracts").delete().eq("contract_number", target.contractNumber);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete contract relational cleanup warning:", e?.message);
-    }
-    return true;
-  },
-
   async addContract(
-    item: Omit<ContractItem, "id" | "createdAt" | "contractNumber"> & {
-      id?: string;
-      contractNumber?: string;
-      createdAt?: string;
-      propertyId?: string;
-    }
+    item: Omit<ContractItem, "id" | "createdAt" | "contractNumber"> & { propertyId?: string }
   ): Promise<ContractItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
     const newContract: ContractItem = {
       ...item,
-      id: item.id ? toUuid(item.id) : toUuid(`cnt-${Date.now()}-${item.roomNumber}`),
+      id: "cnt-" + Date.now(),
       propertyId: propId,
-      contractNumber: item.contractNumber || `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
-      createdAt: item.createdAt || new Date().toISOString().slice(0, 10),
+      contractNumber: `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
+      createdAt: new Date().toISOString().slice(0, 10),
     };
-    const updatedContracts = [newContract, ...all.filter((c) => c.contractNumber !== newContract.contractNumber)];
+    setLocal(KEYS.CONTRACTS, [newContract, ...all]);
 
-    // Ensure tenant exists in KEYS.TENANTS
-    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    let matchedTenant = allTenants.find(
-      (t) => (t.propertyId || "prop-1") === propId && t.fullName.trim() === item.tenantName.trim()
-    );
-    let updatedTenants = allTenants;
-    if (!matchedTenant) {
-      matchedTenant = {
-        id: toUuid(`t-${propId}-${item.roomNumber}-${item.tenantName}`),
-        propertyId: propId,
-        roomNumber: item.roomNumber,
-        fullName: item.tenantName,
-        phone: item.tenantPhone,
-        idCard: "-",
-      };
-      updatedTenants = [matchedTenant, ...allTenants];
-    }
-
-    // Synchronize Room to occupied in database while preserving full tenant profile if already assigned
+    // Synchronize Room to occupied in database
     const allRooms = this.getAllRawRooms();
     const updatedRooms = allRooms.map((r) => {
       if ((r.propertyId || "prop-1") === propId && r.roomNumber === item.roomNumber) {
-        const existingRoomTenant =
-          r.currentTenant && r.currentTenant.fullName.trim() === item.tenantName.trim()
-            ? r.currentTenant
-            : matchedTenant;
         return {
           ...r,
           status: "occupied" as RoomStatus,
           leaseEndDate: item.endDate,
-          currentTenant: existingRoomTenant || {
-            id: toUuid(`t-${propId}-${item.roomNumber}-${item.tenantName}`),
+          currentTenant: {
+            id: `t-${Date.now()}`,
             propertyId: propId,
             fullName: item.tenantName,
             phone: item.tenantPhone,
@@ -1656,12 +1727,7 @@ export const DatabaseService = {
       }
       return r;
     });
-
-    await this.persistBatch({
-      [KEYS.TENANTS]: updatedTenants,
-      [KEYS.ROOMS]: updatedRooms,
-      [KEYS.CONTRACTS]: updatedContracts,
-    });
+    setLocal(KEYS.ROOMS, updatedRooms);
 
     await this.logActivity("CREATE", "CONTRACT", `สร้างสัญญาเช่าห้อง ${item.roomNumber} ผู้เช่า: ${item.tenantName}`, propId);
     return newContract;
@@ -1877,24 +1943,12 @@ export const DatabaseService = {
 
   async removeDailyBooking(id: string, roomNumber?: string): Promise<boolean> {
     const all = getLocal<DailyBooking[]>(KEYS.DAILY_BOOKINGS, []);
-    const target = all.find((b) => (id && b.id === id) || (roomNumber && b.roomNumber === roomNumber));
     const updated = all.filter((b) => {
       if (id) return b.id !== id;
       if (roomNumber) return b.roomNumber !== roomNumber;
       return true;
     });
-    await this.persistBatch({ [KEYS.DAILY_BOOKINGS]: updated });
-    try {
-      if (id && isValidUuid(id)) {
-        await supabase.from("daily_bookings").delete().eq("id", id);
-      }
-      const rmNum = roomNumber || target?.roomNumber;
-      if (rmNum) {
-        await supabase.from("daily_bookings").delete().eq("room_number", rmNum);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete daily booking relational cleanup warning:", e?.message);
-    }
+    setLocal(KEYS.DAILY_BOOKINGS, updated);
     return true;
   },
 
@@ -1903,7 +1957,7 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   async getRepairs(propertyId?: string): Promise<RepairItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
+    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, initialRepairs);
     return all.filter((r) => (r.propertyId || "prop-1") === targetPropId);
   },
 
@@ -1911,7 +1965,7 @@ export const DatabaseService = {
     item: Omit<RepairItem, "id" | "reportedAt"> & { propertyId?: string }
   ): Promise<RepairItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
+    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, initialRepairs);
     const newRepair: RepairItem = {
       ...item,
       id: "rep-" + Date.now(),
@@ -1924,7 +1978,7 @@ export const DatabaseService = {
   },
 
   async updateRepairStatus(id: string, status: RepairItem["status"]): Promise<boolean> {
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
+    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, initialRepairs);
     const updated = all.map((r) =>
       r.id === id
         ? {
@@ -1938,30 +1992,12 @@ export const DatabaseService = {
     return true;
   },
 
-  async deleteRepair(id: string): Promise<boolean> {
-    const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
-    const target = all.find((r) => r.id === id);
-    const updated = all.filter((r) => r.id !== id);
-    await this.persistBatch({ [KEYS.REPAIRS]: updated });
-    try {
-      if (isValidUuid(id)) {
-        await supabase.from("repairs").delete().eq("id", id);
-      }
-      if (target?.roomNumber && target?.title) {
-        await supabase.from("repairs").delete().eq("room_number", target.roomNumber).eq("title", target.title);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete repair relational cleanup warning:", e?.message);
-    }
-    return true;
-  },
-
   // -------------------------------------------------------------
   // 8. EXPENSES (BRANCH-ISOLATED)
   // -------------------------------------------------------------
   async getExpenses(propertyId?: string): Promise<ExpenseItem[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
     return all.filter((e) => (e.propertyId || "prop-1") === targetPropId);
   },
 
@@ -1969,7 +2005,7 @@ export const DatabaseService = {
     item: Omit<ExpenseItem, "id"> & { propertyId?: string }
   ): Promise<ExpenseItem> {
     const propId = item.propertyId || this.getActivePropertyId();
-    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
     const newExpense: ExpenseItem = {
       ...item,
       id: "exp-" + Date.now(),
@@ -1982,20 +2018,10 @@ export const DatabaseService = {
 
   async deleteExpense(id: string, propertyId?: string): Promise<boolean> {
     const propId = propertyId || this.getActivePropertyId();
-    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
+    const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, initialExpenses);
     const target = all.find((e) => e.id === id);
     const updated = all.filter((e) => e.id !== id);
-    await this.persistBatch({ [KEYS.EXPENSES]: updated });
-    try {
-      if (isValidUuid(id)) {
-        await supabase.from("expenses").delete().eq("id", id);
-      }
-      if (target?.title) {
-        await supabase.from("expenses").delete().eq("title", target.title).eq("amount", target.amount);
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Delete expense relational cleanup warning:", e?.message);
-    }
+    setLocal(KEYS.EXPENSES, updated);
     if (target) {
       await this.logActivity("DELETE", "SETTINGS", `ลบรายการรายจ่าย: ${target.title} (฿${target.amount.toLocaleString()})`, propId);
     }
@@ -2261,34 +2287,12 @@ export const DatabaseService = {
       batchPayload[k] = [];
     });
     await this.persistBatch(batchPayload);
-
-    // Also clear Supabase relational tables
-    try {
-      const relTables = [
-        "invoice_items",
-        "invoices",
-        "meter_readings",
-        "contracts",
-        "repairs",
-        "expenses",
-        "daily_bookings",
-        "tenants",
-        "rooms",
-      ];
-      for (const tbl of relTables) {
-        await supabase.from(tbl).delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud] Clear all relational tables warning:", e?.message);
-    }
-
     return true;
   },
 
   resetToCleanSlate(): void {
-    Object.values(KEYS).forEach((k) => {
-      delete memoryDb[normalizeKey(k)];
-    });
+    if (typeof window === "undefined") return;
+    Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
   },
 
   exportDatabaseToJson(): string {
