@@ -67,6 +67,7 @@ export async function replyLineMessage(
     }
 
     const data = await res.json().catch(() => ({}));
+    console.log(`[LINE-CLIENT] Reply success (200 OK): Delivered messages to LINE (ReplyToken: ${replyToken})`);
     return { success: true, statusCode: res.status, data };
   } catch (error: any) {
     console.error("[LINE-CLIENT] Network error replying message:", error);

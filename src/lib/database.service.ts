@@ -1026,21 +1026,10 @@ export const DatabaseService = {
   ): Promise<Tenant | null> {
     const propId = propertyId || this.getActivePropertyId() || "prop-1";
     const cleanRoom = roomNumber.trim();
-    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
     const allRooms = this.getAllRawRooms();
-    const allInvoices = this.getAllRawInvoices();
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
 
-    // 1. Find tenant in allTenants by roomNumber, roomId, or ID
-    let targetIdx = allTenants.findIndex(
-      (t) =>
-        (t.propertyId || "prop-1") === (propId || "prop-1") &&
-        ((t.roomNumber || "").trim() === cleanRoom ||
-          t.roomId === `room-${cleanRoom}` ||
-          t.id === `t-${cleanRoom}` ||
-          t.id.endsWith(`-${cleanRoom}`))
-    );
-
-    // 2. Find room in allRooms (first in active branch, then across any branch)
+    // 1. ค้นหาห้องจากหน้าแผนผัง (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
     let roomMatch = allRooms.find(
       (r) => (r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom
     );
@@ -1048,71 +1037,91 @@ export const DatabaseService = {
       roomMatch = allRooms.find((r) => r.roomNumber.trim() === cleanRoom);
     }
 
-    // 3. If tenant not found in allTenants array, synthesize or create from room or invoices
-    if (targetIdx === -1) {
-      if (roomMatch) {
-        // Room exists in building
-        const roomInv = allInvoices.find(
-          (inv) => (inv.propertyId || "prop-1") === (propId || "prop-1") && inv.roomNumber.trim() === cleanRoom
-        );
-        const resolvedName =
-          roomMatch.currentTenant?.fullName ||
-          roomInv?.tenantName ||
-          lineDisplayName ||
-          `ผู้เช่าห้อง ${cleanRoom}`;
-        const resolvedPhone =
-          roomMatch.currentTenant?.phone ||
-          roomInv?.tenantPhone ||
-          "-";
-
-        const synthesizedTenant: Tenant = {
-          id: roomMatch.currentTenant?.id || `t-${cleanRoom}`,
-          propertyId: propId,
-          roomId: roomMatch.id,
-          roomNumber: cleanRoom,
-          fullName: resolvedName,
-          phone: resolvedPhone,
-          idCard: roomMatch.currentTenant?.idCard || "-",
-          lineUserId,
-          lineDisplayName: lineDisplayName || resolvedName,
-          lineLinkedAt: new Date().toISOString(),
-        };
-
-        allTenants.push(synthesizedTenant);
-        targetIdx = allTenants.length - 1;
-      }
+    if (!roomMatch) {
+      return null; // ไม่มีห้องนี้ในระบบ
     }
 
-    if (targetIdx !== -1) {
-      allTenants[targetIdx] = {
-        ...allTenants[targetIdx],
-        roomNumber: cleanRoom,
-        roomId: allTenants[targetIdx].roomId || (roomMatch?.id || `room-${cleanRoom}`),
-        lineUserId,
-        lineDisplayName: lineDisplayName || allTenants[targetIdx].lineDisplayName,
-        lineLinkedAt: new Date().toISOString(),
-      };
-      setLocal(KEYS.TENANTS, allTenants);
-
-      // Also update Room.currentTenant and mark room as occupied
-      const updatedRooms = allRooms.map((r) => {
-        if ((r.propertyId || "prop-1") === (propId || "prop-1") && r.roomNumber.trim() === cleanRoom) {
-          return {
-            ...r,
-            status: (r.status === "cleaning" ? "cleaning" : "occupied") as RoomStatus,
-            currentTenant: {
-              ...(r.currentTenant || {}),
-              ...allTenants[targetIdx],
-            },
-          };
+    // 2. หากห้องในหน้าแผนผังว่าง (vacant) หรือกำลังทำความสะอาด (cleaning) โดยไม่มีผู้เช่าลงทะเบียน
+    if ((roomMatch.status === "vacant" || roomMatch.status === "cleaning") && !roomMatch.currentTenant) {
+      // ปลดสิทธิ์ผู้เช่าคนเก่าทั้งหมดที่เคยผูกกับห้องนี้ เพื่อป้องกันไม่ให้ข้อมูลคนเก่ายังค้างในห้อง
+      const detached = allTenants.map((t) => {
+        if ((t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") && (t.roomNumber || "").trim() === cleanRoom) {
+          return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
         }
-        return r;
+        return t;
       });
-      setLocal(KEYS.ROOMS, updatedRooms);
-
-      await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${lineDisplayName || lineUserId})`, propId);
-      return allTenants[targetIdx];
+      setLocal(KEYS.TENANTS, detached);
+      return null;
     }
+
+    // 3. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง (currentTenant) เป็นหลัก
+    // หากหน้าแผนผังมีชื่อผู้เช่า (เช่น ผู้เช่าใหม่) ให้ใช้ชื่อและข้อมูลผู้เช่าจากหน้าแผนผังเสมอ
+    const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${cleanRoom}`;
+    const activePhone = roomMatch.currentTenant?.phone || "-";
+    const activeIdCard = roomMatch.currentTenant?.idCard || "-";
+    const tenantId = roomMatch.currentTenant?.id || `t-${roomMatch.propertyId || "prop-1"}-${cleanRoom}`;
+
+    // 4. แทนสิทธิ์ (Replace Rights): ปลดสิทธิ์ผู้เช่าคนเดิมที่มีชื่อไม่ตรงกันออกจากห้องนี้
+    const updatedTenants = allTenants.map((t) => {
+      if (
+        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+        (t.roomNumber || "").trim() === cleanRoom &&
+        t.id !== tenantId &&
+        t.fullName !== activeName
+      ) {
+        // คนเก่าถูกปลดสิทธิ์ออกจากห้องนี้
+        return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
+      }
+      return t;
+    });
+
+    // 5. บันทึก / อัปเดตข้อมูลผู้เช่าคนปัจจุบันที่ผูกกับห้องนี้
+    const currentTenantIdx = updatedTenants.findIndex(
+      (t) =>
+        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+        (t.id === tenantId || (t.roomNumber || "").trim() === cleanRoom)
+    );
+
+    const targetTenant: Tenant = {
+      ...(currentTenantIdx !== -1 ? updatedTenants[currentTenantIdx] : {}),
+      id: tenantId,
+      propertyId: roomMatch.propertyId || propId,
+      roomId: roomMatch.id,
+      roomNumber: cleanRoom,
+      fullName: activeName,
+      phone: activePhone,
+      idCard: activeIdCard,
+      lineUserId,
+      lineDisplayName: lineDisplayName || activeName,
+      lineLinkedAt: new Date().toISOString(),
+    };
+
+    if (currentTenantIdx !== -1) {
+      updatedTenants[currentTenantIdx] = targetTenant;
+    } else {
+      updatedTenants.push(targetTenant);
+    }
+    setLocal(KEYS.TENANTS, updatedTenants);
+
+    // 6. อัปเดตสถานะห้องในหน้าแผนผัง (Room Matrix) ให้มี currentTenant ที่ผูก LINE สำเร็จ
+    const updatedRooms = allRooms.map((r) => {
+      if ((r.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") && r.roomNumber.trim() === cleanRoom) {
+        return {
+          ...r,
+          status: (r.status === "cleaning" ? "cleaning" : "occupied") as RoomStatus,
+          currentTenant: {
+            ...(r.currentTenant || {}),
+            ...targetTenant,
+          },
+        };
+      }
+      return r;
+    });
+    setLocal(KEYS.ROOMS, updatedRooms);
+
+    await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${activeName})`, propId);
+    return targetTenant;
+  }
     return null;
   },
 

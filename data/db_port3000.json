@@ -389,21 +389,9 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "occupied",
+      "status": "vacant",
       "currentElectricMeter": 0,
-      "currentWaterMeter": 0,
-      "currentTenant": {
-        "id": "t-103",
-        "propertyId": "prop-1793250152420",
-        "roomId": "room-prop-1793250152420-103-1793698554393-fs4u",
-        "roomNumber": "103",
-        "fullName": "ผู้เช่าห้อง 103",
-        "phone": "-",
-        "idCard": "-",
-        "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
-        "lineDisplayName": "ผู้เช่าห้อง 103",
-        "lineLinkedAt": "2026-11-03T10:08:28.520Z"
-      }
+      "currentWaterMeter": 0
     },
     {
       "id": "room-prop-1793250152420-104-1793698554393-sv9d",
@@ -557,14 +545,20 @@
     {
       "id": "t-103",
       "propertyId": "prop-1793250152420",
-      "roomId": "room-prop-1793250152420-103-1793698554393-fs4u",
-      "roomNumber": "103",
       "fullName": "ผู้เช่าห้อง 103",
       "phone": "-",
       "idCard": "-",
-      "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
       "lineDisplayName": "ผู้เช่าห้อง 103",
-      "lineLinkedAt": "2026-11-03T10:08:28.520Z"
+      "lineLinkedAt": "2026-11-04T00:59:55.770Z"
+    },
+    {
+      "id": "t-101",
+      "propertyId": "prop-1793250152420",
+      "fullName": "บี (รายวัน)",
+      "phone": "095-321-6421",
+      "idCard": "-",
+      "lineDisplayName": "ผู้เช่าห้อง 101",
+      "lineLinkedAt": "2026-11-04T01:12:31.654Z"
     }
   ],
   "pakdee_dev_invoices": [
@@ -1012,6 +1006,51 @@
   ],
   "pakdee_dev_activity_logs": [
     {
+      "id": "log-1793754751671",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 08:12 น."
+    },
+    {
+      "id": "log-1793754578353",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 08:09 น."
+    },
+    {
+      "id": "log-1793753995785",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 103 (ผู้เช่าห้อง 103)",
+      "createdAt": "4/11/69 07:59 น."
+    },
+    {
+      "id": "log-1793753923575",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 07:58 น."
+    },
+    {
+      "id": "log-1793753849852",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 07:57 น."
+    },
+    {
       "id": "log-1793700508569",
       "propertyId": "prop-1793250152420",
       "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
@@ -1415,51 +1454,6 @@
       "entity": "INVOICE",
       "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿1,550)",
       "createdAt": "3/11/69 16:34 น."
-    },
-    {
-      "id": "log-1793698400922",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "TENANT",
-      "description": "ลงทะเบียนผู้เช่าใหม่: กด (092-516-4132)",
-      "createdAt": "3/11/69 16:33 น."
-    },
-    {
-      "id": "log-1793698400920",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "ROOM",
-      "description": "บันทึกการจองรายวันห้อง 102 (กด)",
-      "createdAt": "3/11/69 16:33 น."
-    },
-    {
-      "id": "log-1793698302482",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-201 ห้อง 201 (฿1,050)",
-      "createdAt": "3/11/69 16:31 น."
-    },
-    {
-      "id": "log-1793698240855",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "อัปเดตสถานะบิล ID inv-prop-1793250152420-1793698110842-101 เป็น \"paid\" (ยอดชำระ ฿5,000)",
-      "createdAt": "3/11/69 16:30 น."
-    },
-    {
-      "id": "log-1793698240853",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "บันทึกการรับเงิน PMT-202611-0025 ยอด ฿5,000 (ออกใบเสร็จ REC-202611-0025)",
-      "createdAt": "3/11/69 16:30 น."
     }
   ],
   "pakdee_dev_meter_readings": [
@@ -4090,9 +4084,21 @@
       "type": "ห้องแอร์",
       "monthlyRate": 4000,
       "dailyRate": 650,
-      "status": "vacant",
+      "status": "occupied",
       "currentElectricMeter": 100,
-      "currentWaterMeter": 38
+      "currentWaterMeter": 38,
+      "currentTenant": {
+        "id": "t-101",
+        "propertyId": "prop-1793250152420",
+        "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
+        "roomNumber": "101",
+        "fullName": "บี (รายวัน)",
+        "phone": "095-321-6421",
+        "idCard": "-",
+        "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
+        "lineDisplayName": "ผู้เช่าห้อง 101",
+        "lineLinkedAt": "2026-11-04T01:12:31.654Z"
+      }
     },
     {
       "id": "room-prop-1793250152420-102-1793698554393-2jbm",
@@ -4137,7 +4143,7 @@
         "idCard": "-",
         "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
         "lineDisplayName": "ผู้เช่าห้อง 103",
-        "lineLinkedAt": "2026-11-03T10:08:28.520Z"
+        "lineLinkedAt": "2026-11-04T00:59:55.770Z"
       }
     },
     {
@@ -4233,6 +4239,51 @@
     }
   ],
   "activity_logs": [
+    {
+      "id": "log-1793754751671",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 08:12 น."
+    },
+    {
+      "id": "log-1793754578353",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 08:09 น."
+    },
+    {
+      "id": "log-1793753995785",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 103 (ผู้เช่าห้อง 103)",
+      "createdAt": "4/11/69 07:59 น."
+    },
+    {
+      "id": "log-1793753923575",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 07:58 น."
+    },
+    {
+      "id": "log-1793753849852",
+      "propertyId": "prop-1793250152420",
+      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      "action": "UPDATE",
+      "entity": "TENANT",
+      "description": "ผูก LINE ผู้เช่าห้อง 101 (ผู้เช่าห้อง 101)",
+      "createdAt": "4/11/69 07:57 น."
+    },
     {
       "id": "log-1793700508569",
       "propertyId": "prop-1793250152420",
@@ -4637,51 +4688,6 @@
       "entity": "INVOICE",
       "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-102 ห้อง 102 (฿1,550)",
       "createdAt": "3/11/69 16:34 น."
-    },
-    {
-      "id": "log-1793698400922",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "TENANT",
-      "description": "ลงทะเบียนผู้เช่าใหม่: กด (092-516-4132)",
-      "createdAt": "3/11/69 16:33 น."
-    },
-    {
-      "id": "log-1793698400920",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "ROOM",
-      "description": "บันทึกการจองรายวันห้อง 102 (กด)",
-      "createdAt": "3/11/69 16:33 น."
-    },
-    {
-      "id": "log-1793698302482",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "CREATE",
-      "entity": "INVOICE",
-      "description": "ออกใบแจ้งหนี้/ใบสรุปยอด INV-D-20261103-201 ห้อง 201 (฿1,050)",
-      "createdAt": "3/11/69 16:31 น."
-    },
-    {
-      "id": "log-1793698240855",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "อัปเดตสถานะบิล ID inv-prop-1793250152420-1793698110842-101 เป็น \"paid\" (ยอดชำระ ฿5,000)",
-      "createdAt": "3/11/69 16:30 น."
-    },
-    {
-      "id": "log-1793698240853",
-      "propertyId": "prop-1793250152420",
-      "userName": "คุณพักดี มีสุข (เจ้าของหอพัก)",
-      "action": "PAYMENT",
-      "entity": "INVOICE",
-      "description": "บันทึกการรับเงิน PMT-202611-0025 ยอด ฿5,000 (ออกใบเสร็จ REC-202611-0025)",
-      "createdAt": "3/11/69 16:30 น."
     }
   ],
   "properties": [
@@ -4867,7 +4873,19 @@
       "idCard": "-",
       "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
       "lineDisplayName": "ผู้เช่าห้อง 103",
-      "lineLinkedAt": "2026-11-03T10:08:28.520Z"
+      "lineLinkedAt": "2026-11-04T00:59:55.770Z"
+    },
+    {
+      "id": "t-101",
+      "propertyId": "prop-1793250152420",
+      "roomId": "room-prop-1793250152420-101-1793698554393-s9l1",
+      "roomNumber": "101",
+      "fullName": "บี (รายวัน)",
+      "phone": "095-321-6421",
+      "idCard": "-",
+      "lineUserId": "U493d0e71d8e3f42c80af850d3ea53bca",
+      "lineDisplayName": "ผู้เช่าห้อง 101",
+      "lineLinkedAt": "2026-11-04T01:12:31.654Z"
     }
   ],
   "contracts": [
