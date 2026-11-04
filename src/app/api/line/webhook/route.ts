@@ -35,25 +35,6 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("x-line-signature") || "";
 
-    // 0. Auto-sync with LAN peer (192.168.7.127:3000) if reachable so LINE bot always has the latest room/tenant data
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600);
-      const peerRes = await fetch("http://192.168.7.127:3000/api/db", {
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json" },
-      });
-      clearTimeout(timeoutId);
-      if (peerRes.ok) {
-        const peerJson = await peerRes.json();
-        if (peerJson?.success && peerJson?.data) {
-          DatabaseService.mergeRemoteDb(peerJson.data);
-        }
-      }
-    } catch {
-      // Peer unreachable or timed out, seamlessly proceed with local database
-    }
-
     // 1. ดึงการตั้งค่าของสาขาปัจจุบัน (รวม Token และ Secret)
     const activePropId = DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
@@ -125,22 +106,6 @@ export async function POST(req: NextRequest) {
             );
 
             if (boundTenant) {
-              // Fire-and-forget sync to LAN peer (127)
-              try {
-                const rawRooms = DatabaseService.getAllRawRooms();
-                const allTenants = await DatabaseService.getTenants(activePropId);
-                fetch("http://192.168.7.127:3000/api/db", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ key: "pakdee_dev_rooms", value: rawRooms }),
-                }).catch(() => {});
-                fetch("http://192.168.7.127:3000/api/db", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ key: "pakdee_dev_tenants", value: allTenants }),
-                }).catch(() => {});
-              } catch {}
-
               const invoices = await DatabaseService.getInvoices(activePropId);
               const unpaidForRoom = invoices.filter(
                 (i) => i.roomNumber === requestedRoom && i.status !== "paid"
