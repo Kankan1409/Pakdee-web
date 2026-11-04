@@ -2088,6 +2088,74 @@ export const DatabaseService = {
       const allProps = await this.getAllProperties();
       const updatedProps = allProps.map((p) => (p.id === propId ? { ...p, ...propUpdates } : p));
       setLocal(KEYS.PROPERTIES, updatedProps);
+
+      // Direct relational Supabase sync
+      try {
+        supabase
+          .from("properties")
+          .update({
+            name: updated.branchName,
+            address: updated.address,
+            phone: updated.phone,
+            promptpay_number: updated.promptpayNumber,
+            promptpay_name: updated.promptpayName,
+            electric_rate: updated.electricRate,
+            water_rate: updated.waterRate,
+          })
+          .eq("name", updated.branchName || "วิภาวรรณ 1")
+          .then(() => {});
+
+        supabase
+          .from("properties")
+          .select("id")
+          .eq("name", updated.branchName || "วิภาวรรณ 1")
+          .maybeSingle()
+          .then(({ data: propRow }: any) => {
+            if (propRow?.id) {
+              supabase
+                .from("branch_settings")
+                .upsert(
+                  {
+                    property_id: propRow.id,
+                    branch_name: updated.branchName,
+                    address: updated.address,
+                    phone: updated.phone,
+                    owner_name: updated.ownerName,
+                    owner_phone: updated.ownerPhone,
+                    tax_id: updated.taxId,
+                    water_rate: updated.waterRate,
+                    electric_rate: updated.electricRate,
+                    use_min_water: Boolean(updated.useMinWater),
+                    min_water_units: updated.minWaterUnits,
+                    min_water_fee: updated.minWaterFee,
+                    use_min_electric: Boolean(updated.useMinElectric),
+                    min_electric_units: updated.minElectricUnits,
+                    min_electric_fee: updated.minElectricFee,
+                    common_fee: updated.commonFee,
+                    internet_fee: updated.internetFee,
+                    parking_fee: updated.parkingFee,
+                    bill_cycle_day: updated.billCycleDay,
+                    bill_due_day: updated.billDueDay,
+                    late_fee_per_day: updated.lateFeePerDay,
+                    bank_name: updated.bankName,
+                    bank_account_number: updated.bankAccountNumber,
+                    bank_account_name: updated.bankAccountName,
+                    promptpay_number: updated.promptpayNumber,
+                    promptpay_name: updated.promptpayName,
+                    line_channel_access_token: updated.lineChannelAccessToken,
+                    line_channel_secret: updated.lineChannelSecret,
+                    contract_terms: updated.contractTerms,
+                  },
+                  { onConflict: "property_id" }
+                )
+                .then(({ error }: any) => {
+                  if (error) console.warn("[Supabase Cloud] Relational branch_settings error:", error.message);
+                });
+            }
+          });
+      } catch (e: any) {
+        console.warn("[Supabase Cloud] Relational sync skipped:", e?.message);
+      }
     }
 
     // Force await sync to host database so file is written before any refresh
