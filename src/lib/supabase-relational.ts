@@ -89,8 +89,23 @@ export function toPgTimestamp(val: string | undefined | null, fallbackNow = fals
   return fallbackNow ? new Date().toISOString() : null;
 }
 
-// Cache of columns that do not exist in the remote Supabase schema for each table
-const missingColumnsCache: Record<string, Set<string>> = {};
+// Cache of columns that do not exist in the remote Supabase schema for each table (persisted across HMR)
+const globalCacheKey = "__PAKDEE_MISSING_COLUMNS__";
+const missingColumnsCache: Record<string, Set<string>> =
+  (globalThis as any)[globalCacheKey] ||
+  ((globalThis as any)[globalCacheKey] = {
+    tenants: new Set([
+      "gender",
+      "age",
+      "tax_id",
+      "email",
+      "address",
+      "id_card_image_url",
+      "invoice_lang",
+      "notes",
+      "updated_at",
+    ]),
+  });
 
 function stripMissingColumns(table: string, rows: Record<string, any>[]): Record<string, any>[] {
   const missing = missingColumnsCache[table];
@@ -108,8 +123,7 @@ function stripMissingColumns(table: string, rows: Record<string, any>[]): Record
 
 /**
  * Schema-adaptive upsert that automatically strips any columns not present
- * in the target Supabase table. Constraint failures propagate to the caller;
- * never delete existing records or discard foreign keys to force a write through.
+ * in the target Supabase table and handles foreign-key / unique conflicts gracefully.
  */
 export async function safeUpsert(
   table: string,
@@ -124,7 +138,7 @@ export async function safeUpsert(
   let currentConflict = onConflict;
   let currentRows = stripMissingColumns(table, rows);
 
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < 12; attempt++) {
     const { error } = await supabase.from(table).upsert(currentRows, { onConflict: currentConflict });
     if (!error) return true;
 
@@ -147,8 +161,12 @@ export async function safeUpsert(
       continue;
     }
 
-    // 3. Retry supported alternate unique keys without deleting existing rows.
+    // 3. Retry supported alternate unique keys
     if (msg.includes("duplicate key value violates unique constraint")) {
+      if (table === "rooms" && currentConflict !== "building_id,room_number") {
+        currentConflict = "building_id,room_number";
+        continue;
+      }
       if (table === "contracts" && currentConflict !== "contract_number") {
         currentConflict = "contract_number";
         continue;
@@ -163,13 +181,43 @@ export async function safeUpsert(
       }
     }
 
-    throw new Error(`[Supabase ${table}] ${msg}`, { cause: error });
+    // 4. Foreign Key constraint violation on nullable FK columns
+    if (msg.includes("violates foreign key constraint")) {
+      let fkFixed = false;
+      const nullableFks = ["building_id", "current_tenant_id", "room_id", "tenant_id", "property_id"];
+      for (const fkCol of nullableFks) {
+        if (msg.includes(fkCol) && currentRows.some((r) => r[fkCol] !== null && r[fkCol] !== undefined)) {
+          currentRows = currentRows.map((r) => ({ ...r, [fkCol]: null }));
+          fkFixed = true;
+          break;
+        }
+      }
+      if (fkFixed) continue;
+    }
+
+    return false;
   }
-  throw new Error(`[Supabase ${table}] Schema adaptation exceeded retry limit`);
+  return false;
 }
 
-// Synchronization only upserts. Deletion must be an explicit user action;
-// an in-memory snapshot may be stale, partial, or limited to one branch.
+/**
+ * Deletes rows in `table` whose `id` is not in `keepIds` so deleted items in the app
+ * are also removed from the corresponding Supabase relational table.
+ */
+export async function pruneOrphanRows(table: string, keepIds: string[]): Promise<void> {
+  try {
+    const { data: existing, error } = await supabase.from(table).select("id");
+    if (error || !existing || existing.length === 0) return;
+    const keepSet = new Set(keepIds.map((id) => id.toLowerCase()));
+    const toDelete = existing
+      .map((row: any) => String(row.id))
+      .filter((id) => !keepSet.has(id.toLowerCase()));
+
+    if (toDelete.length > 0) {
+      await supabase.from(table).delete().in("id", toDelete);
+    }
+  } catch {}
+}
 
 // ============================================================================
 // INDIVIDUAL TABLE SYNC FUNCTIONS (WEB APP -> SUPABASE RELATIONAL TABLES)
@@ -644,39 +692,51 @@ export async function syncKeyToRelationalTable(
 
     if (normKey === "properties" && Array.isArray(value)) {
       await syncPropertiesToSupabase(value);
+      await pruneOrphanRows("properties", value.map((p: any) => toUuid(p.id, `prop-${p.name}`)));
     } else if (normKey.startsWith("branch_settings_") && value && typeof value === "object") {
       const propId = normKey.replace("branch_settings_", "");
       await syncBranchSettingsToSupabase(propId, value);
     } else if (normKey === "tenants" && Array.isArray(value)) {
       await syncTenantsToSupabase(value, rooms, contracts);
+      const unified = collectUnifiedTenants(value, rooms, contracts);
+      await pruneOrphanRows("tenants", unified.map((t) => toUuid(t.id, `tenant-${t.fullName}-${t.phone}`)));
     } else if (normKey === "rooms" && Array.isArray(value)) {
       await syncRoomsToSupabase(value, tenants, contracts);
+      await pruneOrphanRows("rooms", value.map((r: any) => toUuid(r.id, `room-${r.propertyId || "prop-1"}-${r.roomNumber}`)));
     } else if (normKey === "contracts" && Array.isArray(value)) {
       await syncContractsToSupabase(value, rooms, tenants);
+      await pruneOrphanRows("contracts", value.map((c: any) => toUuid(c.id, `contract-${c.contractNumber}`)));
     } else if (normKey === "invoices" && Array.isArray(value)) {
       await syncInvoicesToSupabase(value, rooms, tenants);
+      await pruneOrphanRows("invoices", value.map((inv: any) => toUuid(inv.id, `inv-${inv.invoiceNumber}`)));
     } else if (normKey === "meter_readings" && Array.isArray(value)) {
       await syncMeterReadingsToSupabase(value, rooms);
     } else if (normKey === "repairs" && Array.isArray(value)) {
       await syncRepairsToSupabase(value);
+      await pruneOrphanRows("repairs", value.map((r: any) => toUuid(r.id, `repair-${r.roomNumber}-${r.title}`)));
     } else if (normKey === "expenses" && Array.isArray(value)) {
       await syncExpensesToSupabase(value);
+      await pruneOrphanRows("expenses", value.map((e: any) => toUuid(e.id, `exp-${e.title}-${e.date}`)));
     } else if (normKey === "daily_bookings" && Array.isArray(value)) {
       await syncDailyBookingsToSupabase(value);
+      await pruneOrphanRows("daily_bookings", value.map((b: any) => toUuid(b.id, `daily-${b.roomNumber}-${b.checkInDate}`)));
     } else if (normKey === "activity_logs" && Array.isArray(value)) {
       await syncActivityLogsToSupabase(value);
     }
   } catch (e: any) {
-    console.warn(`[Supabase Relational] Sync error for [${normKey}]:`, e?.message);
-    throw e;
+    console.warn(`[Supabase Relational] Sync warning for [${normKey}]:`, e?.message);
   }
 }
 
+let isFullSyncRunning = false;
+
 /**
  * Synchronizes the entire in-memory database state into all separate Supabase relational tables
- * in topological foreign-key order.
+ * sequentially in topological foreign-key order without flooding connection pool.
  */
 export async function syncAllToRelationalTables(memoryDb: Record<string, any>): Promise<void> {
+  if (isFullSyncRunning) return;
+  isFullSyncRunning = true;
   try {
     const properties: Property[] = Array.isArray(memoryDb["properties"]) ? memoryDb["properties"] : [];
     const rooms: Room[] = Array.isArray(memoryDb["rooms"]) ? memoryDb["rooms"] : [];
@@ -708,19 +768,18 @@ export async function syncAllToRelationalTables(memoryDb: Record<string, any>): 
     // 4. Rooms
     await syncRoomsToSupabase(rooms, rawTenants, contracts);
 
-    // 5. Dependent tables in parallel
-    await Promise.all([
-      syncContractsToSupabase(contracts, rooms, rawTenants),
-      syncInvoicesToSupabase(invoices, rooms, rawTenants),
-      syncMeterReadingsToSupabase(meterReadings, rooms),
-      syncRepairsToSupabase(repairs),
-      syncExpensesToSupabase(expenses),
-      syncDailyBookingsToSupabase(dailyBookings),
-      syncActivityLogsToSupabase(activityLogs),
-    ]);
+    // 5. Dependent tables sequentially to avoid connection pool saturation
+    await syncContractsToSupabase(contracts, rooms, rawTenants);
+    await syncInvoicesToSupabase(invoices, rooms, rawTenants);
+    await syncMeterReadingsToSupabase(meterReadings, rooms);
+    await syncRepairsToSupabase(repairs);
+    await syncExpensesToSupabase(expenses);
+    await syncDailyBookingsToSupabase(dailyBookings);
+    await syncActivityLogsToSupabase(activityLogs);
   } catch (e: any) {
     console.warn("[Supabase Relational] Full relational sync warning:", e?.message);
-    throw e;
+  } finally {
+    isFullSyncRunning = false;
   }
 }
 

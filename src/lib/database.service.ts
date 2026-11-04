@@ -237,6 +237,7 @@ function setLocal<T>(key: string, value: T): void {
 
 // Realtime Channel Handle for Supabase Live Cloud Updates (Singleton Safe)
 let realtimeChannel: any = null;
+let activeInitPromise: Promise<boolean> | null = null;
 
 function setupRealtimeSync(): void {
   if (typeof window === "undefined") return;
@@ -308,79 +309,94 @@ export const DatabaseService = {
       return true;
     }
 
-    // 1. Activate live real-time subscription on Supabase Cloud
-    setupRealtimeSync();
+    if (activeInitPromise) {
+      return activeInitPromise;
+    }
 
-    // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
-    try {
-      const { data: cloudStore, error } = await supabase
-        .from("pakdee_store")
-        .select("key, value, updated_at");
+    activeInitPromise = (async () => {
+      try {
+        // 1. Activate live real-time subscription on Supabase Cloud
+        setupRealtimeSync();
 
-      if (!error && cloudStore && cloudStore.length > 0) {
-        const sortedRows = [...cloudStore].sort((a: any, b: any) => {
-          const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-          const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-          if (timeA !== timeB) return timeA - timeB;
-          const aIsDev = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
-          const bIsDev = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
-          return aIsDev - bIsDev;
-        });
+        // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq) with 2.5s timeout
+        try {
+          const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+            setTimeout(() => resolve({ data: null, error: { message: "Supabase init query timeout (2.5s)" } }), 2500)
+          );
+          const queryPromise = supabase.from("pakdee_store").select("key, value, updated_at");
+          const { data: cloudStore, error } = await Promise.race([queryPromise as any, timeoutPromise]);
 
-        sortedRows.forEach((row: any) => {
-          memoryDb[row.key] = row.value;
-          const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
-          memoryDb[normKey] = row.value;
-          if (row.key === normKey) {
-            memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
+          if (!error && cloudStore && cloudStore.length > 0) {
+            const sortedRows = [...cloudStore].sort((a: any, b: any) => {
+              const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+              const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+              if (timeA !== timeB) return timeA - timeB;
+              const aIsDev = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
+              const bIsDev = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
+              return aIsDev - bIsDev;
+            });
+
+            sortedRows.forEach((row: any) => {
+              memoryDb[row.key] = row.value;
+              const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
+              memoryDb[normKey] = row.value;
+              if (row.key === normKey) {
+                memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
+              }
+              try {
+                localStorage.setItem(row.key, JSON.stringify(row.value));
+              } catch {}
+            });
+
+            if (!isServerSynced) {
+              isServerSynced = true;
+              // Sync loaded cloud data to local server /api/db (localOnly: true so it doesn't re-upsert to Supabase!)
+              fetch("/api/db", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ data: memoryDb, localOnly: true }),
+              }).catch(() => {});
+
+              // Gentle background mirror to separate Supabase relational tables after initial load settles
+              setTimeout(() => {
+                syncAllToRelationalTables(memoryDb).catch(() => {});
+              }, 1500);
+            }
+
+            console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
+            return true;
           }
-          try {
-            localStorage.setItem(row.key, JSON.stringify(row.value));
-          } catch {}
-        });
+        } catch {}
 
-        if (!isServerSynced) {
-          isServerSynced = true;
-          // Background mirror to separate Supabase relational tables once on initial load (non-blocking, write-only)
-          syncAllToRelationalTables(memoryDb).catch(() => {});
-
-          // Sync loaded cloud data to local server /api/db (localOnly: true so it doesn't re-upsert to Supabase!)
-          fetch("/api/db", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: memoryDb, localOnly: true }),
-          }).catch(() => {});
-        }
-
-        console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
-        return true;
-      } else if (error) {
-        console.warn("[Supabase Cloud Direct] Supabase query warning:", error.message);
+        // 3. Fast fallback to local server /api/db?local=1
+        try {
+          const res = await fetch("/api/db?local=1", { cache: "no-store" });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && json.data) {
+              Object.entries(json.data).forEach(([k, v]) => {
+                memoryDb[k] = v;
+                try {
+                  localStorage.setItem(k, JSON.stringify(v));
+                } catch {}
+              });
+              if (!isServerSynced) {
+                isServerSynced = true;
+                setTimeout(() => {
+                  syncAllToRelationalTables(memoryDb).catch(() => {});
+                }, 1500);
+              }
+              return true;
+            }
+          }
+        } catch {}
+        return false;
+      } finally {
+        activeInitPromise = null;
       }
-    } catch (e: any) {
-      console.warn("[Supabase Cloud Direct] Cloud fetch failed, falling back to local server:", e?.message);
-    }
+    })();
 
-    // 3. Fallback to local server /api/db only when offline
-    try {
-      const res = await fetch("/api/db", { cache: "no-store" });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          Object.entries(json.data).forEach(([k, v]) => {
-            memoryDb[k] = v;
-            try {
-              localStorage.setItem(k, JSON.stringify(v));
-            } catch {}
-          });
-          isServerSynced = true;
-          return true;
-        }
-      }
-    } catch (err) {
-      console.warn("[DatabaseService] Offline fallback to localStorage:", err);
-    }
-    return false;
+    return activeInitPromise;
   },
 
   isServerSynced(): boolean {

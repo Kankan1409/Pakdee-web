@@ -334,17 +334,24 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const key = searchParams.get("key");
+    const localOnly = searchParams.get("local") === "1";
 
-    // 1. Try reading from Supabase Cloud pakdee_store first
-    try {
-      if (supabase) {
+    // 1. Try reading from Supabase Cloud pakdee_store first with a fast 1.5s timeout
+    if (!localOnly && supabase) {
+      try {
+        const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), 1500)
+        );
+
         if (key) {
-          const { data, error } = await supabase.from("pakdee_store").select("value").eq("key", key).single();
+          const queryPromise = supabase.from("pakdee_store").select("value").eq("key", key).single();
+          const { data, error } = await Promise.race([queryPromise as any, timeoutPromise]);
           if (!error && data && data.value !== undefined) {
             return NextResponse.json({ success: true, key, value: data.value, source: "supabase" });
           }
         } else {
-          const { data, error } = await supabase.from("pakdee_store").select("key, value");
+          const queryPromise = supabase.from("pakdee_store").select("key, value");
+          const { data, error } = await Promise.race([queryPromise as any, timeoutPromise]);
           if (!error && data && data.length > 0) {
             const cloudDb: Record<string, any> = {};
             data.forEach((row: any) => {
@@ -353,10 +360,10 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ success: true, data: cloudDb, source: "supabase" });
           }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
-    // 2. Fallback to local DB file
+    // 2. Instant fallback to local DB file
     const db = ensureDbFile();
     if (key) {
       const norm = normalizeKey(key);
