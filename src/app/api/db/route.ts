@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { supabase } from "@/lib/supabase";
 
 // Dedicated Project Database Storage Path (Port 3000)
 // Uses ./data/db_port3000.json directly within the workspace for maximum stability
@@ -331,28 +332,83 @@ function saveDbFile(data: Record<string, any>): void {
 // GET: Return entire database or single key
 export async function GET(req: NextRequest) {
   try {
-    const db = ensureDbFile();
     const { searchParams } = new URL(req.url);
     const key = searchParams.get("key");
 
+    // 1. Try reading from Supabase Cloud pakdee_store first
+    try {
+      if (supabase) {
+        if (key) {
+          const { data, error } = await supabase.from("pakdee_store").select("value").eq("key", key).single();
+          if (!error && data && data.value !== undefined) {
+            return NextResponse.json({ success: true, key, value: data.value, source: "supabase" });
+          }
+        } else {
+          const { data, error } = await supabase.from("pakdee_store").select("key, value");
+          if (!error && data && data.length > 0) {
+            const cloudDb: Record<string, any> = {};
+            data.forEach((row: any) => {
+              cloudDb[row.key] = row.value;
+            });
+            return NextResponse.json({ success: true, data: cloudDb, source: "supabase" });
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Fallback to local DB file
+    const db = ensureDbFile();
     if (key) {
       const norm = normalizeKey(key);
       const value = db[key] ?? db[norm] ?? null;
-      return NextResponse.json({ success: true, key, value });
+      return NextResponse.json({ success: true, key, value, source: "local" });
     }
 
-    return NextResponse.json({ success: true, data: db });
+    return NextResponse.json({ success: true, data: db, source: "local" });
   } catch (err: any) {
     console.error("[HostDB] GET error:", err);
     return NextResponse.json({ success: false, error: err?.message || "Failed to read database" }, { status: 500 });
   }
 }
 
-// POST: Save key/value or batch update directly to host machine
+// POST: Save key/value or batch update directly to host machine & Supabase Cloud
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    // 1. Async persist to Supabase Cloud pakdee_store
+    try {
+      if (supabase) {
+        if (body.key && body.value !== undefined) {
+          supabase
+            .from("pakdee_store")
+            .upsert({
+              key: body.key,
+              value: body.value,
+              updated_at: new Date().toISOString(),
+            })
+            .then(({ error }: any) => {
+              if (error) console.warn("[HostDB] Supabase upsert error:", error.message);
+            });
+        } else if (body.data && typeof body.data === "object") {
+          const rows = Object.entries(body.data).map(([k, v]) => ({
+            key: k,
+            value: v,
+            updated_at: new Date().toISOString(),
+          }));
+          supabase
+            .from("pakdee_store")
+            .upsert(rows)
+            .then(({ error }: any) => {
+              if (error) console.warn("[HostDB] Supabase batch upsert error:", error.message);
+            });
+        }
+      }
+    } catch (e: any) {
+      console.warn("[HostDB] Supabase Cloud persist skipped:", e?.message);
+    }
+
+    // 2. Local persistence with write lock
     await new Promise<void>((resolve, reject) => {
       writeLock = writeLock
         .catch(() => {})
@@ -376,7 +432,7 @@ export async function POST(req: NextRequest) {
         .catch(reject);
     });
 
-    return NextResponse.json({ success: true, message: "Saved to host database successfully" });
+    return NextResponse.json({ success: true, message: "Saved to database successfully" });
   } catch (err: any) {
     console.error("[HostDB] POST error:", err);
     return NextResponse.json({ success: false, error: err?.message || "Failed to save to database" }, { status: 500 });
