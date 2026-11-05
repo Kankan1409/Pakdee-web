@@ -1,9 +1,45 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Room } from "@/types/dormitory";
-import { Zap, Droplets, Save, RefreshCw, History, Camera, CheckCircle2, AlertCircle, Search, X } from "lucide-react";
+import {
+  Zap,
+  Droplets,
+  Save,
+  RefreshCw,
+  History,
+  Camera,
+  CheckCircle2,
+  AlertCircle,
+  Search,
+  X,
+  Download,
+  Calendar,
+  TrendingUp,
+  FileSpreadsheet,
+  ArrowRight,
+  Filter,
+} from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { DatabaseService } from "@/lib/database.service";
+
+export interface MeterReadingRecord {
+  id: string;
+  property_id?: string;
+  room_id: string;
+  room_number: string;
+  tenant_name?: string;
+  billing_month: string;
+  electric_prev: number;
+  electric_curr: number;
+  electric_units: number;
+  water_prev: number;
+  water_curr: number;
+  water_units: number;
+  recorded_at: string;
+  total_cost?: number;
+  is_invoiced?: boolean;
+}
 
 interface MeterSpreadsheetViewProps {
   rooms: Room[];
@@ -40,6 +76,13 @@ export function MeterSpreadsheetView({
     }[]
   >([]);
 
+  // History State
+  const [historyRecords, setHistoryRecords] = useState<MeterReadingRecord[]>([]);
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Initialize Entry Rows from rooms
   useEffect(() => {
     setRows(
       rooms.map((r) => {
@@ -49,7 +92,6 @@ export function MeterSpreadsheetView({
           roomNumber: r.roomNumber,
           tenantName: hasTenant ? r.currentTenant!.fullName : "(ห้องว่าง)",
           electricPrev: r.currentElectricMeter,
-          // ถ้าเป็นห้องว่าง ไม่ใส่หน่วยไฟ/น้ำอัตโนมัติ ให้เป็น 0 (มิเตอร์ปัจจุบัน = มิเตอร์ก่อนหน้า)
           electricCurr: r.currentElectricMeter + (hasTenant ? 25 : 0),
           waterPrev: r.currentWaterMeter,
           waterCurr: r.currentWaterMeter + (hasTenant ? 4 : 0),
@@ -57,6 +99,68 @@ export function MeterSpreadsheetView({
       })
     );
   }, [rooms]);
+
+  // Load and seed history records if empty
+  const loadHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const records = await DatabaseService.getMeterReadings();
+      if (records && records.length > 0) {
+        setHistoryRecords(records);
+      } else if (rooms.length > 0) {
+        // Auto-seed realistic initial 2 months history for existing rooms
+        const seeded: MeterReadingRecord[] = [];
+        const pastMonths = [
+          { month: "2026-10", labelDate: "25/10/2569, 14:30 น." },
+          { month: "2026-09", labelDate: "25/09/2569, 15:10 น." },
+        ];
+
+        pastMonths.forEach(({ month, labelDate }, mIdx) => {
+          rooms.forEach((r, rIdx) => {
+            const elecBase = r.currentElectricMeter > 0 ? r.currentElectricMeter : 1000 + rIdx * 50;
+            const waterBase = r.currentWaterMeter > 0 ? r.currentWaterMeter : 200 + rIdx * 10;
+            const elecUnits = r.currentTenant ? 35 + ((rIdx * 7) % 30) : 0;
+            const waterUnits = r.currentTenant ? 5 + ((rIdx * 3) % 8) : 0;
+            const elecCurr = elecBase - mIdx * 40;
+            const elecPrev = Math.max(0, elecCurr - elecUnits);
+            const waterCurr = waterBase - mIdx * 6;
+            const waterPrev = Math.max(0, waterCurr - waterUnits);
+            const totalCost = elecUnits * electricRate + waterUnits * waterRate;
+
+            seeded.push({
+              id: `mtr-seed-${month}-${r.roomNumber}`,
+              property_id: r.propertyId,
+              room_id: r.id,
+              room_number: r.roomNumber,
+              tenant_name: r.currentTenant?.fullName || "(ห้องว่าง)",
+              billing_month: month,
+              electric_prev: elecPrev,
+              electric_curr: elecCurr,
+              electric_units: elecUnits,
+              water_prev: waterPrev,
+              water_curr: waterCurr,
+              water_units: waterUnits,
+              recorded_at: labelDate,
+              total_cost: totalCost,
+              is_invoiced: true,
+            });
+          });
+        });
+
+        setHistoryRecords(seeded);
+        // Persist batch to DatabaseService
+        DatabaseService.persistBatch({ pakdee_dev_meter_readings: seeded });
+      }
+    } catch (e) {
+      console.warn("Failed to load meter history:", e);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, [rooms, electricRate, waterRate]);
 
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -91,8 +195,7 @@ export function MeterSpreadsheetView({
     (acc, r) => acc + Math.max(0, (r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr)) - r.waterPrev),
     0
   );
-  const totalEstimatedCost =
-    totalElecUnits * electricRate + totalWaterUnits * waterRate;
+  const totalEstimatedCost = totalElecUnits * electricRate + totalWaterUnits * waterRate;
 
   const recordedCount = rows.filter(
     (r) =>
@@ -101,43 +204,152 @@ export function MeterSpreadsheetView({
   ).length;
 
   const handleSaveAll = () => {
-    onSaveMeters(
-      rows.map((r) => ({
-        roomId: r.roomId,
-        roomNumber: r.roomNumber,
-        electricCurr: r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr),
-        waterCurr: r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr),
-        electricPrev: r.electricPrev,
-        waterPrev: r.waterPrev,
-      }))
-    );
+    const readingsPayload = rows.map((r) => ({
+      roomId: r.roomId,
+      roomNumber: r.roomNumber,
+      electricCurr: r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr),
+      waterCurr: r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr),
+      electricPrev: r.electricPrev,
+      waterPrev: r.waterPrev,
+    }));
+
+    // Trigger parent save
+    onSaveMeters(readingsPayload);
+
+    // Also update history records locally immediately
+    const currentMonthStr = new Date().toISOString().slice(0, 7);
+    const nowRecordedAt = new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) + " น.";
+    const newHistoryItems: MeterReadingRecord[] = readingsPayload.map((rp) => {
+      const elecUnits = Math.max(0, rp.electricCurr - rp.electricPrev);
+      const waterUnits = Math.max(0, rp.waterCurr - rp.waterPrev);
+      const totalCost = elecUnits * electricRate + waterUnits * waterRate;
+      const targetRoom = rooms.find((rm) => rm.id === rp.roomId);
+      return {
+        id: `mtr-${Date.now()}-${rp.roomId}`,
+        property_id: targetRoom?.propertyId,
+        room_id: rp.roomId,
+        room_number: rp.roomNumber,
+        tenant_name: targetRoom?.currentTenant?.fullName || "(ห้องว่าง)",
+        billing_month: currentMonthStr,
+        electric_prev: rp.electricPrev,
+        electric_curr: rp.electricCurr,
+        electric_units: elecUnits,
+        water_prev: rp.waterPrev,
+        water_curr: rp.waterCurr,
+        water_units: waterUnits,
+        recorded_at: nowRecordedAt,
+        total_cost: totalCost,
+        is_invoiced: false,
+      };
+    });
+
+    setHistoryRecords((prev) => [...newHistoryItems, ...prev]);
+  };
+
+  // Available unique months from history
+  const availableMonths = useMemo(() => {
+    const months = Array.from(new Set(historyRecords.map((h) => h.billing_month || "2026-10"))).sort().reverse();
+    return months;
+  }, [historyRecords]);
+
+  // Filtered History
+  const filteredHistory = useMemo(() => {
+    return historyRecords.filter((item) => {
+      const matchMonth = selectedMonth === "all" || item.billing_month === selectedMonth;
+      const q = historySearchQuery.trim().toLowerCase();
+      const matchQuery =
+        !q ||
+        item.room_number.toLowerCase().includes(q) ||
+        (item.tenant_name && item.tenant_name.toLowerCase().includes(q));
+      return matchMonth && matchQuery;
+    });
+  }, [historyRecords, selectedMonth, historySearchQuery]);
+
+  // History Totals
+  const historyTotalElec = filteredHistory.reduce((acc, h) => acc + (h.electric_units || 0), 0);
+  const historyTotalWater = filteredHistory.reduce((acc, h) => acc + (h.water_units || 0), 0);
+  const historyTotalCost = filteredHistory.reduce(
+    (acc, h) => acc + (h.total_cost || (h.electric_units * electricRate + h.water_units * waterRate)),
+    0
+  );
+
+  // Export History to CSV
+  const handleExportHistoryCSV = () => {
+    if (filteredHistory.length === 0) return;
+    const headers = [
+      "รอบบิล",
+      "วันที่จด",
+      "เลขห้อง",
+      "ผู้พักอาศัย",
+      "ไฟก่อนหน้า",
+      "ไฟปัจจุบัน",
+      "หน่วยไฟ",
+      "ค่าไฟ (บาท)",
+      "น้ำก่อนหน้า",
+      "น้ำปัจจุบัน",
+      "หน่วยน้ำ",
+      "ค่าน้ำ (บาท)",
+      "รวมเงิน (บาท)",
+    ];
+
+    const csvRows = filteredHistory.map((h) => {
+      const elecCost = h.electric_units * electricRate;
+      const waterCost = h.water_units * waterRate;
+      const total = elecCost + waterCost;
+      return [
+        `"${h.billing_month || '-'}"`,
+        `"${h.recorded_at || '-'}"`,
+        `"${h.room_number}"`,
+        `"${h.tenant_name || '-'}"`,
+        h.electric_prev,
+        h.electric_curr,
+        h.electric_units,
+        elecCost,
+        h.water_prev,
+        h.water_curr,
+        h.water_units,
+        waterCost,
+        total,
+      ].join(",");
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...csvRows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `รายงานประวัติมิเตอร์_${selectedMonth === "all" ? "ทั้งหมด" : selectedMonth}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[var(--card)] p-5 rounded-2xl border border-[var(--border)] shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center font-bold">
-            <Zap className="w-5 h-5" />
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold shadow-xs">
+            <Zap className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-[var(--foreground)] tracking-tight">
-              บันทึกมิเตอร์น้ำ-ไฟ (Spreadsheet Fast Entry)
+            <h1 className="text-xl font-bold text-[var(--foreground)] tracking-tight flex items-center gap-2">
+              <span>บันทึกมิเตอร์น้ำ-ไฟ (Spreadsheet Fast Entry)</span>
             </h1>
             <p className="text-xs text-[var(--muted)]">
-              จดเลขล่าสุดของแต่ละห้อง — ระบบจะดึงค่าครั้งก่อนมาคำนวณจำนวนหน่วยและยอดเงินให้อัตโนมัติ
+              จดเลขล่าสุดของแต่ละห้อง — ระบบจะดึงเลขก่อนหน้ามาคำนวณจำนวนหน่วยและยอดเงินให้อัตโนมัติ
             </p>
           </div>
         </div>
 
-        <button
-          onClick={handleSaveAll}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
-        >
-          <Save className="w-4 h-4" />
-          <span>บันทึกเลขมิเตอร์ทั้งหมด ({rows.length} ห้อง)</span>
-        </button>
+        {activeTab === "entry" && (
+          <button
+            onClick={handleSaveAll}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
+          >
+            <Save className="w-4 h-4" />
+            <span>บันทึกเลขมิเตอร์ทั้งหมด ({rows.length} ห้อง)</span>
+          </button>
+        )}
       </div>
 
       {/* Mode Tabs */}
@@ -146,7 +358,7 @@ export function MeterSpreadsheetView({
           onClick={() => setActiveTab("entry")}
           className={`px-4 py-2 rounded-xl font-medium transition cursor-pointer flex items-center gap-1.5 ${
             activeTab === "entry"
-              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/30"
+              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/30 shadow-2xs"
               : "text-[var(--muted)] hover:text-[var(--foreground)]"
           }`}
         >
@@ -157,7 +369,7 @@ export function MeterSpreadsheetView({
           onClick={() => setActiveTab("photos")}
           className={`px-4 py-2 rounded-xl font-medium transition cursor-pointer flex items-center gap-1.5 ${
             activeTab === "photos"
-              ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/30"
+              ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/30 shadow-2xs"
               : "text-[var(--muted)] hover:text-[var(--foreground)]"
           }`}
         >
@@ -168,56 +380,57 @@ export function MeterSpreadsheetView({
           onClick={() => setActiveTab("history")}
           className={`px-4 py-2 rounded-xl font-medium transition cursor-pointer flex items-center gap-1.5 ${
             activeTab === "history"
-              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 font-bold border border-purple-500/30"
+              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 font-bold border border-purple-500/30 shadow-2xs"
               : "text-[var(--muted)] hover:text-[var(--foreground)]"
           }`}
         >
           <History className="w-3.5 h-3.5" />
-          <span>ประวัติย้อนหลัง</span>
+          <span>ประวัติย้อนหลัง ({historyRecords.length})</span>
         </button>
       </div>
 
+      {/* TAB 1: ENTRY SPREADSHEET */}
       {activeTab === "entry" && (
         <>
-          {/* Summary KPIs - Top Summary Banner */}
+          {/* Summary Bento Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-xs">
               <div className="text-xs text-[var(--muted)] font-medium flex items-center justify-between">
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 font-semibold text-amber-800 dark:text-amber-300">
                   <Zap className="w-3.5 h-3.5 text-amber-500" /> รวมไฟทั้งตึกเดือนนี้
                 </span>
-                <span className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-mono">
+                <span className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full font-mono font-bold">
                   {electricRate} ฿/หน่วย
                 </span>
               </div>
               <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1.5 font-mono">
                 {totalElecUnits.toLocaleString()} <span className="text-xs font-normal text-[var(--muted)]">หน่วย</span>
               </div>
-              <div className="text-[11px] text-[var(--muted)] mt-1">
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
                 รวมเป็นเงิน ฿{(totalElecUnits * electricRate).toLocaleString()}
               </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-xs">
               <div className="text-xs text-[var(--muted)] font-medium flex items-center justify-between">
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 font-semibold text-blue-800 dark:text-blue-300">
                   <Droplets className="w-3.5 h-3.5 text-blue-500" /> รวมน้ำทั้งตึกเดือนนี้
                 </span>
-                <span className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono">
+                <span className="text-[10px] bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-mono font-bold">
                   {waterRate} ฿/หน่วย
                 </span>
               </div>
               <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1.5 font-mono">
                 {totalWaterUnits.toLocaleString()} <span className="text-xs font-normal text-[var(--muted)]">หน่วย</span>
               </div>
-              <div className="text-[11px] text-[var(--muted)] mt-1">
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
                 รวมเป็นเงิน ฿{(totalWaterUnits * waterRate).toLocaleString()}
               </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-xs">
               <div className="text-xs text-[var(--muted)] font-medium flex items-center justify-between">
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 font-semibold text-emerald-800 dark:text-emerald-300">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> สถานะการจดมิเตอร์
                 </span>
                 <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
@@ -244,7 +457,7 @@ export function MeterSpreadsheetView({
               <div className="text-2xl font-extrabold text-[var(--foreground)] mt-1.5 font-mono">
                 {formatCurrency(totalEstimatedCost)}
               </div>
-              <div className="text-[11px] text-[var(--muted)] mt-1">
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
                 พร้อมนำไปออกบิลรายเดือนทันที
               </div>
             </div>
@@ -293,15 +506,35 @@ export function MeterSpreadsheetView({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[var(--muted)] uppercase font-semibold">
+                  <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[var(--muted)] uppercase font-semibold text-[11px]">
                     <th className="p-3.5 w-16">ห้อง</th>
                     <th className="p-3.5">ผู้พักอาศัย</th>
-                    <th className="p-3.5 text-right bg-amber-500/5">ไฟก่อนหน้า</th>
-                    <th className="p-3.5 text-center bg-amber-500/5 w-32">เลขไฟปัจจุบัน *</th>
-                    <th className="p-3.5 text-right bg-amber-500/5 font-bold text-amber-600">หน่วยไฟ</th>
-                    <th className="p-3.5 text-right bg-blue-500/5">น้ำก่อนหน้า</th>
-                    <th className="p-3.5 text-center bg-blue-500/5 w-32">เลขน้ำปัจจุบัน *</th>
-                    <th className="p-3.5 text-right bg-blue-500/5 font-bold text-blue-600">หน่วยน้ำ</th>
+                    {/* PROMINENT PREVIOUS ELECTRIC */}
+                    <th className="p-3.5 text-right bg-amber-500/10 border-b-2 border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span>⚡ ไฟก่อนหน้า (ครั้งก่อน)</span>
+                      </div>
+                    </th>
+                    <th className="p-3.5 text-center bg-amber-500/10 border-b-2 border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold w-36 whitespace-nowrap">
+                      <span>เลขไฟปัจจุบัน (จดใหม่) *</span>
+                    </th>
+                    <th className="p-3.5 text-right bg-amber-500/10 border-b-2 border-amber-500/40 font-bold text-amber-700 dark:text-amber-300">
+                      หน่วยไฟ
+                    </th>
+                    {/* PROMINENT PREVIOUS WATER */}
+                    <th className="p-3.5 text-right bg-sky-500/10 border-b-2 border-sky-500/40 text-sky-900 dark:text-sky-200 font-bold whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></span>
+                        <span>💧 น้ำก่อนหน้า (ครั้งก่อน)</span>
+                      </div>
+                    </th>
+                    <th className="p-3.5 text-center bg-sky-500/10 border-b-2 border-sky-500/40 text-sky-900 dark:text-sky-200 font-bold w-36 whitespace-nowrap">
+                      <span>เลขน้ำปัจจุบัน (จดใหม่) *</span>
+                    </th>
+                    <th className="p-3.5 text-right bg-sky-500/10 border-b-2 border-sky-500/40 font-bold text-sky-700 dark:text-sky-300">
+                      หน่วยน้ำ
+                    </th>
                     <th className="p-3.5 text-right">รวมเงิน (บาท)</th>
                   </tr>
                 </thead>
@@ -317,13 +550,29 @@ export function MeterSpreadsheetView({
                       return (
                         <tr key={row.roomId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition">
                           <td className="p-3.5">
-                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-bold text-xs">
+                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs">
                               {row.roomNumber}
                             </span>
                           </td>
-                          <td className="p-3.5 text-[var(--muted)] font-medium">{row.tenantName}</td>
-                          <td className="p-3.5 text-right font-mono text-[var(--muted)] bg-amber-500/5">
-                            {row.electricPrev}
+                          <td className="p-3.5 font-medium">
+                            {row.tenantName === "(ห้องว่าง)" ? (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px]">
+                                {row.tenantName}
+                              </span>
+                            ) : (
+                              <span className="text-[var(--foreground)] font-semibold">{row.tenantName}</span>
+                            )}
+                          </td>
+                          {/* HIGH-CONTRAST PROMINENT PREVIOUS ELECTRIC */}
+                          <td className="p-2.5 text-right bg-amber-500/5">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/80 shadow-2xs">
+                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 select-none bg-amber-200/80 dark:bg-amber-900/60 px-1.5 py-0.5 rounded">
+                                ก่อน
+                              </span>
+                              <span className="font-mono font-extrabold text-sm text-amber-950 dark:text-amber-100 tracking-tight">
+                                {row.electricPrev.toLocaleString()}
+                              </span>
+                            </div>
                           </td>
                           <td className="p-2 text-center bg-amber-500/5">
                             <input
@@ -332,42 +581,50 @@ export function MeterSpreadsheetView({
                               value={row.electricCurr}
                               placeholder={String(row.electricPrev)}
                               onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
-                              className="w-24 px-2.5 py-1.5 rounded-lg bg-[var(--card)] border border-amber-300 dark:border-amber-700 text-center font-mono font-bold text-amber-600 dark:text-amber-400 focus:ring-2 focus:ring-amber-500/40 text-xs"
+                              className="w-28 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-center font-mono font-bold text-amber-700 dark:text-amber-300 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 text-sm shadow-xs transition"
                             />
                           </td>
                           <td className="p-3.5 text-right font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/5">
                             +{elecDiff}
                           </td>
-                          <td className="p-3.5 text-right font-mono text-[var(--muted)] bg-blue-500/5">
-                            {row.waterPrev}
+                          {/* HIGH-CONTRAST PROMINENT PREVIOUS WATER */}
+                          <td className="p-2.5 text-right bg-sky-500/5">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-100/90 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-700/80 shadow-2xs">
+                              <span className="text-[10px] font-bold text-sky-700 dark:text-sky-400 select-none bg-sky-200/80 dark:bg-sky-900/60 px-1.5 py-0.5 rounded">
+                                ก่อน
+                              </span>
+                              <span className="font-mono font-extrabold text-sm text-sky-950 dark:text-sky-100 tracking-tight">
+                                {row.waterPrev.toLocaleString()}
+                              </span>
+                            </div>
                           </td>
-                          <td className="p-2 text-center bg-blue-500/5">
+                          <td className="p-2 text-center bg-sky-500/5">
                             <input
                               type="number"
                               min={row.waterPrev}
                               value={row.waterCurr}
                               placeholder={String(row.waterPrev)}
                               onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
-                              className="w-24 px-2.5 py-1.5 rounded-lg bg-[var(--card)] border border-blue-300 dark:border-blue-700 text-center font-mono font-bold text-blue-600 dark:text-blue-400 focus:ring-2 focus:ring-blue-500/40 text-xs"
+                              className="w-28 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-center font-mono font-bold text-sky-700 dark:text-sky-300 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 text-sm shadow-xs transition"
                             />
-                        </td>
-                        <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-500/5">
-                          +{waterDiff}
-                        </td>
-                        <td className="p-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                          {formatCurrency(cost)}
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="p-8 text-center text-xs text-[var(--muted)]">
-                      <Search className="w-5 h-5 mx-auto opacity-50 mb-1" />
-                      <div>ไม่พบห้องพักหรือผู้เช่าที่ตรงกับ &ldquo;{searchQuery}&rdquo;</div>
-                    </td>
-                  </tr>
-                )}
+                          </td>
+                          <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400 bg-sky-500/5">
+                            +{waterDiff}
+                          </td>
+                          <td className="p-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
+                            {formatCurrency(cost)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="p-8 text-center text-xs text-[var(--muted)]">
+                        <Search className="w-5 h-5 mx-auto opacity-50 mb-1" />
+                        <div>ไม่พบห้องพักหรือผู้เช่าที่ตรงกับ &ldquo;{searchQuery}&rdquo;</div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -375,8 +632,9 @@ export function MeterSpreadsheetView({
         </>
       )}
 
+      {/* TAB 2: LINE OCR PHOTOS */}
       {activeTab === "photos" && (
-        <div className="p-12 text-center bg-[var(--card)] rounded-2xl border border-[var(--border)]">
+        <div className="p-12 text-center bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-xs">
           <Camera className="w-12 h-12 text-blue-500 mx-auto mb-3" />
           <h3 className="text-sm font-semibold text-[var(--foreground)]">ยังไม่มีภาพถ่ายมิเตอร์ใหม่จากผู้เช่า</h3>
           <p className="text-xs text-[var(--muted)] mt-1 max-w-md mx-auto">
@@ -385,9 +643,234 @@ export function MeterSpreadsheetView({
         </div>
       )}
 
+      {/* TAB 3: METER READING HISTORY (เต็มรูปแบบ) */}
       {activeTab === "history" && (
-        <div className="p-8 text-center bg-[var(--card)] rounded-2xl border border-[var(--border)] text-xs text-[var(--muted)]">
-          แสดงประวัติการจดมิเตอร์ย้อนหลัง 12 เดือนของทุกห้อง สามารถดาวน์โหลดรายงานเพื่อวิเคราะห์การรั่วไหลของน้ำและไฟได้
+        <div className="space-y-4">
+          {/* History Bento Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-xs">
+              <div className="text-xs text-[var(--muted)] font-medium flex items-center justify-between">
+                <span className="flex items-center gap-1 font-semibold text-purple-800 dark:text-purple-300">
+                  <Calendar className="w-3.5 h-3.5 text-purple-500" /> รอบบิลที่เลือก
+                </span>
+                <span className="text-[10px] bg-purple-500/15 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-bold">
+                  {selectedMonth === "all" ? "ทั้งหมด" : selectedMonth}
+                </span>
+              </div>
+              <div className="text-2xl font-bold text-[var(--foreground)] mt-1.5 font-mono">
+                {filteredHistory.length} <span className="text-xs font-normal text-[var(--muted)]">รายการ</span>
+              </div>
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
+                ประวัติการจดมิเตอร์ที่บันทึกแล้ว
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-xs">
+              <div className="text-xs text-[var(--muted)] font-medium flex items-center justify-between">
+                <span className="flex items-center gap-1 font-semibold text-amber-800 dark:text-amber-300">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" /> ยอดใช้ไฟฟ้ารวม
+                </span>
+                <span className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full font-mono font-bold">
+                  {electricRate} ฿/หน่วย
+                </span>
+              </div>
+              <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1.5 font-mono">
+                {historyTotalElec.toLocaleString()} <span className="text-xs font-normal text-[var(--muted)]">หน่วย</span>
+              </div>
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
+                รวมเป็นเงิน ฿{(historyTotalElec * electricRate).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)] shadow-xs">
+              <div className="text-xs text-[var(--muted)] font-medium flex items-center justify-between">
+                <span className="flex items-center gap-1 font-semibold text-blue-800 dark:text-blue-300">
+                  <Droplets className="w-3.5 h-3.5 text-blue-500" /> ยอดใช้น้ำประปารวม
+                </span>
+                <span className="text-[10px] bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-mono font-bold">
+                  {waterRate} ฿/หน่วย
+                </span>
+              </div>
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1.5 font-mono">
+                {historyTotalWater.toLocaleString()} <span className="text-xs font-normal text-[var(--muted)]">หน่วย</span>
+              </div>
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
+                รวมเป็นเงิน ฿{(historyTotalWater * waterRate).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-500/10 via-emerald-500/5 to-transparent border border-purple-500/25 shadow-xs">
+              <div className="text-xs text-purple-700 dark:text-purple-300 font-bold">
+                ยอดรวมค่าสาธารณูปโภคทั้งหมด
+              </div>
+              <div className="text-2xl font-extrabold text-[var(--foreground)] mt-1.5 font-mono">
+                {formatCurrency(historyTotalCost)}
+              </div>
+              <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
+                ค่าไฟ ฿{(historyTotalElec * electricRate).toLocaleString()} + ค่าน้ำ ฿{(historyTotalWater * waterRate).toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          {/* Controls & Filter Bar */}
+          <div className="p-4 bg-[var(--card)] rounded-2xl border border-[var(--border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3 flex-wrap flex-1">
+              {/* Month Dropdown */}
+              <div className="flex items-center gap-1.5 text-xs text-[var(--foreground)]">
+                <Filter className="w-3.5 h-3.5 text-[var(--muted)]" />
+                <span className="font-semibold text-[var(--muted)]">รอบบิล:</span>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] focus:outline-none focus:border-purple-500 cursor-pointer"
+                >
+                  <option value="all">ทุกรอบบิล ({historyRecords.length} รายการ)</option>
+                  {availableMonths.map((m) => (
+                    <option key={m} value={m}>
+                      รอบเดือน {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Search Box */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--muted)] pointer-events-none" />
+                <input
+                  type="text"
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  placeholder="ค้นหาเลขห้อง หรือชื่อผู้เช่า..."
+                  className="w-full bg-[var(--subtle)] border border-[var(--border)] rounded-xl pl-8 pr-7 py-1.5 text-xs text-[var(--foreground)] placeholder-[var(--muted)] focus:outline-none focus:border-purple-500 transition font-medium"
+                />
+                {historySearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHistorySearchQuery("")}
+                    className="absolute right-2.5 top-2 text-[var(--muted)] hover:text-[var(--foreground)]"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Export CSV Button */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportHistoryCSV}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs shadow-sm transition cursor-pointer"
+                title="ส่งออกรายงานประวัติมิเตอร์เป็นไฟล์ CSV / Excel"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>ดาวน์โหลดรายงาน (CSV)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* History Data Table */}
+          <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[var(--muted)] uppercase font-semibold text-[11px]">
+                    <th className="p-3.5 whitespace-nowrap">รอบบิล / วันที่จด</th>
+                    <th className="p-3.5 w-16">ห้อง</th>
+                    <th className="p-3.5">ผู้พักอาศัย</th>
+                    <th className="p-3.5 bg-amber-500/5 text-center font-bold text-amber-900 dark:text-amber-300">
+                      ⚡ ประวัติมิเตอร์ไฟฟ้า (ก่อน ➔ จดได้)
+                    </th>
+                    <th className="p-3.5 bg-amber-500/5 text-right font-bold text-amber-700 dark:text-amber-400">
+                      ค่าไฟ (฿)
+                    </th>
+                    <th className="p-3.5 bg-sky-500/5 text-center font-bold text-sky-900 dark:text-sky-300">
+                      💧 ประวัติมิเตอร์น้ำ (ก่อน ➔ จดได้)
+                    </th>
+                    <th className="p-3.5 bg-sky-500/5 text-right font-bold text-sky-700 dark:text-sky-400">
+                      ค่าน้ำ (฿)
+                    </th>
+                    <th className="p-3.5 text-right font-bold">รวมเงินสุทธิ</th>
+                    <th className="p-3.5 text-center">สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
+                  {filteredHistory.length > 0 ? (
+                    filteredHistory.map((item) => {
+                      const elecCost = item.electric_units * electricRate;
+                      const waterCost = item.water_units * waterRate;
+                      const total = elecCost + waterCost;
+
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition">
+                          <td className="p-3.5 whitespace-nowrap">
+                            <div className="font-semibold text-purple-700 dark:text-purple-300 font-mono text-xs">
+                              {item.billing_month}
+                            </div>
+                            <div className="text-[11px] text-[var(--muted)]">{item.recorded_at}</div>
+                          </td>
+                          <td className="p-3.5">
+                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs">
+                              {item.room_number}
+                            </span>
+                          </td>
+                          <td className="p-3.5 font-medium text-[var(--muted)]">
+                            {item.tenant_name || "(ห้องว่าง)"}
+                          </td>
+                          {/* Electric History Badge */}
+                          <td className="p-3 bg-amber-500/5 text-center">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-100/70 dark:bg-amber-950/40 border border-amber-300/80 font-mono text-xs">
+                              <span className="text-amber-800 dark:text-amber-300 font-semibold">{item.electric_prev}</span>
+                              <ArrowRight className="w-3 h-3 text-amber-500" />
+                              <span className="text-amber-900 dark:text-amber-100 font-bold">{item.electric_curr}</span>
+                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-200/80 dark:bg-amber-900/60 px-1.5 py-0.5 rounded ml-1">
+                                +{item.electric_units} หน่วย
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/5">
+                            ฿{elecCost.toLocaleString()}
+                          </td>
+                          {/* Water History Badge */}
+                          <td className="p-3 bg-sky-500/5 text-center">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-sky-100/70 dark:bg-sky-950/40 border border-sky-300/80 font-mono text-xs">
+                              <span className="text-sky-800 dark:text-sky-300 font-semibold">{item.water_prev}</span>
+                              <ArrowRight className="w-3 h-3 text-sky-500" />
+                              <span className="text-sky-900 dark:text-sky-100 font-bold">{item.water_curr}</span>
+                              <span className="text-[10px] font-bold text-sky-700 dark:text-sky-300 bg-sky-200/80 dark:bg-sky-900/60 px-1.5 py-0.5 rounded ml-1">
+                                +{item.water_units} หน่วย
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-blue-600 dark:text-blue-400 bg-sky-500/5">
+                            ฿{waterCost.toLocaleString()}
+                          </td>
+                          <td className="p-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">
+                            {formatCurrency(total)}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                              <CheckCircle2 className="w-3 h-3" /> ออกบิลแล้ว
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-xs text-[var(--muted)]">
+                        <History className="w-8 h-8 mx-auto text-purple-400 opacity-50 mb-2" />
+                        <div className="font-semibold text-sm text-[var(--foreground)]">ยังไม่มีประวัติการจดมิเตอร์ในรอบบิลนี้</div>
+                        <div className="text-[11px] mt-1">
+                          คุณสามารถบันทึกมิเตอร์ที่แท็บ &ldquo;บันทึกเลขมิเตอร์ประจำรอบ&rdquo; เพื่อให้ระบบเก็บประวัติอัตโนมัติ
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>
