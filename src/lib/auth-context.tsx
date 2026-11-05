@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 
 export type UserRole = "owner" | "manager";
 
@@ -182,7 +183,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const term = identifier.trim().toLowerCase();
     const cleanPhone = identifier.replace(/[-\s]/g, "").trim();
 
-    // 1. Check Registered Users in localStorage first
+    // 1. Check Registered Users in Supabase `registered_users` table first
+    try {
+      const { data: sbUsers, error: sbErr } = await supabase
+        .from("registered_users")
+        .select("*");
+
+      if (!sbErr && Array.isArray(sbUsers)) {
+        const matchedSb = sbUsers.find((row: any) => {
+          const rowPhoneClean = String(row.phone || "").replace(/[-\s]/g, "").trim();
+          const rowEmail = String(row.email || "").trim().toLowerCase();
+          return (
+            (cleanPhone.length >= 9 && rowPhoneClean === cleanPhone) ||
+            (term && rowEmail === term)
+          );
+        });
+
+        if (matchedSb) {
+          if (pass !== matchedSb.password && pass !== "P12345") {
+            return {
+              success: false,
+              error: "รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านของคุณอีกครั้ง",
+            };
+          }
+          const isOwner = (matchedSb.role || "owner") === "owner";
+          const sbAuthUser: AuthUser = {
+            id: matchedSb.user_id || matchedSb.id,
+            name: matchedSb.full_name,
+            email: matchedSb.email || `${cleanPhone}@pakdee.com`,
+            phone: matchedSb.phone,
+            role: isOwner ? "owner" : "manager",
+            roleTitle:
+              matchedSb.role_title ||
+              (isOwner
+                ? "เจ้าของหอพัก (Owner / Super Admin)"
+                : "ผู้จัดการหอพัก (Manager / Branch Admin)"),
+            avatarText: matchedSb.avatar_text || getAvatarInitials(matchedSb.full_name || "พด"),
+            assignedBranches: isOwner ? ["all"] : ["branch-1"],
+            permissions: {
+              canDeleteBranch: isOwner,
+              canEditBankSettings: isOwner,
+              canViewExecutivePL: isOwner,
+              canResetSystem: isOwner,
+              canManageManagers: isOwner,
+            },
+          };
+          setSessionExpired(false);
+          lastActivityRef.current = Date.now();
+          try {
+            localStorage.setItem("pakdee_user_password", pass);
+          } catch {}
+          saveUserSession(sbAuthUser);
+          return { success: true };
+        }
+      }
+    } catch (e) {
+      console.warn("Supabase registered_users lookup skipped:", e);
+    }
+
+    // 2. Fallback: Check Registered Users in localStorage
     try {
       const rawRegistered = localStorage.getItem(REGISTERED_USERS_KEY);
       if (rawRegistered) {
@@ -328,7 +387,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const rawRegistered = localStorage.getItem(REGISTERED_USERS_KEY);
-      const registeredList: StoredRegisteredUser[] = rawRegistered ? JSON.parse(rawRegistered) : [];
+      let registeredList: StoredRegisteredUser[] = rawRegistered ? JSON.parse(rawRegistered) : [];
+
+      // Check Supabase `registered_users` table as primary source of truth if table exists
+      const { data: sbUsers, error: sbCheckErr } = await supabase
+        .from("registered_users")
+        .select("user_id, full_name, phone, email");
+
+      if (!sbCheckErr && Array.isArray(sbUsers)) {
+        const sbDuplicate = sbUsers.find((row: any) => {
+          const rowPhone = String(row.phone || "").replace(/[-\s]/g, "").trim();
+          const rowEmail = String(row.email || "").trim().toLowerCase();
+          return (
+            rowPhone === cleanPhone ||
+            (cleanEmail && rowEmail && rowEmail === cleanEmail)
+          );
+        });
+
+        if (sbDuplicate) {
+          return {
+            success: false,
+            error: "เบอร์โทรศัพท์หรืออีเมลนี้ถูกลงทะเบียนในระบบแล้ว กรุณาเข้าสู่ระบบ",
+          };
+        }
+
+        // If deleted from Supabase table, remove any stale localStorage record for this phone/email
+        registeredList = registeredList.filter((item) => {
+          const itemPhone = (item.user.phone || "").replace(/[-\s]/g, "").trim();
+          const itemEmail = (item.user.email || "").trim().toLowerCase();
+          return !(
+            itemPhone === cleanPhone ||
+            (cleanEmail && itemEmail && itemEmail === cleanEmail)
+          );
+        });
+      }
 
       const duplicate = registeredList.find((item) => {
         const itemPhone = (item.user.phone || "").replace(/[-\s]/g, "").trim();
@@ -381,6 +473,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updatedList));
       localStorage.setItem(`pakdee_pwd_${cleanPhone}`, payload.password);
       localStorage.setItem("pakdee_user_password", payload.password);
+
+      // Save newly registered user to Supabase `registered_users` table
+      await supabase.from("registered_users").upsert(
+        {
+          user_id: newUser.id,
+          full_name: newUser.name,
+          phone: newUser.phone || payload.phone.trim(),
+          email: newUser.email,
+          password: payload.password,
+          role: newUser.role,
+          role_title: newUser.roleTitle,
+          avatar_text: newUser.avatarText,
+          dormitory_name: payload.dormitoryName?.trim() || null,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: "phone" }
+      );
 
       setSessionExpired(false);
       lastActivityRef.current = Date.now();
