@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import { FloatingAlert } from "@/components/ui/floating-alert";
 import {
   Info,
   AlertTriangle,
@@ -74,7 +75,7 @@ export function AppPopupModal({
 
   // Handle Keyboard shortcuts (Esc = close, Enter = confirm)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || (isCancelHidden && !onConfirm && !onCancel)) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (onCancel) onCancel();
@@ -88,9 +89,13 @@ export function AppPopupModal({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, onConfirm, onCancel]);
+  }, [isOpen, onClose, onConfirm, onCancel, isCancelHidden]);
 
   if (!isOpen) return null;
+
+  if (isCancelHidden && !onConfirm && !onCancel) {
+    return <FloatingAlert type={level} title={title} message={message} onClose={onClose} />;
+  }
 
   const handleConfirmAction = () => {
     if (onConfirm) onConfirm();

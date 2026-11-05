@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { FloatingAlert } from "@/components/ui/floating-alert";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
@@ -2703,36 +2704,7 @@ export default function HomePage() {
         {/* Scrollable Content Workspace */}
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Toast Notification Banner */}
-          {toast && (
-            <div
-              className={`p-3.5 px-5 rounded-2xl flex items-center justify-between text-xs font-semibold shadow-md transition animate-in fade-in slide-in-from-top-2 ${
-                toast.type === "success"
-                  ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30"
-                  : toast.type === "error"
-                  ? "bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/30"
-                  : toast.type === "warning"
-                  ? "bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30"
-                  : "bg-blue-500/15 text-blue-800 dark:text-blue-300 border border-blue-500/30"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                {toast.type === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                ) : toast.type === "warning" ? (
-                  <AlertCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                )}
-                <span>{toast.message}</span>
-              </div>
-              <button
-                onClick={() => setToast(null)}
-                className="opacity-70 hover:opacity-100 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          )}
+          {toast && <FloatingAlert type={toast.type} message={toast.message} onClose={() => setToast(null)} />}
 
           {/* Database Connection Status Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-900 dark:text-emerald-200">

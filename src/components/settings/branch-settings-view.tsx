@@ -335,22 +335,7 @@ export function BranchSettingsView({
           </div>
         </div>
 
-        <button
-          onClick={handleSave}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
-        >
-          {isSaved ? (
-            <>
-              <CheckCircle2 className="w-4 h-4" />
-              <span>บันทึกสำเร็จแล้ว</span>
-            </>
-          ) : (
-            <>
-              <Save className="w-4 h-4" />
-              <span>บันทึกการตั้งค่า</span>
-            </>
-          )}
-        </button>
+
       </div>
 
       {/* 10-Tab Navigation Pills */}
@@ -620,7 +605,7 @@ export function BranchSettingsView({
             <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2.5 leading-relaxed">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
-                <strong>หมายเหตุสำคัญ:</strong> หลังจากเพิ่มหรือแก้ไขประเภทห้องพักแล้ว กรุณากดปุ่ม <strong>"บันทึกการตั้งค่า"</strong> ด้านบนขวา เพื่อบันทึกข้อมูลประเภทห้องพักลงฐานข้อมูลอย่างถาวรครับ
+                <strong>หมายเหตุสำคัญ:</strong> หลังจากเพิ่มหรือแก้ไขประเภทห้องพักแล้ว กรุณากดปุ่ม <strong>"บันทึกการตั้งค่า"</strong> ด้านล่างขวา เพื่อบันทึกข้อมูลประเภทห้องพักลงฐานข้อมูลอย่างถาวรครับ
               </div>
             </div>
           </div>
@@ -1077,29 +1062,24 @@ export function BranchSettingsView({
           </div>
         )}
 
-        {/* Bottom Save Bar for All Tabs */}
-        <div className="mt-8 pt-5 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-3 bg-[var(--subtle)] -mx-6 -mb-6 p-4 rounded-b-2xl">
-          <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>บันทึกการตั้งค่าระบบและอัปเดตฐานข้อมูลโฮสต์ทันที (Persistent Host-Sync)</span>
-          </div>
-          <button
-            onClick={handleSave}
-            type="button"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
-          >
-            {isSaved ? (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>บันทึกสำเร็จเรียบร้อย ✓</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>บันทึกการตั้งค่า (Save Settings)</span>
-              </>
-            )}
-          </button>
+
+        <div className="mt-8 border-t border-[var(--border)] pt-5 flex justify-end">
+        <button type="button"
+          onClick={handleSave}
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
+        >
+          {isSaved ? (
+            <>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>บันทึกสำเร็จแล้ว</span>
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              <span>บันทึกการตั้งค่า</span>
+            </>
+          )}
+        </button>
         </div>
       </div>
       {/* Modal: เพิ่ม / แก้ไขประเภทห้องพัก */}
