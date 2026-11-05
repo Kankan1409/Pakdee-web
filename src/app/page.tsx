@@ -1180,6 +1180,16 @@ export default function HomePage() {
     const electricPrev = targetRoom?.currentElectricMeter || 0;
     const waterPrev = targetRoom?.currentWaterMeter || 0;
 
+    // Strict validation safeguard: Current reading must NOT be less than previous
+    if (electricCurr < electricPrev) {
+      showToast(`เลขมิเตอร์ไฟห้อง ${targetRoom?.roomNumber || ""} (${electricCurr}) ต้องไม่น้อยกว่าเลขเดิม (${electricPrev})`, "error");
+      return;
+    }
+    if (waterCurr < waterPrev) {
+      showToast(`เลขมิเตอร์น้ำห้อง ${targetRoom?.roomNumber || ""} (${waterCurr}) ต้องไม่น้อยกว่าเลขเดิม (${waterPrev})`, "error");
+      return;
+    }
+
     setRooms((prev) =>
       prev.map((r) =>
         r.id === roomId
@@ -1218,6 +1228,18 @@ export default function HomePage() {
       waterPrev: number;
     }[]
   ) => {
+    // Strict validation safeguard: Reject if any reading is less than previous
+    const invalidList = readings.filter(
+      (r) => r.electricCurr < r.electricPrev || r.waterCurr < r.waterPrev
+    );
+    if (invalidList.length > 0) {
+      showToast(
+        `ไม่สามารถบันทึกได้: มี ${invalidList.length} ห้องที่เลขมิเตอร์ต่ำกว่าเลขเดิม (${invalidList.map((r) => r.roomNumber).join(", ")})`,
+        "error"
+      );
+      return;
+    }
+
     try {
       showToast("กำลังบันทึกเลขมิเตอร์ทั้งหมด...", "info");
       for (const r of readings) {

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { DatabaseService } from "@/lib/database.service";
+import { globalPopup } from "@/lib/popup-context";
 
 export interface MeterReadingRecord {
   id: string;
@@ -203,7 +204,27 @@ export function MeterSpreadsheetView({
       (r.waterCurr !== "" && Number(r.waterCurr) > r.waterPrev)
   ).length;
 
+  // Validation: Check for any readings less than previous reading
+  const invalidRows = useMemo(() => {
+    return rows.filter((r) => {
+      const elecVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
+      const waterVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
+      return elecVal < r.electricPrev || waterVal < r.waterPrev;
+    });
+  }, [rows]);
+  const hasValidationError = invalidRows.length > 0;
+
   const handleSaveAll = () => {
+    // Strict safeguard: Reject saving if any row has reading lower than previous
+    if (hasValidationError) {
+      const roomNumbers = invalidRows.map((r) => `ห้อง ${r.roomNumber}`).join(", ");
+      globalPopup.error(
+        "ไม่สามารถบันทึกได้ (เลขมิเตอร์ไม่ถูกต้อง)",
+        `พบว่ามีเลขมิเตอร์ต่ำกว่าเลขเดิม (${invalidRows.length} ห้อง: ${roomNumbers})\nกรุณาตรวจสอบและแก้ไขตัวเลขที่ไฮไลต์สีแดงให้ถูกต้องก่อนบันทึก`
+      );
+      return;
+    }
+
     const readingsPayload = rows.map((r) => ({
       roomId: r.roomId,
       roomNumber: r.roomNumber,
@@ -344,10 +365,18 @@ export function MeterSpreadsheetView({
         {activeTab === "entry" && (
           <button
             onClick={handleSaveAll}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
+            className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold shadow-md transition cursor-pointer text-xs ${
+              hasValidationError
+                ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/25"
+                : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-emerald-500/20"
+            }`}
           >
-            <Save className="w-4 h-4" />
-            <span>บันทึกเลขมิเตอร์ทั้งหมด ({rows.length} ห้อง)</span>
+            {hasValidationError ? <AlertCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            <span>
+              {hasValidationError
+                ? `มีเลขมิเตอร์ไม่ถูกต้อง (${invalidRows.length} ห้อง)`
+                : `บันทึกเลขมิเตอร์ทั้งหมด (${rows.length} ห้อง)`}
+            </span>
           </button>
         )}
       </div>
@@ -503,62 +532,75 @@ export function MeterSpreadsheetView({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Validation Error Alert Banner */}
+            {hasValidationError && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border-2 border-rose-500/30 flex items-center gap-3 text-rose-700 dark:text-rose-300 text-xs font-semibold animate-in fade-in">
+                <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
+                <div className="flex-1">
+                  <span className="font-bold">⚠️ ตรวจพบเลขมิเตอร์ต่ำกว่าครั้งก่อน:</span> มี {invalidRows.length} ห้อง ({invalidRows.map((r) => `ห้อง ${r.roomNumber}`).join(", ")}) ที่ตัวเลขต่ำกว่ามิเตอร์เดิม ระบบจะไม่อนุญาตให้บันทึกจนกว่าจะแก้ไขให้ถูกต้อง
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto rounded-2xl border border-[var(--border)] shadow-xs">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
+                  {/* Category Super-header */}
+                  <tr className="border-b border-[var(--border)] text-[11px] font-bold uppercase tracking-wider">
+                    <th colSpan={2} className="p-2.5 bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-r border-[var(--border)]">
+                      ข้อมูลห้องพัก
+                    </th>
+                    <th colSpan={3} className="p-2.5 bg-amber-500/15 text-amber-950 dark:text-amber-100 border-r border-amber-300/40 text-center">
+                      <div className="inline-flex items-center gap-1.5 font-bold">
+                        <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                        <span>ระบบไฟฟ้า (฿{electricRate}/หน่วย)</span>
+                      </div>
+                    </th>
+                    <th colSpan={3} className="p-2.5 bg-sky-500/15 text-sky-950 dark:text-sky-100 border-r border-sky-300/40 text-center">
+                      <div className="inline-flex items-center gap-1.5 font-bold">
+                        <Droplets className="w-3.5 h-3.5 fill-sky-500 text-sky-500" />
+                        <span>ระบบน้ำประปา (฿{waterRate}/หน่วย)</span>
+                      </div>
+                    </th>
+                    <th className="p-2.5 bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 text-right">
+                      คำนวณเงิน
+                    </th>
+                  </tr>
+
+                  {/* Columns Sub-header */}
                   <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[var(--muted)] uppercase font-semibold text-[11px]">
-                    <th className="p-3.5 w-16">ห้อง</th>
-                    <th className="p-3.5">ผู้พักอาศัย</th>
+                    <th className="p-3 w-16">ห้อง</th>
+                    <th className="p-3 border-r border-[var(--border)]">ผู้พักอาศัย</th>
 
-                    {/* ULTRA PROMINENT PREVIOUS ELECTRIC HEADER */}
-                    <th className="p-3 text-center bg-amber-500/20 border-x-2 border-t-2 border-b-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 font-black whitespace-nowrap">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/50 dark:bg-amber-800 text-amber-950 dark:text-amber-50 font-black text-xs tracking-wide">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                          <span>⚡ ไฟก่อนหน้า</span>
-                        </div>
-                        <span className="text-[10px] text-amber-800 dark:text-amber-200 font-semibold">
-                          (รอบก่อน / อ้างอิงเดิม 🔒)
-                        </span>
+                    {/* ELECTRIC SUB-COLUMNS */}
+                    <th className="p-2.5 text-center bg-amber-500/10 font-bold text-amber-950 dark:text-amber-100 whitespace-nowrap w-32 border-r border-amber-200/50">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span>ไฟก่อนหน้า</span>
                       </div>
                     </th>
-
-                    <th className="p-3 text-center bg-amber-500/5 border-b-2 border-amber-500/30 text-amber-900 dark:text-amber-200 font-bold w-36 whitespace-nowrap">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <span>เลขไฟปัจจุบัน *</span>
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">(ช่องกรอกจดใหม่ ✍️)</span>
-                      </div>
+                    <th className="p-2.5 text-center bg-amber-500/5 font-bold text-amber-900 dark:text-amber-200 w-36 whitespace-nowrap border-r border-amber-200/50">
+                      <span>เลขไฟจดใหม่ *</span>
                     </th>
-
-                    <th className="p-3 text-right bg-amber-500/5 border-b-2 border-amber-500/30 font-bold text-amber-700 dark:text-amber-300">
+                    <th className="p-2.5 text-right bg-amber-500/5 font-bold text-amber-800 dark:text-amber-300 w-24 border-r border-[var(--border)]">
                       หน่วยไฟ
                     </th>
 
-                    {/* ULTRA PROMINENT PREVIOUS WATER HEADER */}
-                    <th className="p-3 text-center bg-sky-500/20 border-x-2 border-t-2 border-b-2 border-sky-400 dark:border-sky-600 text-sky-950 dark:text-sky-100 font-black whitespace-nowrap">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-400/50 dark:bg-sky-800 text-sky-950 dark:text-sky-50 font-black text-xs tracking-wide">
-                          <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></span>
-                          <span>💧 น้ำก่อนหน้า</span>
-                        </div>
-                        <span className="text-[10px] text-sky-800 dark:text-sky-200 font-semibold">
-                          (รอบก่อน / อ้างอิงเดิม 🔒)
-                        </span>
+                    {/* WATER SUB-COLUMNS */}
+                    <th className="p-2.5 text-center bg-sky-500/10 font-bold text-sky-950 dark:text-sky-100 whitespace-nowrap w-32 border-r border-sky-200/50">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse"></span>
+                        <span>น้ำก่อนหน้า</span>
                       </div>
                     </th>
-
-                    <th className="p-3 text-center bg-sky-500/5 border-b-2 border-sky-500/30 text-sky-900 dark:text-sky-200 font-bold w-36 whitespace-nowrap">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <span>เลขน้ำปัจจุบัน *</span>
-                        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">(ช่องกรอกจดใหม่ ✍️)</span>
-                      </div>
+                    <th className="p-2.5 text-center bg-sky-500/5 font-bold text-sky-900 dark:text-sky-200 w-36 whitespace-nowrap border-r border-sky-200/50">
+                      <span>เลขน้ำจดใหม่ *</span>
                     </th>
-
-                    <th className="p-3 text-right bg-sky-500/5 border-b-2 border-sky-500/30 font-bold text-sky-700 dark:text-sky-300">
+                    <th className="p-2.5 text-right bg-sky-500/5 font-bold text-sky-800 dark:text-sky-300 w-24 border-r border-[var(--border)]">
                       หน่วยน้ำ
                     </th>
 
-                    <th className="p-3.5 text-right">รวมเงิน (บาท)</th>
+                    <th className="p-3 text-right">รวมเงิน (บาท)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
@@ -566,18 +608,20 @@ export function MeterSpreadsheetView({
                     filteredRows.map((row) => {
                       const elecVal = row.electricCurr === "" ? row.electricPrev : Number(row.electricCurr);
                       const waterVal = row.waterCurr === "" ? row.waterPrev : Number(row.waterCurr);
-                      const elecDiff = Math.max(0, elecVal - row.electricPrev);
-                      const waterDiff = Math.max(0, waterVal - row.waterPrev);
+                      const isElecInvalid = row.electricCurr !== "" && Number(row.electricCurr) < row.electricPrev;
+                      const isWaterInvalid = row.waterCurr !== "" && Number(row.waterCurr) < row.waterPrev;
+                      const elecDiff = isElecInvalid ? 0 : Math.max(0, elecVal - row.electricPrev);
+                      const waterDiff = isWaterInvalid ? 0 : Math.max(0, waterVal - row.waterPrev);
                       const cost = elecDiff * electricRate + waterDiff * waterRate;
 
                       return (
-                        <tr key={row.roomId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition">
-                          <td className="p-3.5">
-                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs">
+                        <tr key={row.roomId} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
+                          <td className="p-3">
+                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs font-mono">
                               {row.roomNumber}
                             </span>
                           </td>
-                          <td className="p-3.5 font-medium">
+                          <td className="p-3 font-medium border-r border-[var(--border)]">
                             {row.tenantName === "(ห้องว่าง)" ? (
                               <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px]">
                                 {row.tenantName}
@@ -587,23 +631,21 @@ export function MeterSpreadsheetView({
                             )}
                           </td>
 
-                          {/* ULTRA PROMINENT PREVIOUS ELECTRIC CELL */}
-                          <td className="p-2 text-center bg-amber-50/80 dark:bg-amber-950/40 border-x-2 border-amber-300/80 dark:border-amber-700/80">
-                            <div className="flex items-center justify-center">
-                              <div className="w-full max-w-[110px] py-1.5 px-2 rounded-xl bg-amber-200/90 dark:bg-amber-900/80 border-2 border-amber-400 dark:border-amber-600 shadow-xs flex flex-col items-center justify-center">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-200 flex items-center gap-1">
-                                  <span>เดิม</span>
-                                  <span className="text-[8px] opacity-75">🔒</span>
-                                </span>
-                                <span className="font-mono font-black text-base text-amber-950 dark:text-amber-50 tracking-tight">
-                                  {row.electricPrev.toLocaleString()}
-                                </span>
-                              </div>
+                          {/* REFINED PROMINENT PREVIOUS ELECTRIC CELL */}
+                          <td className="p-2 text-center bg-amber-500/10 border-r border-amber-200/50">
+                            <div className="inline-flex items-center justify-between w-28 px-3 py-1.5 rounded-xl bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 shadow-2xs">
+                              <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 select-none">
+                                ก่อน:
+                              </span>
+                              <span className="font-mono font-black text-sm text-amber-950 dark:text-amber-50 tracking-tight">
+                                {row.electricPrev.toLocaleString()}
+                              </span>
                             </div>
                           </td>
 
-                          <td className="p-2 text-center bg-amber-500/5">
-                            <div className="flex items-center justify-center">
+                          {/* ELECTRIC CURRENT INPUT WITH ERROR SAFEGUARD */}
+                          <td className="p-2 text-center bg-amber-500/5 border-r border-amber-200/50">
+                            <div className="flex flex-col items-center justify-center">
                               <div className="relative">
                                 <input
                                   type="number"
@@ -611,42 +653,48 @@ export function MeterSpreadsheetView({
                                   value={row.electricCurr}
                                   placeholder={String(row.electricPrev)}
                                   onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
-                                  className="w-32 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-amber-500 text-center font-mono font-black text-amber-950 dark:text-amber-100 focus:ring-4 focus:ring-amber-500/30 text-base shadow-xs transition"
+                                  className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
+                                    isElecInvalid
+                                      ? "bg-red-50 border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-400/20"
+                                      : "bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 shadow-2xs"
+                                  }`}
                                 />
-                                <span className="absolute -top-2 left-2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[8px] font-black shadow-xs flex items-center gap-0.5">
-                                  จดใหม่ ✍️
-                                </span>
+                                {isElecInvalid && (
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    ⚠️ ต่ำกว่าเดิม
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
 
-                          <td className="p-3.5 text-right font-mono font-bold bg-amber-500/5">
-                            {elecDiff > 0 ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 font-black text-xs">
+                          <td className="p-2.5 text-right font-mono font-bold bg-amber-500/5 border-r border-[var(--border)]">
+                            {isElecInvalid ? (
+                              <span className="text-red-500 text-xs font-semibold">ไม่ถูกต้อง</span>
+                            ) : elecDiff > 0 ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 font-bold text-xs">
                                 +{elecDiff}
                               </span>
                             ) : (
-                              <span className="text-amber-700/60 dark:text-amber-400/60 text-xs">+0</span>
+                              <span className="text-slate-400 text-xs">+0</span>
                             )}
                           </td>
 
-                          {/* ULTRA PROMINENT PREVIOUS WATER CELL */}
-                          <td className="p-2 text-center bg-sky-50/80 dark:bg-sky-950/40 border-x-2 border-sky-300/80 dark:border-sky-700/80">
-                            <div className="flex items-center justify-center">
-                              <div className="w-full max-w-[110px] py-1.5 px-2 rounded-xl bg-sky-200/90 dark:bg-sky-900/80 border-2 border-sky-400 dark:border-sky-600 shadow-xs flex flex-col items-center justify-center">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-sky-800 dark:text-sky-200 flex items-center gap-1">
-                                  <span>เดิม</span>
-                                  <span className="text-[8px] opacity-75">🔒</span>
-                                </span>
-                                <span className="font-mono font-black text-base text-sky-950 dark:text-sky-50 tracking-tight">
-                                  {row.waterPrev.toLocaleString()}
-                                </span>
-                              </div>
+                          {/* REFINED PROMINENT PREVIOUS WATER CELL */}
+                          <td className="p-2 text-center bg-sky-500/10 border-r border-sky-200/50">
+                            <div className="inline-flex items-center justify-between w-28 px-3 py-1.5 rounded-xl bg-sky-100/90 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-700 shadow-2xs">
+                              <span className="text-[10px] font-bold text-sky-800 dark:text-sky-300 select-none">
+                                ก่อน:
+                              </span>
+                              <span className="font-mono font-black text-sm text-sky-950 dark:text-sky-50 tracking-tight">
+                                {row.waterPrev.toLocaleString()}
+                              </span>
                             </div>
                           </td>
 
-                          <td className="p-2 text-center bg-sky-500/5">
-                            <div className="flex items-center justify-center">
+                          {/* WATER CURRENT INPUT WITH ERROR SAFEGUARD */}
+                          <td className="p-2 text-center bg-sky-500/5 border-r border-sky-200/50">
+                            <div className="flex flex-col items-center justify-center">
                               <div className="relative">
                                 <input
                                   type="number"
@@ -654,26 +702,34 @@ export function MeterSpreadsheetView({
                                   value={row.waterCurr}
                                   placeholder={String(row.waterPrev)}
                                   onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
-                                  className="w-32 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-sky-500 text-center font-mono font-black text-sky-950 dark:text-sky-100 focus:ring-4 focus:ring-sky-500/30 text-base shadow-xs transition"
+                                  className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
+                                    isWaterInvalid
+                                      ? "bg-red-50 border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-400/20"
+                                      : "bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-sky-950 dark:text-sky-100 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 shadow-2xs"
+                                  }`}
                                 />
-                                <span className="absolute -top-2 left-2 px-1.5 py-0.2 rounded bg-sky-600 text-white text-[8px] font-black shadow-xs flex items-center gap-0.5">
-                                  จดใหม่ ✍️
-                                </span>
+                                {isWaterInvalid && (
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    ⚠️ ต่ำกว่าเดิม
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
 
-                          <td className="p-3.5 text-right font-mono font-bold bg-sky-500/5">
-                            {waterDiff > 0 ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 font-black text-xs">
+                          <td className="p-2.5 text-right font-mono font-bold bg-sky-500/5 border-r border-[var(--border)]">
+                            {isWaterInvalid ? (
+                              <span className="text-red-500 text-xs font-semibold">ไม่ถูกต้อง</span>
+                            ) : waterDiff > 0 ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 font-bold text-xs">
                                 +{waterDiff}
                               </span>
                             ) : (
-                              <span className="text-sky-700/60 dark:text-sky-400/60 text-xs">+0</span>
+                              <span className="text-slate-400 text-xs">+0</span>
                             )}
                           </td>
 
-                          <td className="p-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
+                          <td className="p-3 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
                             {formatCurrency(cost)}
                           </td>
                         </tr>

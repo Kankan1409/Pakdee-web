@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Room } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
 import { globalPopup } from "@/lib/popup-context";
-import { X, Zap, Droplets, ArrowRight, ArrowLeft, Check } from "lucide-react";
+import { X, Zap, Droplets, ArrowRight, ArrowLeft, Check, AlertCircle } from "lucide-react";
 
 interface QuickMeterModalProps {
   rooms: Room[];
@@ -56,16 +56,41 @@ export function QuickMeterModal({
 
   if (!isOpen || !currentRoom) return null;
 
-  const elecVal = electricNew === "" ? currentRoom.currentElectricMeter : Number(electricNew);
-  const waterVal = waterNew === "" ? currentRoom.currentWaterMeter : Number(waterNew);
+  const elecPrev = currentRoom.currentElectricMeter || 0;
+  const waterPrev = currentRoom.currentWaterMeter || 0;
 
-  const electricUnits = Math.max(0, elecVal - currentRoom.currentElectricMeter);
+  const elecVal = electricNew === "" ? elecPrev : Number(electricNew);
+  const waterVal = waterNew === "" ? waterPrev : Number(waterNew);
+
+  // Validation rules: New readings MUST NOT be less than previous readings
+  const isElectricInvalid = electricNew !== "" && Number(electricNew) < elecPrev;
+  const isWaterInvalid = waterNew !== "" && Number(waterNew) < waterPrev;
+  const hasValidationError = isElectricInvalid || isWaterInvalid;
+
+  const electricUnits = Math.max(0, elecVal - elecPrev);
   const electricCost = electricUnits * electricRate;
 
-  const waterUnits = Math.max(0, waterVal - currentRoom.currentWaterMeter);
+  const waterUnits = Math.max(0, waterVal - waterPrev);
   const waterCost = waterUnits * waterRate;
 
   const handleSaveAndNext = () => {
+    // Strict safeguard check
+    if (isElectricInvalid) {
+      globalPopup.error(
+        "เลขมิเตอร์ไฟฟ้าไม่ถูกต้อง",
+        `เลขมิเตอร์ไฟฟ้า (${elecVal}) ต้องไม่น้อยกว่าเลขเดิม (${elecPrev})`
+      );
+      return;
+    }
+
+    if (isWaterInvalid) {
+      globalPopup.error(
+        "เลขมิเตอร์น้ำประปาไม่ถูกต้อง",
+        `เลขมิเตอร์น้ำประปา (${waterVal}) ต้องไม่น้อยกว่าเลขเดิม (${waterPrev})`
+      );
+      return;
+    }
+
     onSaveReading(currentRoom.id, elecVal, waterVal);
     if (currentIndex < activeRooms.length - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -87,9 +112,11 @@ export function QuickMeterModal({
         {/* Header */}
         <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between">
           <div>
-            <div className="text-xs text-[var(--muted)]">เดินจดมิเตอร์น้ำ-ไฟประจำเดือน</div>
+            <div className="text-xs text-[var(--muted)]">เดินจดมิเตอร์น้ำ-ไฟประจำเดือน (Fast Entry)</div>
             <div className="text-lg font-bold text-[var(--foreground)] flex items-center gap-2">
-              <span>ห้อง {currentRoom.roomNumber}</span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white text-sm font-mono font-bold">
+                ห้อง {currentRoom.roomNumber}
+              </span>
               <span className="text-xs text-[var(--muted)] font-normal">
                 ({currentIndex + 1} จาก {activeRooms.length} ห้อง)
               </span>
@@ -106,66 +133,110 @@ export function QuickMeterModal({
         {/* Content */}
         <div className="p-6 space-y-5">
           <div className="bg-[var(--subtle)] p-3 rounded-xl border border-[var(--border)] text-xs text-[var(--muted)] flex justify-between">
-            <span>ผู้เช่า: <strong className="text-[var(--foreground)]">{currentRoom.currentTenant?.fullName || "ไม่มีชื่อ"}</strong></span>
+            <span>ผู้เช่า: <strong className="text-[var(--foreground)]">{currentRoom.currentTenant?.fullName || "(ห้องว่าง)"}</strong></span>
             <span>ชั้น {currentRoom.floor} ({currentRoom.type})</span>
           </div>
 
           {/* Electric Meter Card */}
-          <div className="bg-[var(--subtle)] border border-[var(--border)] rounded-2xl p-4">
-            <div className="flex items-center justify-between text-xs mb-2">
-              <span className="text-amber-500 font-semibold flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5" /> ไฟฟ้า ({electricRate} ฿/หน่วย)
+          <div className={`border rounded-2xl p-4 transition-all ${
+            isElectricInvalid 
+              ? "bg-red-500/10 border-red-500/50" 
+              : "bg-amber-500/5 border-amber-500/20"
+          }`}>
+            <div className="flex items-center justify-between text-xs mb-2.5">
+              <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1.5">
+                <Zap className="w-4 h-4 fill-amber-500 text-amber-500" /> ไฟฟ้า ({electricRate} ฿/หน่วย)
               </span>
-              <span className="text-[var(--muted)]">
-                เลขเดิม: <strong>{currentRoom.currentElectricMeter}</strong>
-              </span>
+              {/* High Contrast Benchmark Badge */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">เดิม:</span>
+                <span className="font-mono font-black text-sm">{elecPrev}</span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="relative">
               <input
                 type="number"
+                min={elecPrev}
                 value={electricNew}
-                placeholder={String(currentRoom.currentElectricMeter)}
+                placeholder={String(elecPrev)}
                 onChange={(e) => setElectricNew(e.target.value === "" ? "" : Number(e.target.value))}
-                className="w-full bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-2.5 text-center text-xl font-bold text-[var(--foreground)] focus:outline-none focus:border-emerald-500 font-mono"
+                className={`w-full bg-[var(--card)] rounded-xl px-4 py-2.5 text-center text-xl font-bold font-mono transition-all ${
+                  isElectricInvalid
+                    ? "border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-500/20"
+                    : "border-2 border-amber-400 dark:border-amber-600 text-[var(--foreground)] focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20"
+                }`}
               />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-amber-600/70 dark:text-amber-400/70 select-none">
+                จดใหม่
+              </span>
             </div>
 
-            <div className="flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-2">
-              <span>ใช้ไป: {electricUnits} หน่วย</span>
-              <span className="font-bold">= {formatCurrency(electricCost)}</span>
-            </div>
+            {/* Validation Error Banner */}
+            {isElectricInvalid ? (
+              <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-semibold mt-2 bg-red-100/80 dark:bg-red-950/60 p-2 rounded-lg border border-red-300 dark:border-red-800">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>ห้ามจดน้อยกว่ามิเตอร์เดิม ({elecPrev})</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-xs text-amber-700 dark:text-amber-300 font-medium mt-2">
+                <span>ใช้ไป: <strong>{electricUnits}</strong> หน่วย</span>
+                <span className="font-bold">= {formatCurrency(electricCost)}</span>
+              </div>
+            )}
           </div>
 
           {/* Water Meter Card */}
-          <div className="bg-[var(--subtle)] border border-[var(--border)] rounded-2xl p-4">
-            <div className="flex items-center justify-between text-xs mb-2">
-              <span className="text-cyan-500 font-semibold flex items-center gap-1">
-                <Droplets className="w-3.5 h-3.5" /> น้ำประปา ({waterRate} ฿/หน่วย)
+          <div className={`border rounded-2xl p-4 transition-all ${
+            isWaterInvalid 
+              ? "bg-red-500/10 border-red-500/50" 
+              : "bg-sky-500/5 border-sky-500/20"
+          }`}>
+            <div className="flex items-center justify-between text-xs mb-2.5">
+              <span className="text-sky-600 dark:text-sky-400 font-bold flex items-center gap-1.5">
+                <Droplets className="w-4 h-4 fill-sky-500 text-sky-500" /> น้ำประปา ({waterRate} ฿/หน่วย)
               </span>
-              <span className="text-[var(--muted)]">
-                เลขเดิม: <strong>{currentRoom.currentWaterMeter}</strong>
-              </span>
+              {/* High Contrast Benchmark Badge */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">เดิม:</span>
+                <span className="font-mono font-black text-sm">{waterPrev}</span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="relative">
               <input
                 type="number"
+                min={waterPrev}
                 value={waterNew}
-                placeholder={String(currentRoom.currentWaterMeter)}
+                placeholder={String(waterPrev)}
                 onChange={(e) => setWaterNew(e.target.value === "" ? "" : Number(e.target.value))}
-                className="w-full bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-2.5 text-center text-xl font-bold text-[var(--foreground)] focus:outline-none focus:border-emerald-500 font-mono"
+                className={`w-full bg-[var(--card)] rounded-xl px-4 py-2.5 text-center text-xl font-bold font-mono transition-all ${
+                  isWaterInvalid
+                    ? "border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-500/20"
+                    : "border-2 border-sky-400 dark:border-sky-600 text-[var(--foreground)] focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20"
+                }`}
               />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-sky-600/70 dark:text-sky-400/70 select-none">
+                จดใหม่
+              </span>
             </div>
 
-            <div className="flex items-center justify-between text-xs text-cyan-600 dark:text-cyan-400 font-medium mt-2">
-              <span>ใช้ไป: {waterUnits} หน่วย</span>
-              <span className="font-bold">= {formatCurrency(waterCost)}</span>
-            </div>
+            {/* Validation Error Banner */}
+            {isWaterInvalid ? (
+              <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-semibold mt-2 bg-red-100/80 dark:bg-red-950/60 p-2 rounded-lg border border-red-300 dark:border-red-800">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>ห้ามจดน้อยกว่ามิเตอร์เดิม ({waterPrev})</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-xs text-sky-700 dark:text-sky-300 font-medium mt-2">
+                <span>ใช้ไป: <strong>{waterUnits}</strong> หน่วย</span>
+                <span className="font-bold">= {formatCurrency(waterCost)}</span>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 pt-2">
             {currentIndex > 0 && (
               <button
                 type="button"
@@ -178,7 +249,12 @@ export function QuickMeterModal({
             )}
             <button
               onClick={handleSaveAndNext}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition cursor-pointer"
+              disabled={hasValidationError}
+              className={`flex-1 font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition cursor-pointer ${
+                hasValidationError
+                  ? "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed shadow-none"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/25"
+              }`}
             >
               <span>{currentIndex === activeRooms.length - 1 ? "บันทึกเสร็จสิ้น" : "บันทึก & ห้องถัดไป"}</span>
               {currentIndex === activeRooms.length - 1 ? <Check className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
