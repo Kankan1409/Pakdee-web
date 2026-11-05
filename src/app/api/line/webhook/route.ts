@@ -98,8 +98,8 @@ export async function POST(req: NextRequest) {
           const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?\s*([a-zA-Z0-9_-]+)$/i);
           const isExplicitBind = userText.startsWith("ผูก") || userText.startsWith("ห้อง") || /^[rR]oom/i.test(userText);
 
-          // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง/ผูก
-          if (roomMatch && (isExplicitBind || /^\d{1,4}$/.test(cleanBindingText))) {
+          // Accept bare room codes such as 101, A1 and A-101 as well as explicit commands.
+          if (roomMatch && (isExplicitBind || /^(?=.*\d)[a-zA-Z0-9_-]+$/.test(cleanBindingText))) {
             const requestedRoom = roomMatch[1];
             console.log(`[LINE-WEBHOOK] Attempting room binding: room=${requestedRoom} user=${userId}`);
 
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
             if (boundTenant) {
               const invoices = await DatabaseService.getInvoices(activePropId);
               const unpaidForRoom = invoices.filter(
-                (i) => i.roomNumber === requestedRoom && i.status !== "paid"
+                (i) => i.roomNumber === boundTenant.roomNumber && i.status !== "paid"
               );
 
               const replyTexts: any[] = [

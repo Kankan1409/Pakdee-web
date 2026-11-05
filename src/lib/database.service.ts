@@ -1043,21 +1043,15 @@ export const DatabaseService = {
     // 1. ค้นหาห้องจากหน้าแผนผัง (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
     const norm = (num: string) => {
       const clean = (num || "").trim();
-      const parsed = parseInt(clean, 10);
-      return isNaN(parsed) ? clean.toLowerCase() : String(parsed);
+      return /^\d+$/.test(clean) ? String(Number(clean)) : clean.toLowerCase();
     };
     const reqNorm = norm(cleanRoom);
 
-    let roomMatch = allRooms.find(
+    const roomMatch = allRooms.find(
       (r) =>
         (r.propertyId || "prop-1") === (propId || "prop-1") &&
         (r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm)
     );
-    if (!roomMatch) {
-      roomMatch = allRooms.find(
-        (r) => r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm
-      );
-    }
 
     if (!roomMatch) {
       return null; // ไม่มีห้องนี้ในระบบ

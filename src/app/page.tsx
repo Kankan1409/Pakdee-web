@@ -1301,7 +1301,13 @@ export default function HomePage() {
         : (branchSettings.useMinWater
             ? Math.max(branchSettings.minWaterFee, waterUnits * property.waterRate)
             : waterUnits * property.waterRate);
-      const commonFee = branchSettings.commonFee !== undefined ? branchSettings.commonFee : 300;
+      const tenantContract = contracts.find(
+        (c) => c.roomNumber === room.roomNumber && c.status === "active"
+      );
+      const hasCommonFee = room.currentTenant?.hasCommonFee ?? tenantContract?.hasCommonFee;
+      const commonFee = hasCommonFee === false ? 0 : Math.max(0,
+        Number(room.currentTenant?.commonFee ?? tenantContract?.commonFee ?? branchSettings.commonFee ?? 0) || 0
+      );
       let totalAmount = room.monthlyRate + electricAmount + waterAmount + commonFee;
 
       const items: InvoiceItem[] = [
@@ -1322,13 +1328,10 @@ export default function HomePage() {
           meterPrev: waterPrev,
           meterCurr: waterCurr,
         },
-        { name: "ค่าส่วนกลางและขยะ", amount: commonFee },
+        ...(commonFee > 0 ? [{ name: "ค่าส่วนกลางและขยะ", amount: commonFee }] : []),
       ];
 
       // Feature Toggles: เช็คออปชันเช่าทีวีและตู้เย็นจากสัญญาเช่า / ผู้เช่า
-      const tenantContract = contracts.find(
-        (c) => c.roomNumber === room.roomNumber && c.status === "active"
-      );
       const hasTv = room.currentTenant?.hasTv ?? tenantContract?.hasTv;
       const tvFee = (room.currentTenant?.tvRentalFee || tenantContract?.tvRentalFee) ?? 300;
       if (hasTv) {

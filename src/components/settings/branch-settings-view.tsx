@@ -681,6 +681,13 @@ export function BranchSettingsView({
         {/* Tab 3: Rates */}
         {activeTab === "billing" && (
           <div className="space-y-4 max-w-2xl">
+            <div>
+              <label htmlFor="branch-common-fee" className="block text-xs font-medium text-[var(--muted)] mb-1">ค่าส่วนกลางและขยะเริ่มต้น (บาท/เดือน)</label>
+              <input id="branch-common-fee" type="number" min="0" value={formData.commonFee ?? 0}
+                onChange={(e) => handleChange("commonFee", Math.max(0, Number(e.target.value) || 0))}
+                className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]" />
+              <p className="mt-1 text-xs text-[var(--muted)]">ใส่ 0 เพื่อไม่เรียกเก็บเป็นค่าเริ่มต้น หากผู้เช่ามีการกำหนดรายการนี้ไว้ จะใช้ค่าของผู้เช่าแทน มีผลกับบิลที่ออกใหม่</p>
+            </div>
             <h3 className="text-sm font-bold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
               รอบวันตัดบิลและกำหนดชำระ
             </h3>
