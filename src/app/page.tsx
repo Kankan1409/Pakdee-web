@@ -347,7 +347,7 @@ export default function HomePage() {
         withTimeout(DatabaseService.getBroadcasts(activeId)),
       ]);
 
-      if (allProps && allProps.length > 0) {
+      if (allProps) {
         setBranches(allProps);
       }
       if (dailyBookingsData) {
@@ -546,7 +546,7 @@ export default function HomePage() {
         window.removeEventListener("pakdee_db_updated", handleRealtimeUpdate);
       }
     };
-  }, [loadData]);
+  }, [loadData, currentUser?.id]);
 
   // Clean URL Routing & Dynamic Page Title Map (No ?tab= or ?view=)
   const ROUTE_CONFIG: Record<string, { path: string; title: string }> = {

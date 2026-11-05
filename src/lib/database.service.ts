@@ -79,6 +79,22 @@ function scheduleRelationalSync(normKey: string, value: any): void {
 }
 
 // Safe Supabase-Synchronized Storage Helper
+function getCurrentSessionUser(): { id: string; phone?: string; email?: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("pakdee_auth_session_v1");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.id) return parsed;
+  } catch {}
+  return null;
+}
+
+function isCustomRegisteredUser(user: { id: string; phone?: string; email?: string } | null): boolean {
+  if (!user || !user.id) return false;
+  return user.id !== "usr-owner-01" && user.id !== "usr-mgr-01";
+}
+
 function getLocal<T>(key: string, fallback: T): T {
   // 1. In-memory cache synced from Supabase Cloud has highest priority
   if (memoryDb[key] !== undefined && memoryDb[key] !== null) {
@@ -373,6 +389,9 @@ export const DatabaseService = {
     const props = getLocal<BranchItem[] | null>(KEYS.PROPERTIES, null);
     const allRooms = this.getAllRawRooms();
 
+    const sessionUser = getCurrentSessionUser();
+    const isCustomUser = isCustomRegisteredUser(sessionUser);
+
     if (props === null) {
       const prop1Rooms = allRooms.filter((r) => (r.propertyId || "prop-1") === "prop-1");
       const defaultBranch: BranchItem = {
@@ -391,6 +410,9 @@ export const DatabaseService = {
         if (branchSettings.branchName) defaultBranch.name = branchSettings.branchName;
       }
       setLocal(KEYS.PROPERTIES, [defaultBranch]);
+      if (isCustomUser) {
+        return [];
+      }
       return [defaultBranch];
     }
 
@@ -398,8 +420,24 @@ export const DatabaseService = {
       return [];
     }
 
+    // Filter branches by account owner so newly registered accounts start with 0 branches
+    const userScopedProps = props.filter((p: any) => {
+      if (typeof window === "undefined") return true;
+      if (isCustomUser && sessionUser) {
+        return (
+          p.ownerId === sessionUser.id ||
+          (sessionUser.phone && p.ownerPhone && p.ownerPhone === sessionUser.phone)
+        );
+      }
+      return !p.ownerId || p.ownerId === "usr-owner-01" || p.ownerId === "usr-mgr-01";
+    });
+
+    if (userScopedProps.length === 0) {
+      return [];
+    }
+
     // Accurately compute totalRooms, vacantRooms, occupiedRooms and synchronize rates from each branch's settings
-    const refreshed = props.map((p) => {
+    const refreshed = userScopedProps.map((p) => {
       const branchRooms = allRooms.filter((r) => (r.propertyId || "prop-1") === p.id);
       const bSettingsKey = this.getBranchSettingsKey(p.id);
       const bSettings = getLocal<BranchSettingsDetail | null>(bSettingsKey, null);
@@ -428,10 +466,10 @@ export const DatabaseService = {
   },
 
   async updateProperty(propertyId: string, updates: Partial<Property>): Promise<boolean> {
-    const properties = await this.getAllProperties();
+    const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
     let matched = false;
-    const updated = properties.map((p) => {
-      if (p.id === propertyId || properties.length === 1) {
+    const updated = rawProps.map((p) => {
+      if (p.id === propertyId) {
         matched = true;
         return { ...p, ...updates };
       }
@@ -480,7 +518,8 @@ export const DatabaseService = {
     imageUrl?: string;
   }): Promise<BranchItem | null> {
     const newId = `prop-${Date.now()}`;
-    const newBranch: BranchItem = {
+    const sessionUser = getCurrentSessionUser();
+    const newBranch: BranchItem & { ownerId?: string; ownerPhone?: string } = {
       id: newId,
       name: branchData.name,
       address: branchData.address,
@@ -493,10 +532,12 @@ export const DatabaseService = {
       totalRooms: branchData.initialRoomCount,
       buildingName: "อาคาร 1",
       imageUrl: branchData.imageUrl || undefined,
+      ownerId: sessionUser?.id || "usr-owner-01",
+      ownerPhone: sessionUser?.phone,
     };
 
-    const currentProps = await this.getAllProperties();
-    const updatedProps = [...currentProps, newBranch];
+    const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
+    const updatedProps = [...rawProps, newBranch];
 
     // Seed branch-specific settings for isolation
     const newSettings: BranchSettingsDetail = {
@@ -552,8 +593,8 @@ export const DatabaseService = {
   },
 
   async deleteBranch(propertyId: string): Promise<boolean> {
-    const current = await this.getAllProperties();
-    const filteredProps = current.filter((p) => p.id !== propertyId);
+    const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
+    const filteredProps = rawProps.filter((p) => p.id !== propertyId);
     setLocal(KEYS.PROPERTIES, filteredProps);
 
     // Clean up isolated data belonging to this branch
