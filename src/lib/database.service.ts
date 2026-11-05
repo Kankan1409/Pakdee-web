@@ -1144,7 +1144,81 @@ export const DatabaseService = {
     return newTenant;
   },
 
-  async bindTenantLineUser(
+    /**
+   * เปรียบเทียบหมายเลขห้องพักอย่างยืดหยุ่นและชาญฉลาด (เช่น A101 <-> A1, A101 <-> 101, ห้อง 101 <-> 101)
+   */
+  isRoomNumberMatch(roomA?: string, roomB?: string): boolean {
+    if (!roomA || !roomB) return false;
+    const a = roomA.trim().toLowerCase();
+    const b = roomB.trim().toLowerCase();
+    if (a === b) return true;
+
+    const aDigits = a.replace(/\D/g, "");
+    const bDigits = b.replace(/\D/g, "");
+    const aPrefix = (a.match(/^[a-zA-Z]+/)?.[0] || "");
+    const bPrefix = (b.match(/^[a-zA-Z]+/)?.[0] || "");
+
+    if (aPrefix === bPrefix || !aPrefix || !bPrefix) {
+      if (aDigits === bDigits && aDigits !== "") return true;
+
+      const aNum = parseInt(aDigits, 10);
+      const bNum = parseInt(bDigits, 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        if ((aNum >= 100 && aNum % 100 === bNum) || (bNum >= 100 && bNum % 100 === aNum)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  },
+
+  /**
+   * ค้นหาห้องจาก ROOMS (Room Matrix) โดยตรงอย่างชาญฉลาด
+   */
+  findMatchingRoom(allRooms: Room[], requestedRoom: string, propertyId?: string): Room | null {
+    if (!requestedRoom || !allRooms || allRooms.length === 0) return null;
+
+    const cleanReq = requestedRoom.trim();
+    const lowerReq = cleanReq.toLowerCase();
+    const digitsOnlyReq = cleanReq.replace(/\D/g, "");
+    const letterPrefixReq = (cleanReq.match(/^[a-zA-Z]+/)?.[0] || "").toLowerCase();
+
+    const propFilter = (r: Room) => !propertyId || (r.propertyId || "prop-1") === (propertyId || "prop-1");
+    const filteredRooms = allRooms.filter(propFilter);
+    const roomsToSearch = filteredRooms.length > 0 ? filteredRooms : allRooms;
+
+    // 1. Exact match (case-insensitive)
+    let match = roomsToSearch.find((r) => r.roomNumber.trim().toLowerCase() === lowerReq);
+    if (match) return match;
+
+    // 2. Mapping A101 <-> A1 (Building letter prefix + floor/unit)
+    if (letterPrefixReq && digitsOnlyReq) {
+      const unitNumber = parseInt(digitsOnlyReq, 10);
+      const unitMod = unitNumber >= 100 ? String(unitNumber % 100) : String(unitNumber);
+      const shortForm = `${letterPrefixReq}${unitMod}`.toLowerCase();
+      const fullForm = `${letterPrefixReq}10${unitMod}`.toLowerCase();
+      const standardForm = `${letterPrefixReq}0${unitMod}`.toLowerCase();
+
+      match = roomsToSearch.find((r) => {
+        const rLower = r.roomNumber.trim().toLowerCase();
+        return rLower === shortForm || rLower === fullForm || rLower === standardForm;
+      });
+      if (match) return match;
+    }
+
+    // 3. Mapping A101 -> 101 (User types building letter prefix "A101", but room in DB is "101")
+    if (digitsOnlyReq) {
+      match = roomsToSearch.find((r) => {
+        const rDigits = r.roomNumber.trim().replace(/\D/g, "");
+        return rDigits === digitsOnlyReq && rDigits !== "";
+      });
+      if (match) return match;
+    }
+
+    return null;
+  },
+async bindTenantLineUser(
     propertyId: string,
     roomNumber: string,
     lineUserId: string,
@@ -1155,68 +1229,39 @@ export const DatabaseService = {
     const allRooms = this.getAllRawRooms();
     const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
 
-    // 1. ค้นหาห้องจากหน้าแผนผัง (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
-    const norm = (num: string) => {
-      const clean = (num || "").trim();
-      const parsed = parseInt(clean, 10);
-      return isNaN(parsed) ? clean.toLowerCase() : String(parsed);
-    };
-    const reqNorm = norm(cleanRoom);
-
-    let roomMatch = allRooms.find(
-      (r) =>
-        (r.propertyId || "prop-1") === (propId || "prop-1") &&
-        (r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm)
-    );
-    if (!roomMatch) {
-      roomMatch = allRooms.find(
-        (r) => r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm
-      );
-    }
+    // 1. ค้นหาห้องจาก ROOMS (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
+    const roomMatch = this.findMatchingRoom(allRooms, cleanRoom, propId);
 
     if (!roomMatch) {
-      return null; // ไม่มีห้องนี้ในระบบ
-    }
-
-    // 2. หากห้องในหน้าแผนผังว่าง (vacant) หรือกำลังทำความสะอาด (cleaning) โดยไม่มีผู้เช่าลงทะเบียน
-    if ((roomMatch.status === "vacant" || roomMatch.status === "cleaning") && !roomMatch.currentTenant) {
-      // ปลดสิทธิ์ผู้เช่าคนเก่าทั้งหมดที่เคยผูกกับห้องนี้ เพื่อป้องกันไม่ให้ข้อมูลคนเก่ายังค้างในห้อง
-      const detached = allTenants.map((t) => {
-        if ((t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") && (t.roomNumber || "").trim() === cleanRoom) {
-          return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
-        }
-        return t;
-      });
-      setLocal(KEYS.TENANTS, detached);
+      console.warn(`[DatabaseService] Room not found in ROOMS: requested="${cleanRoom}", propId="${propId}"`);
       return null;
     }
 
-    // 3. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง (currentTenant) เป็นหลัก
-    // หากหน้าแผนผังมีชื่อผู้เช่า (เช่น ผู้เช่าใหม่) ให้ใช้ชื่อและข้อมูลผู้เช่าจากหน้าแผนผังเสมอ
-    const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${cleanRoom}`;
+    const canonicalRoomNumber = roomMatch.roomNumber;
+
+    // 2. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง ROOMS (currentTenant) เป็นหลัก
+    const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${canonicalRoomNumber}`;
     const activePhone = roomMatch.currentTenant?.phone || "-";
     const activeIdCard = roomMatch.currentTenant?.idCard || "-";
-    const tenantId = roomMatch.currentTenant?.id || `t-${roomMatch.propertyId || "prop-1"}-${cleanRoom}`;
+    const tenantId = roomMatch.currentTenant?.id || `t-${roomMatch.propertyId || propId}-${canonicalRoomNumber}`;
 
-    // 4. แทนสิทธิ์ (Replace Rights): ปลดสิทธิ์ผู้เช่าคนเดิมที่มีชื่อไม่ตรงกันออกจากห้องนี้
+    // 3. จัดการรายการ TENANTS: อัปเดตข้อมูลผู้เช่าให้ตรงกับ ROOMS
     const updatedTenants = allTenants.map((t) => {
       if (
-        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
-        (t.roomNumber || "").trim() === cleanRoom &&
+        (t.propertyId || "prop-1") === (roomMatch.propertyId || "prop-1") &&
+        (t.roomNumber || "").trim().toLowerCase() === canonicalRoomNumber.toLowerCase() &&
         t.id !== tenantId &&
         t.fullName !== activeName
       ) {
-        // คนเก่าถูกปลดสิทธิ์ออกจากห้องนี้
         return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
       }
       return t;
     });
 
-    // 5. บันทึก / อัปเดตข้อมูลผู้เช่าคนปัจจุบันที่ผูกกับห้องนี้
     const currentTenantIdx = updatedTenants.findIndex(
       (t) =>
-        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
-        (t.id === tenantId || (t.roomNumber || "").trim() === cleanRoom)
+        (t.propertyId || "prop-1") === (roomMatch.propertyId || "prop-1") &&
+        (t.id === tenantId || (t.roomNumber || "").trim().toLowerCase() === canonicalRoomNumber.toLowerCase())
     );
 
     const targetTenant: Tenant = {
@@ -1224,7 +1269,7 @@ export const DatabaseService = {
       id: tenantId,
       propertyId: roomMatch.propertyId || propId,
       roomId: roomMatch.id,
-      roomNumber: cleanRoom,
+      roomNumber: canonicalRoomNumber,
       fullName: activeName,
       phone: activePhone,
       idCard: activeIdCard,
@@ -1240,9 +1285,9 @@ export const DatabaseService = {
     }
     setLocal(KEYS.TENANTS, updatedTenants);
 
-    // 6. อัปเดตสถานะห้องในหน้าแผนผัง (Room Matrix) ให้มี currentTenant ที่ผูก LINE สำเร็จ
+    // 4. อัปเดตสถานะห้องใน ROOMS (Room Matrix) โดยตรงให้ผูกกับ LINE สำเร็จ
     const updatedRooms = allRooms.map((r) => {
-      if ((r.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") && r.roomNumber.trim() === cleanRoom) {
+      if (r.id === roomMatch.id || r.roomNumber.trim().toLowerCase() === canonicalRoomNumber.toLowerCase()) {
         return {
           ...r,
           status: (r.status === "cleaning" ? "cleaning" : "occupied") as RoomStatus,
@@ -1256,17 +1301,21 @@ export const DatabaseService = {
     });
     setLocal(KEYS.ROOMS, updatedRooms);
 
-    await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${activeName})`, propId);
+    // 5. บันทึกข้อมูลแบบ Realtime Sync ไปยังฐานข้อมูลทันที
+    await this.persistBatch({
+      [KEYS.ROOMS]: updatedRooms,
+      [KEYS.TENANTS]: updatedTenants,
+    });
+
+    await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${canonicalRoomNumber} (${activeName})`, propId);
     return targetTenant;
   },
 
   async getTenantByLineUser(lineUserId: string, propertyId?: string): Promise<Tenant | null> {
     if (!lineUserId) return null;
     const propId = propertyId || this.getActivePropertyId() || "prop-1";
-    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const directMatch = allTenants.find((t) => (t.propertyId || "prop-1") === propId && t.lineUserId === lineUserId);
-    if (directMatch) return directMatch;
 
+    // 1. ค้นหาจาก ROOMS (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
     const allRooms = this.getAllRawRooms();
     const roomMatch = allRooms.find(
       (r) => (r.propertyId || "prop-1") === propId && r.currentTenant?.lineUserId === lineUserId
@@ -1278,6 +1327,22 @@ export const DatabaseService = {
         roomNumber: roomMatch.roomNumber,
       };
     }
+
+    // 2. ค้นหาจากห้องข้าม Property (กรณีมีหลายสาขา)
+    const crossRoomMatch = allRooms.find((r) => r.currentTenant?.lineUserId === lineUserId);
+    if (crossRoomMatch && crossRoomMatch.currentTenant) {
+      return {
+        ...crossRoomMatch.currentTenant,
+        propertyId: crossRoomMatch.propertyId || propId,
+        roomNumber: crossRoomMatch.roomNumber,
+      };
+    }
+
+    // 3. Fallback: ค้นหาจากรายการผู้เช่า (TENANTS)
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const directMatch = allTenants.find((t) => t.lineUserId === lineUserId);
+    if (directMatch) return directMatch;
+
     return null;
   },
 

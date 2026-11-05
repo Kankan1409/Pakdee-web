@@ -92,13 +92,16 @@ export async function POST(req: NextRequest) {
         if (message.type === "text") {
           const userText = (message.text || "").trim();
 
-          // 1. ตรวจสอบการผูกห้องพัก (เช่น "101", "ห้อง 101", "ผูก 101", "ผูกห้อง 101", "room 101")
+          // 1. ตรวจสอบการผูกห้องพัก (เช่น "A101", "101", "A1", "ห้อง A101", "ผูก A101", "room A101")
           const cleanBindingText = userText.replace(/^ผูก(?:ห้อง|บัญชี)?\s*/i, "").trim();
-          const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?\s*([a-zA-Z0-9_-]+)$/i);
+          const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?\s*([a-zA-Z0-9_-]{1,6})$/i);
           const isExplicitBind = userText.startsWith("ผูก") || userText.startsWith("ห้อง") || /^[rR]oom/i.test(userText);
+          const isAlphanumericRoom =
+            /^[a-zA-Z0-9_-]{1,6}$/i.test(cleanBindingText) &&
+            !/^(ขอบิล|เช็คยอด|แจ้งซ่อม|ติดต่อ|กฎ|ช่วย|เมนู|แอร์|น้ำ|ไฟ)$/i.test(cleanBindingText);
 
-          // หากเป็นตัวเลขห้อง 1-4 หลัก หรือมีคำว่าห้อง/ผูก
-          if (roomMatch && (isExplicitBind || /^\d{1,4}$/.test(cleanBindingText))) {
+          // รับทั้งชื่อห้องตรงๆ เช่น "A101", "101", "A1" หรือมีคำว่าห้อง/ผูก
+          if (roomMatch && (isExplicitBind || isAlphanumericRoom)) {
             const requestedRoom = roomMatch[1];
             console.log(`[LINE-WEBHOOK] Attempting room binding: room=${requestedRoom} user=${userId}`);
 
@@ -112,7 +115,11 @@ export async function POST(req: NextRequest) {
             if (boundTenant) {
               const invoices = await DatabaseService.getInvoices(activePropId);
               const unpaidForRoom = invoices.filter(
-                (i) => i.roomNumber === requestedRoom && i.status !== "paid"
+                (i) =>
+                  (i.roomNumber === boundTenant.roomNumber ||
+                    DatabaseService.isRoomNumberMatch(i.roomNumber, boundTenant.roomNumber) ||
+                    DatabaseService.isRoomNumberMatch(i.roomNumber, requestedRoom)) &&
+                  i.status !== "paid"
               );
 
               const replyTexts: any[] = [
@@ -164,7 +171,10 @@ export async function POST(req: NextRequest) {
 
             const invoices = await DatabaseService.getInvoices(activePropId);
             const unpaid = invoices.find(
-              (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+              (i) =>
+                (i.roomNumber === tenant.roomNumber ||
+                  DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
+                i.status !== "paid"
             );
 
             if (unpaid) {
@@ -261,10 +271,13 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // ค้นหาบิลค้างชำระของห้องนี้
+          // ค้นหาบิลค้างชำระของห้องนี้ (ยึด ROOMS เป็นหลัก และเทียบเบอร์ห้องอย่างยืดหยุ่น)
           const invoices = await DatabaseService.getInvoices(activePropId);
           const unpaid = invoices.find(
-            (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+            (i) =>
+              (i.roomNumber === tenant.roomNumber ||
+                DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
+              i.status !== "paid"
           );
 
           if (!unpaid) {
