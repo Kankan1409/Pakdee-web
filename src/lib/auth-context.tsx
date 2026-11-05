@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { toUuid } from "@/lib/supabase-relational";
 
 export type UserRole = "owner" | "manager";
 
@@ -183,10 +184,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const term = identifier.trim().toLowerCase();
     const cleanPhone = identifier.replace(/[-\s]/g, "").trim();
 
-    // 1. Check Registered Users in Supabase `registered_users` table first
+    // 1. Check Registered Users in Supabase `user_profiles` table first
     try {
       const { data: sbUsers, error: sbErr } = await supabase
-        .from("registered_users")
+        .from("user_profiles")
         .select("*");
 
       if (!sbErr && Array.isArray(sbUsers)) {
@@ -200,7 +201,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (matchedSb) {
-          if (pass !== matchedSb.password && pass !== "P12345") {
+          const branchArr: string[] = Array.isArray(matchedSb.assigned_branch_ids)
+            ? matchedSb.assigned_branch_ids
+            : [];
+          const pwdTag = branchArr.find((x) => typeof x === "string" && x.startsWith("pwd:"));
+          const storedPwd =
+            (pwdTag ? pwdTag.slice(4) : null) ||
+            localStorage.getItem(`pakdee_pwd_${cleanPhone}`);
+
+          if (storedPwd && pass !== storedPwd && pass !== "P12345") {
             return {
               success: false,
               error: "รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านของคุณอีกครั้ง",
@@ -208,17 +217,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           const isOwner = (matchedSb.role || "owner") === "owner";
           const sbAuthUser: AuthUser = {
-            id: matchedSb.user_id || matchedSb.id,
+            id: matchedSb.id,
             name: matchedSb.full_name,
             email: matchedSb.email || `${cleanPhone}@pakdee.com`,
             phone: matchedSb.phone,
             role: isOwner ? "owner" : "manager",
-            roleTitle:
-              matchedSb.role_title ||
-              (isOwner
-                ? "เจ้าของหอพัก (Owner / Super Admin)"
-                : "ผู้จัดการหอพัก (Manager / Branch Admin)"),
-            avatarText: matchedSb.avatar_text || getAvatarInitials(matchedSb.full_name || "พด"),
+            roleTitle: isOwner
+              ? "เจ้าของหอพัก (Owner / Super Admin)"
+              : "ผู้จัดการหอพัก (Manager / Branch Admin)",
+            avatarText: getAvatarInitials(matchedSb.full_name || "พด"),
             assignedBranches: isOwner ? ["all"] : ["branch-1"],
             permissions: {
               canDeleteBranch: isOwner,
@@ -238,7 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (e) {
-      console.warn("Supabase registered_users lookup skipped:", e);
+      console.warn("Supabase user_profiles lookup skipped:", e);
     }
 
     // 2. Fallback: Check Registered Users in localStorage
@@ -389,10 +396,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const rawRegistered = localStorage.getItem(REGISTERED_USERS_KEY);
       let registeredList: StoredRegisteredUser[] = rawRegistered ? JSON.parse(rawRegistered) : [];
 
-      // Check Supabase `registered_users` table as primary source of truth if table exists
+      // Check Supabase `user_profiles` table as primary source of truth
       const { data: sbUsers, error: sbCheckErr } = await supabase
-        .from("registered_users")
-        .select("user_id, full_name, phone, email");
+        .from("user_profiles")
+        .select("id, full_name, phone, email");
 
       if (!sbCheckErr && Array.isArray(sbUsers)) {
         const sbDuplicate = sbUsers.find((row: any) => {
@@ -411,7 +418,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        // If deleted from Supabase table, remove any stale localStorage record for this phone/email
+        // If not in Supabase `user_profiles`, remove any stale localStorage record for this phone/email
         registeredList = registeredList.filter((item) => {
           const itemPhone = (item.user.phone || "").replace(/[-\s]/g, "").trim();
           const itemEmail = (item.user.email || "").trim().toLowerCase();
@@ -420,6 +427,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             (cleanEmail && itemEmail && itemEmail === cleanEmail)
           );
         });
+        localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(registeredList));
       }
 
       const duplicate = registeredList.find((item) => {
@@ -474,21 +482,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(`pakdee_pwd_${cleanPhone}`, payload.password);
       localStorage.setItem("pakdee_user_password", payload.password);
 
-      // Save newly registered user to Supabase `registered_users` table
-      await supabase.from("registered_users").upsert(
+      // Save newly registered user to Supabase `user_profiles` table
+      const profileUuid = toUuid(newUser.id, `user-${cleanPhone}`);
+      newUser.id = profileUuid;
+      await supabase.from("user_profiles").upsert(
         {
-          user_id: newUser.id,
-          full_name: newUser.name,
-          phone: newUser.phone || payload.phone.trim(),
+          id: profileUuid,
           email: newUser.email,
-          password: payload.password,
+          full_name: newUser.name,
           role: newUser.role,
-          role_title: newUser.roleTitle,
-          avatar_text: newUser.avatarText,
-          dormitory_name: payload.dormitoryName?.trim() || null,
-          created_at: new Date().toISOString(),
+          phone: newUser.phone || payload.phone.trim(),
+          assigned_branch_ids: [isOwner ? "all" : "branch-1", `pwd:${payload.password}`],
+          is_active: true,
+          updated_at: new Date().toISOString(),
         },
-        { onConflict: "phone" }
+        { onConflict: "email" }
       );
 
       setSessionExpired(false);
