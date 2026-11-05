@@ -753,3 +753,167 @@ export function buildWelcomeFlexMessage(branchName = "พักดี แมน�
     },
   };
 }
+
+/**
+ * 5. สร้าง Flex Message สำหรับประกาศข่าวสาร Broadcast ประจำหอพัก
+ */
+export function buildBroadcastFlexMessage(
+  title: string,
+  message: string,
+  template: "power" | "water" | "maintenance" | "general" = "general",
+  branchName: string = "พักดี แมนชั่น",
+  targetInfo: string = "ผู้พักอาศัยทุกท่าน",
+  branchPhone?: string
+) {
+  const config = {
+    power: {
+      badgeText: "⚡ ประกาศตัดกระแสไฟฟ้าชั่วคราว",
+      badgeColor: "#D97706",
+      badgeBg: "#FEF3C7",
+      headerBg: "#FFFBEB",
+      themeColor: "#B45309",
+    },
+    water: {
+      badgeText: "💧 ประกาศปิดวาล์วน้ำประปาชั่วคราว",
+      badgeColor: "#0284C7",
+      badgeBg: "#E0F2FE",
+      headerBg: "#F0F9FF",
+      themeColor: "#0369A1",
+    },
+    maintenance: {
+      badgeText: "🔧 ประกาศงานซ่อมบำรุง / ฉีดพ่นยา",
+      badgeColor: "#E11D48",
+      badgeBg: "#FFE4E6",
+      headerBg: "#FFF1F2",
+      themeColor: "#BE123C",
+    },
+    general: {
+      badgeText: "📢 ประกาศทั่วไปจากฝ่ายจัดการหอพัก",
+      badgeColor: "#059669",
+      badgeBg: "#D1FAE5",
+      headerBg: "#ECFDF5",
+      themeColor: "#047857",
+    },
+  }[template] || {
+    badgeText: "📢 ประกาศจากฝ่ายจัดการหอพัก",
+    badgeColor: "#059669",
+    badgeBg: "#D1FAE5",
+    headerBg: "#ECFDF5",
+    themeColor: "#047857",
+  };
+
+  const nowFormatted = new Date().toLocaleDateString("th-TH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return {
+    type: "flex",
+    altText: `📢 ${title} - ${branchName}`,
+    contents: {
+      type: "bubble",
+      size: "giga",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: config.headerBg,
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              {
+                type: "box",
+                layout: "vertical",
+                backgroundColor: config.badgeBg,
+                cornerRadius: "8px",
+                paddingStart: "8px",
+                paddingEnd: "8px",
+                paddingTop: "3px",
+                paddingBottom: "3px",
+                contents: [
+                  {
+                    type: "text",
+                    text: config.badgeText,
+                    size: "xxs",
+                    color: config.badgeColor,
+                    weight: "bold",
+                  },
+                ],
+              },
+              {
+                type: "text",
+                text: branchName,
+                size: "xxs",
+                color: "#64748B",
+                align: "end",
+                gravity: "center",
+              },
+            ],
+          },
+          {
+            type: "text",
+            text: title,
+            size: "md",
+            weight: "bold",
+            color: "#0F172A",
+            margin: "md",
+            wrap: true,
+          },
+          {
+            type: "text",
+            text: `วันที่ประกาศ: ${nowFormatted} • ถึง: ${targetInfo}`,
+            size: "xxs",
+            color: "#64748B",
+            margin: "xs",
+          },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FFFFFF",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: message,
+            size: "xs",
+            color: "#334155",
+            wrap: true,
+            lineSpacing: "5px",
+          },
+          {
+            type: "separator",
+            margin: "lg",
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            margin: "md",
+            contents: [
+              {
+                type: "text",
+                text: "🏢 ฝ่ายนิติบุคคลและบริหารอาคาร",
+                size: "xxs",
+                color: "#64748B",
+                flex: 1,
+              },
+              {
+                type: "text",
+                text: branchPhone ? `โทร: ${branchPhone}` : "ติดต่อสอบถามผ่าน LINE ได้ 24 ชม.",
+                size: "xxs",
+                color: config.themeColor,
+                weight: "bold",
+                align: "end",
+                flex: 1,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}

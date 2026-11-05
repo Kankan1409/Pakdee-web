@@ -26,7 +26,7 @@ import {
 interface BroadcastLineViewProps {
   broadcasts: BroadcastItem[];
   rooms: Room[];
-  onSendBroadcast: (broadcast: Omit<BroadcastItem, "id" | "sentAt" | "status">) => void;
+  onSendBroadcast: (broadcast: Omit<BroadcastItem, "id" | "sentAt" | "status">) => Promise<boolean | void> | void;
   branchName?: string;
   lineChannelId?: string;
 }
@@ -93,11 +93,11 @@ export function BroadcastLineView({
     return selectedRooms.length;
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!title.trim() || !message.trim()) return;
     setIsSending(true);
-    setTimeout(() => {
-      onSendBroadcast({
+    try {
+      await onSendBroadcast({
         template: selectedTemplate,
         title,
         message,
@@ -105,8 +105,9 @@ export function BroadcastLineView({
         targetValue: targetType === "floor" ? selectedFloor : targetType === "room" ? selectedRooms.join(",") : undefined,
         recipientCount: getRecipientCount(),
       });
+    } finally {
       setIsSending(false);
-    }, 600);
+    }
   };
 
   return (

@@ -47,6 +47,7 @@ const nextConfig: NextConfig = {
       { source: "/repairs", destination: "/" },
       { source: "/accounting", destination: "/" },
       { source: "/reports", destination: "/" },
+      { source: "/broadcast", destination: "/" },
       { source: "/settings", destination: "/" },
     ];
   },
