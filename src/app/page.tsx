@@ -1904,10 +1904,9 @@ export default function HomePage() {
       setBranches((prev) =>
         prev.map((b) => (b.id === property.id || prev.length === 1 ? { ...b, ...propUpdates } : b))
       );
-      await DatabaseService.updateProperty(property.id, propUpdates);
     }
 
-    // Save to DatabaseService (local storage + audit log)
+    // This also updates the property; avoid a second write with stale room types.
     await DatabaseService.updateBranchSettings(merged, property.id);
 
     showToast("บันทึกการตั้งค่าหอพักและอัปเดตอัตราค่าน้ำ-ไฟเรียบร้อยแล้ว ✓", "success");
