@@ -805,8 +805,45 @@ export function ContractManagementView({
         const thaiYear = String(createdDateObj.getFullYear() + 543);
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:p-0 print:bg-white">
-            <div className="bg-white text-black rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden p-6 sm:p-10 space-y-5 max-h-[92vh] flex flex-col print:max-h-none print:shadow-none print:rounded-none print:p-0">
+          <div id="contract-print-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:p-0 print:bg-white">
+            <style>{`
+              @media print {
+                @page { size: A4 portrait; margin: 14mm 16mm; }
+                html, body, body *:has(#contract-print-modal) {
+                  display: block !important;
+                  position: static !important;
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  width: auto !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  transform: none !important;
+                }
+                body *:has(#contract-print-modal) > :not(:has(#contract-print-modal)):not(#contract-print-modal) {
+                  display: none !important;
+                }
+                #contract-print-modal, #contract-print-sheet, #contract-print-content {
+                  display: block !important;
+                  position: static !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: white !important;
+                  box-shadow: none !important;
+                  backdrop-filter: none !important;
+                }
+                #contract-print-content { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                #contract-print-content tr { break-inside: avoid; }
+                #contract-print-content thead { display: table-header-group; }
+              }
+            `}</style>
+            <div id="contract-print-sheet" className="bg-white text-black rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden p-6 sm:p-10 space-y-5 max-h-[92vh] flex flex-col print:max-h-none print:shadow-none print:rounded-none print:p-0">
               {/* Top Modal Header */}
               <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0 print:hidden">
                 <div>
@@ -826,7 +863,7 @@ export function ContractManagementView({
               </div>
 
               {/* Printable Document Content (ตามรูปแบบ ตัวอย่างสัญญาเช่า.pdf + ตารางสรุปยอดชำระ) */}
-              <div className="space-y-4 text-[13px] leading-[1.8] overflow-y-auto pr-1 flex-1 text-black">
+              <div id="contract-print-content" className="space-y-4 text-[13px] leading-[1.8] overflow-y-auto pr-1 flex-1 text-black">
                 {/* ชื่อเรื่องสัญญา */}
                 <div className="text-center space-y-0.5">
                   <h1 className="text-xl font-bold text-black">สัญญาเช่าห้องพักอาศัย</h1>
