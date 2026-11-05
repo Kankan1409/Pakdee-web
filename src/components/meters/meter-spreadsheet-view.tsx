@@ -11,6 +11,7 @@ import {
   Camera,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Search,
   X,
   Download,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { DatabaseService } from "@/lib/database.service";
+import { globalPopup } from "@/lib/popup-context";
 
 export interface MeterReadingRecord {
   id: string;
@@ -203,7 +205,17 @@ export function MeterSpreadsheetView({
       (r.waterCurr !== "" && Number(r.waterCurr) > r.waterPrev)
   ).length;
 
-  const handleSaveAll = () => {
+  // Validation: Check for any readings less than previous reading
+  const decreasedRows = useMemo(() => {
+    return rows.filter((r) => {
+      const elecVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
+      const waterVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
+      return elecVal < r.electricPrev || waterVal < r.waterPrev;
+    });
+  }, [rows]);
+  const hasDecreasedMeters = decreasedRows.length > 0;
+
+  const executeSave = () => {
     const readingsPayload = rows.map((r) => ({
       roomId: r.roomId,
       roomNumber: r.roomNumber,
@@ -244,6 +256,20 @@ export function MeterSpreadsheetView({
     });
 
     setHistoryRecords((prev) => [...newHistoryItems, ...prev]);
+  };
+
+  // Available unique months from history
+  const [recheckModalOpen, setRecheckModalOpen] = useState(false);
+
+  const handleSaveAll = () => {
+    // If any meter reading is lower than previous, prompt Recheck Confirmation Popup
+    if (hasDecreasedMeters) {
+      setRecheckModalOpen(true);
+      return;
+    }
+
+    // Normal save without popup if all values are valid
+    executeSave();
   };
 
   // Available unique months from history
@@ -346,8 +372,16 @@ export function MeterSpreadsheetView({
             onClick={handleSaveAll}
             className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
           >
-            <Save className="w-4 h-4" />
-            <span>บันทึกเลขมิเตอร์ทั้งหมด ({rows.length} ห้อง)</span>
+            {hasDecreasedMeters ? (
+              <AlertTriangle className="w-4 h-4 text-amber-300" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>
+              {hasDecreasedMeters
+                ? `บันทึกมิเตอร์ (มี ${decreasedRows.length} ห้องเลขลดลง - คลิกเพื่อ Recheck)`
+                : `บันทึกเลขมิเตอร์ทั้งหมด (${rows.length} ห้อง)`}
+            </span>
           </button>
         )}
       </div>
@@ -503,39 +537,75 @@ export function MeterSpreadsheetView({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Recheck Notice if any meter decreased */}
+            {hasDecreasedMeters && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-900 dark:text-amber-100 text-xs font-medium animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="flex-1">
+                  <span className="font-bold">แจ้งเตือน Recheck:</span> มี {decreasedRows.length} ห้อง ({decreasedRows.map((r) => `ห้อง ${r.roomNumber}`).join(", ")}) ที่ตัวเลขจดได้น้อยกว่าครั้งก่อน เมื่อกดบันทึกจะมีหน้าต่าง Popup ให้ตรวจสอบยืนยันอีกครั้ง
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto rounded-2xl border border-[var(--border)] shadow-xs">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[var(--muted)] uppercase font-semibold text-[11px]">
-                    <th className="p-3.5 w-16">ห้อง</th>
-                    <th className="p-3.5">ผู้พักอาศัย</th>
-                    {/* PROMINENT PREVIOUS ELECTRIC */}
-                    <th className="p-3.5 text-right bg-amber-500/10 border-b-2 border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                        <span>⚡ ไฟก่อนหน้า (ครั้งก่อน)</span>
+                  {/* Category Super-header */}
+                  <tr className="border-b border-[var(--border)] text-[11px] font-bold uppercase tracking-wider">
+                    <th colSpan={2} className="p-2.5 bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-r border-[var(--border)]">
+                      ข้อมูลห้องพัก
+                    </th>
+                    <th colSpan={3} className="p-2.5 bg-amber-500/15 text-amber-950 dark:text-amber-100 border-r border-amber-300/40 text-center">
+                      <div className="inline-flex items-center gap-1.5 font-bold">
+                        <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                        <span>ระบบไฟฟ้า (฿{electricRate}/หน่วย)</span>
                       </div>
                     </th>
-                    <th className="p-3.5 text-center bg-amber-500/10 border-b-2 border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold w-36 whitespace-nowrap">
-                      <span>เลขไฟปัจจุบัน (จดใหม่) *</span>
+                    <th colSpan={3} className="p-2.5 bg-sky-500/15 text-sky-950 dark:text-sky-100 border-r border-sky-300/40 text-center">
+                      <div className="inline-flex items-center gap-1.5 font-bold">
+                        <Droplets className="w-3.5 h-3.5 fill-sky-500 text-sky-500" />
+                        <span>ระบบน้ำประปา (฿{waterRate}/หน่วย)</span>
+                      </div>
                     </th>
-                    <th className="p-3.5 text-right bg-amber-500/10 border-b-2 border-amber-500/40 font-bold text-amber-700 dark:text-amber-300">
+                    <th className="p-2.5 bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 text-right">
+                      คำนวณเงิน
+                    </th>
+                  </tr>
+
+                  {/* Columns Sub-header */}
+                  <tr className="bg-[var(--subtle)] border-b border-[var(--border)] text-[var(--muted)] uppercase font-semibold text-[11px]">
+                    <th className="p-3 w-16">ห้อง</th>
+                    <th className="p-3 border-r border-[var(--border)]">ผู้พักอาศัย</th>
+
+                    {/* ELECTRIC SUB-COLUMNS */}
+                    <th className="p-2.5 text-center bg-amber-500/10 font-bold text-amber-950 dark:text-amber-100 whitespace-nowrap w-32 border-r border-amber-200/50">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span>ไฟก่อนหน้า</span>
+                      </div>
+                    </th>
+                    <th className="p-2.5 text-center bg-amber-500/5 font-bold text-amber-900 dark:text-amber-200 w-36 whitespace-nowrap border-r border-amber-200/50">
+                      <span>เลขไฟจดใหม่ *</span>
+                    </th>
+                    <th className="p-2.5 text-right bg-amber-500/5 font-bold text-amber-800 dark:text-amber-300 w-24 border-r border-[var(--border)]">
                       หน่วยไฟ
                     </th>
-                    {/* PROMINENT PREVIOUS WATER */}
-                    <th className="p-3.5 text-right bg-sky-500/10 border-b-2 border-sky-500/40 text-sky-900 dark:text-sky-200 font-bold whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></span>
-                        <span>💧 น้ำก่อนหน้า (ครั้งก่อน)</span>
+
+                    {/* WATER SUB-COLUMNS */}
+                    <th className="p-2.5 text-center bg-sky-500/10 font-bold text-sky-950 dark:text-sky-100 whitespace-nowrap w-32 border-r border-sky-200/50">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse"></span>
+                        <span>น้ำก่อนหน้า</span>
                       </div>
                     </th>
-                    <th className="p-3.5 text-center bg-sky-500/10 border-b-2 border-sky-500/40 text-sky-900 dark:text-sky-200 font-bold w-36 whitespace-nowrap">
-                      <span>เลขน้ำปัจจุบัน (จดใหม่) *</span>
+                    <th className="p-2.5 text-center bg-sky-500/5 font-bold text-sky-900 dark:text-sky-200 w-36 whitespace-nowrap border-r border-sky-200/50">
+                      <span>เลขน้ำจดใหม่ *</span>
                     </th>
-                    <th className="p-3.5 text-right bg-sky-500/10 border-b-2 border-sky-500/40 font-bold text-sky-700 dark:text-sky-300">
+                    <th className="p-2.5 text-right bg-sky-500/5 font-bold text-sky-800 dark:text-sky-300 w-24 border-r border-[var(--border)]">
                       หน่วยน้ำ
                     </th>
-                    <th className="p-3.5 text-right">รวมเงิน (บาท)</th>
+
+                    <th className="p-3 text-right">รวมเงิน (บาท)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
@@ -543,18 +613,20 @@ export function MeterSpreadsheetView({
                     filteredRows.map((row) => {
                       const elecVal = row.electricCurr === "" ? row.electricPrev : Number(row.electricCurr);
                       const waterVal = row.waterCurr === "" ? row.waterPrev : Number(row.waterCurr);
+                      const isElecDecreased = row.electricCurr !== "" && Number(row.electricCurr) < row.electricPrev;
+                      const isWaterDecreased = row.waterCurr !== "" && Number(row.waterCurr) < row.waterPrev;
                       const elecDiff = Math.max(0, elecVal - row.electricPrev);
                       const waterDiff = Math.max(0, waterVal - row.waterPrev);
                       const cost = elecDiff * electricRate + waterDiff * waterRate;
 
                       return (
-                        <tr key={row.roomId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition">
-                          <td className="p-3.5">
-                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs">
+                        <tr key={row.roomId} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
+                          <td className="p-3">
+                            <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs font-mono">
                               {row.roomNumber}
                             </span>
                           </td>
-                          <td className="p-3.5 font-medium">
+                          <td className="p-3 font-medium border-r border-[var(--border)]">
                             {row.tenantName === "(ห้องว่าง)" ? (
                               <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px]">
                                 {row.tenantName}
@@ -563,55 +635,100 @@ export function MeterSpreadsheetView({
                               <span className="text-[var(--foreground)] font-semibold">{row.tenantName}</span>
                             )}
                           </td>
-                          {/* HIGH-CONTRAST PROMINENT PREVIOUS ELECTRIC */}
-                          <td className="p-2.5 text-right bg-amber-500/5">
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/80 shadow-2xs">
-                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 select-none bg-amber-200/80 dark:bg-amber-900/60 px-1.5 py-0.5 rounded">
-                                ก่อน
+
+                          {/* REFINED PROMINENT PREVIOUS ELECTRIC CELL */}
+                          <td className="p-2 text-center bg-amber-500/10 border-r border-amber-200/50">
+                            <div className="inline-flex items-center justify-between w-28 px-3 py-1.5 rounded-xl bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 shadow-2xs">
+                              <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 select-none">
+                                ก่อน:
                               </span>
-                              <span className="font-mono font-extrabold text-sm text-amber-950 dark:text-amber-100 tracking-tight">
+                              <span className="font-mono font-black text-sm text-amber-950 dark:text-amber-50 tracking-tight">
                                 {row.electricPrev.toLocaleString()}
                               </span>
                             </div>
                           </td>
-                          <td className="p-2 text-center bg-amber-500/5">
-                            <input
-                              type="number"
-                              min={row.electricPrev}
-                              value={row.electricCurr}
-                              placeholder={String(row.electricPrev)}
-                              onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
-                              className="w-28 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-center font-mono font-bold text-amber-700 dark:text-amber-300 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 text-sm shadow-xs transition"
-                            />
+
+                          {/* ELECTRIC CURRENT INPUT WITH RECHECK WARNING */}
+                          <td className="p-2 text-center bg-amber-500/5 border-r border-amber-200/50">
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={row.electricCurr}
+                                  placeholder={String(row.electricPrev)}
+                                  onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
+                                  className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
+                                    isElecDecreased
+                                      ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-amber-950 dark:text-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
+                                      : "bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 shadow-2xs"
+                                  }`}
+                                />
+                                {isElecDecreased && (
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    ลดลง
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td className="p-3.5 text-right font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/5">
-                            +{elecDiff}
-                          </td>
-                          {/* HIGH-CONTRAST PROMINENT PREVIOUS WATER */}
-                          <td className="p-2.5 text-right bg-sky-500/5">
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-100/90 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-700/80 shadow-2xs">
-                              <span className="text-[10px] font-bold text-sky-700 dark:text-sky-400 select-none bg-sky-200/80 dark:bg-sky-900/60 px-1.5 py-0.5 rounded">
-                                ก่อน
+
+                          <td className="p-2.5 text-right font-mono font-bold bg-amber-500/5 border-r border-[var(--border)]">
+                            {elecDiff > 0 ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 font-bold text-xs">
+                                +{elecDiff}
                               </span>
-                              <span className="font-mono font-extrabold text-sm text-sky-950 dark:text-sky-100 tracking-tight">
+                            ) : (
+                              <span className="text-slate-400 text-xs">+0</span>
+                            )}
+                          </td>
+
+                          {/* REFINED PROMINENT PREVIOUS WATER CELL */}
+                          <td className="p-2 text-center bg-sky-500/10 border-r border-sky-200/50">
+                            <div className="inline-flex items-center justify-between w-28 px-3 py-1.5 rounded-xl bg-sky-100/90 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-700 shadow-2xs">
+                              <span className="text-[10px] font-bold text-sky-800 dark:text-sky-300 select-none">
+                                ก่อน:
+                              </span>
+                              <span className="font-mono font-black text-sm text-sky-950 dark:text-sky-50 tracking-tight">
                                 {row.waterPrev.toLocaleString()}
                               </span>
                             </div>
                           </td>
-                          <td className="p-2 text-center bg-sky-500/5">
-                            <input
-                              type="number"
-                              min={row.waterPrev}
-                              value={row.waterCurr}
-                              placeholder={String(row.waterPrev)}
-                              onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
-                              className="w-28 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-center font-mono font-bold text-sky-700 dark:text-sky-300 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 text-sm shadow-xs transition"
-                            />
+
+                          {/* WATER CURRENT INPUT WITH RECHECK WARNING */}
+                          <td className="p-2 text-center bg-sky-500/5 border-r border-sky-200/50">
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={row.waterCurr}
+                                  placeholder={String(row.waterPrev)}
+                                  onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
+                                  className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
+                                    isWaterDecreased
+                                      ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-sky-950 dark:text-sky-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
+                                      : "bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-sky-950 dark:text-sky-100 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 shadow-2xs"
+                                  }`}
+                                />
+                                {isWaterDecreased && (
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    ลดลง
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400 bg-sky-500/5">
-                            +{waterDiff}
+
+                          <td className="p-2.5 text-right font-mono font-bold bg-sky-500/5 border-r border-[var(--border)]">
+                            {waterDiff > 0 ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 font-bold text-xs">
+                                +{waterDiff}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">+0</span>
+                            )}
                           </td>
-                          <td className="p-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
+
+                          <td className="p-3 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
                             {formatCurrency(cost)}
                           </td>
                         </tr>
@@ -869,6 +986,122 @@ export function MeterSpreadsheetView({
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recheck Confirmation Modal */}
+      {recheckModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          {/* Backdrop blur */}
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in"
+            onClick={() => setRecheckModalOpen(false)}
+          />
+
+          {/* Modal Container */}
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 shadow-2xl z-10 animate-in zoom-in-95 fade-in duration-150">
+            {/* Top Badge & Close */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                <span>แจ้งเตือนการตรวจสอบ (Recheck Required)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setRecheckModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="ปิดหน้าต่าง (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Title & Desc */}
+            <div className="space-y-1 mb-4">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                เลขมิเตอร์ลดลงกว่าครั้งก่อน ({decreasedRows.length} ห้อง)
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                ระบบตรวจพบว่ามีห้องพักที่กรอกตัวเลขน้อยกว่าครั้งก่อน กรุณา Recheck ว่าเป็นการเปลี่ยนมิเตอร์ใหม่ หรือมีการคีย์ตัวเลขผิดพลาดหรือไม่:
+              </p>
+            </div>
+
+            {/* List of decreased rooms */}
+            <div className="max-h-64 overflow-y-auto space-y-2 pr-1 mb-5">
+              {decreasedRows.map((r) => {
+                const elecVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
+                const waterVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
+                const isElecDec = elecVal < r.electricPrev;
+                const isWaterDec = waterVal < r.waterPrev;
+
+                return (
+                  <div
+                    key={r.roomId}
+                    className="p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-mono text-xs">
+                        ห้อง {r.roomNumber}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-300 text-[11px] font-normal">
+                        ผู้เช่า: {r.tenantName}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 pl-1">
+                      {isElecDec && (
+                        <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-mono">
+                          <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span className="font-sans font-medium text-[11px]">ไฟ:</span>
+                          <span className="text-slate-500 line-through">เดิม {r.electricPrev}</span>
+                          <ArrowRight className="w-3 h-3 text-amber-600" />
+                          <span className="font-bold text-amber-700 dark:text-amber-300">จดใหม่ {elecVal}</span>
+                          <span className="text-[10px] bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 px-1.5 py-0.2 rounded font-bold">
+                            ลดลง {r.electricPrev - elecVal} หน่วย
+                          </span>
+                        </div>
+                      )}
+
+                      {isWaterDec && (
+                        <div className="flex items-center gap-2 text-sky-900 dark:text-sky-200 font-mono">
+                          <Droplets className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                          <span className="font-sans font-medium text-[11px]">น้ำ:</span>
+                          <span className="text-slate-500 line-through">เดิม {r.waterPrev}</span>
+                          <ArrowRight className="w-3 h-3 text-sky-600" />
+                          <span className="font-bold text-sky-700 dark:text-sky-300">จดใหม่ {waterVal}</span>
+                          <span className="text-[10px] bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 px-1.5 py-0.2 rounded font-bold">
+                            ลดลง {r.waterPrev - waterVal} หน่วย
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRecheckModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition cursor-pointer"
+              >
+                กลับไปแก้ไข / ตรวจสอบ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecheckModalOpen(false);
+                  executeSave();
+                }}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold text-xs shadow-lg shadow-amber-500/25 transition cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>ยืนยันตัวเลขลดลง และบันทึกต่อ</span>
+              </button>
             </div>
           </div>
         </div>

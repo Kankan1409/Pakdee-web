@@ -1,6 +1,6 @@
 /**
  * PAKDEE SYSTEM - LINE MESSAGING API CLIENT
- * ไคลเอนต์สื่อสารกับ LINE Messaging API (Reply, Push, Content, Webhook Signature)
+ * ไคลเอนต์สื่อสารกับ LINE Messaging API (Reply, Push, Broadcast, Multicast, Content, Webhook Signature)
  * 100% Native Fetch + Crypto (Zero External Dependencies)
  */
 
@@ -120,7 +120,90 @@ export async function pushLineMessage(
 }
 
 /**
- * 4. ดาวน์โหลดรูปภาพสลิปที่ผู้เช่าส่งมาทาง LINE
+ * 4. ส่งข้อความแบบ Multicast Message ไปยังผู้ใช้กลุ่มที่ระบุ (สูงสุด 500 คนต่อครั้ง)
+ */
+export async function multicastLineMessage(
+  channelAccessToken: string,
+  toUserIds: string[],
+  messages: any[]
+): Promise<LineSendResult> {
+  if (!channelAccessToken || channelAccessToken.trim() === "") {
+    console.warn("[LINE-CLIENT] Simulated multicast (No Channel Access Token configured)");
+    return { success: true, isSimulated: true };
+  }
+
+  const validIds = toUserIds.filter((id) => id && id.trim().startsWith("U"));
+  if (validIds.length === 0) {
+    return { success: false, error: "No valid recipient LINE User IDs provided" };
+  }
+
+  try {
+    const res = await fetch(`${LINE_API_BASE}/message/multicast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${channelAccessToken.trim()}`,
+      },
+      body: JSON.stringify({
+        to: validIds,
+        messages,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[LINE-CLIENT] Multicast failed:", res.status, errText);
+      return { success: false, statusCode: res.status, error: errText };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return { success: true, statusCode: res.status, data };
+  } catch (error: any) {
+    console.error("[LINE-CLIENT] Network error in multicast:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 5. ส่งข้อความแบบ Broadcast Message ไปยังผู้ติดตาม LINE Official Account ทุกคน
+ */
+export async function broadcastLineMessage(
+  channelAccessToken: string,
+  messages: any[]
+): Promise<LineSendResult> {
+  if (!channelAccessToken || channelAccessToken.trim() === "") {
+    console.warn("[LINE-CLIENT] Simulated broadcast (No Channel Access Token configured)");
+    return { success: true, isSimulated: true };
+  }
+
+  try {
+    const res = await fetch(`${LINE_API_BASE}/message/broadcast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${channelAccessToken.trim()}`,
+      },
+      body: JSON.stringify({
+        messages,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[LINE-CLIENT] Broadcast failed:", res.status, errText);
+      return { success: false, statusCode: res.status, error: errText };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return { success: true, statusCode: res.status, data };
+  } catch (error: any) {
+    console.error("[LINE-CLIENT] Network error broadcasting message:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 6. ดาวน์โหลดรูปภาพสลิปที่ผู้เช่าส่งมาทาง LINE
  */
 export async function getLineMessageContent(
   channelAccessToken: string,

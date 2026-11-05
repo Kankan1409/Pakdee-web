@@ -2980,12 +2980,29 @@ export default function HomePage() {
               broadcasts={broadcasts}
               rooms={rooms}
               onSendBroadcast={async (data) => {
-                const item = await DatabaseService.sendBroadcast({
-                  ...data,
-                  propertyId: property.id,
-                });
-                setBroadcasts((prev) => [item, ...prev]);
-                showToast(`ส่งประกาศ LINE ไปยัง ${data.recipientCount} ห้องเรียบร้อยแล้ว ✓`, "success");
+                try {
+                  showToast("กำลังส่งประกาศ LINE...", "info");
+                  const res = await fetch("/api/line/broadcast", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      ...data,
+                      propertyId: property.id,
+                    }),
+                  });
+                  const resData = await res.json();
+                  if (resData.success) {
+                    if (resData.broadcastItem) {
+                      setBroadcasts((prev) => [resData.broadcastItem, ...prev]);
+                    }
+                    showToast(`📢 ${resData.message || "ส่งประกาศ LINE เรียบร้อยแล้ว"}`, "success");
+                  } else {
+                    showToast(`ส่งประกาศไม่สำเร็จ: ${resData.error || "เกิดข้อผิดพลาด"}`, "error");
+                  }
+                } catch (err: any) {
+                  console.error("Broadcast error:", err);
+                  showToast("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+                }
               }}
               branchName={property.name}
               lineChannelId={branchSettings.lineChannelSecret ? `@pakdee_${property.id}` : "@pakdee_mansion"}

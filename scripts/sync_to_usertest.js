@@ -12,6 +12,8 @@ const files = [
   'src/app/api/db/route.ts',
   'src/app/api/line/webhook/route.ts',
   'src/app/api/line/send-invoice/route.ts',
+  'src/app/api/line/broadcast/route.ts',
+  'src/components/broadcast/broadcast-line-view.tsx',
   'src/components/invoice/invoice-preview-modal.tsx',
   'src/components/dashboard/daily-checkout-modal.tsx',
   'src/components/dashboard/room-detail-modal.tsx',
@@ -34,6 +36,7 @@ const files = [
   'src/components/invoices/receipts-list-view.tsx',
   'src/components/layout/sidebar.tsx',
   'src/app/page.tsx',
+  'next.config.ts',
   'data/db_port3000.json'
 ];
 
