@@ -258,28 +258,13 @@ export function MeterSpreadsheetView({
     setHistoryRecords((prev) => [...newHistoryItems, ...prev]);
   };
 
+  // Available unique months from history
+  const [recheckModalOpen, setRecheckModalOpen] = useState(false);
+
   const handleSaveAll = () => {
     // If any meter reading is lower than previous, prompt Recheck Confirmation Popup
     if (hasDecreasedMeters) {
-      const detailLines = decreasedRows.map((r) => {
-        const eVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
-        const wVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
-        const diffs: string[] = [];
-        if (eVal < r.electricPrev) {
-          diffs.push(`ไฟ: เดิม ${r.electricPrev} ➔ จดใหม่ ${eVal} (ลดลง ${r.electricPrev - eVal} หน่วย)`);
-        }
-        if (wVal < r.waterPrev) {
-          diffs.push(`น้ำ: เดิม ${r.waterPrev} ➔ จดใหม่ ${wVal} (ลดลง ${r.waterPrev - wVal} หน่วย)`);
-        }
-        return `• ห้อง ${r.roomNumber}: ${diffs.join(", ")}`;
-      });
-
-      globalPopup.warning(
-        `แจ้งเตือน: พบ ${decreasedRows.length} ห้องที่เลขมิเตอร์ลดลงกว่าเดิม`,
-        `ระบบตรวจพบว่ามีห้องที่เลขมิเตอร์จดได้น้อยกว่าเลขเดิม กรุณา Recheck อีกครั้ง:\n\n${detailLines.join("\n")}\n\nหากมีการเปลี่ยนมิเตอร์ใหม่หรือวนรอบ และยืนยันว่าถูกต้องแล้ว ให้กดยืนยันเพื่อบันทึกต่อไป`,
-        () => executeSave(),
-        "กลับไปตรวจสอบ"
-      );
+      setRecheckModalOpen(true);
       return;
     }
 
@@ -1001,6 +986,122 @@ export function MeterSpreadsheetView({
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recheck Confirmation Modal */}
+      {recheckModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          {/* Backdrop blur */}
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in"
+            onClick={() => setRecheckModalOpen(false)}
+          />
+
+          {/* Modal Container */}
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 shadow-2xl z-10 animate-in zoom-in-95 fade-in duration-150">
+            {/* Top Badge & Close */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                <span>แจ้งเตือนการตรวจสอบ (Recheck Required)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setRecheckModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="ปิดหน้าต่าง (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Title & Desc */}
+            <div className="space-y-1 mb-4">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                เลขมิเตอร์ลดลงกว่าครั้งก่อน ({decreasedRows.length} ห้อง)
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                ระบบตรวจพบว่ามีห้องพักที่กรอกตัวเลขน้อยกว่าครั้งก่อน กรุณา Recheck ว่าเป็นการเปลี่ยนมิเตอร์ใหม่ หรือมีการคีย์ตัวเลขผิดพลาดหรือไม่:
+              </p>
+            </div>
+
+            {/* List of decreased rooms */}
+            <div className="max-h-64 overflow-y-auto space-y-2 pr-1 mb-5">
+              {decreasedRows.map((r) => {
+                const elecVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
+                const waterVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
+                const isElecDec = elecVal < r.electricPrev;
+                const isWaterDec = waterVal < r.waterPrev;
+
+                return (
+                  <div
+                    key={r.roomId}
+                    className="p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-mono text-xs">
+                        ห้อง {r.roomNumber}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-300 text-[11px] font-normal">
+                        ผู้เช่า: {r.tenantName}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 pl-1">
+                      {isElecDec && (
+                        <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-mono">
+                          <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span className="font-sans font-medium text-[11px]">ไฟ:</span>
+                          <span className="text-slate-500 line-through">เดิม {r.electricPrev}</span>
+                          <ArrowRight className="w-3 h-3 text-amber-600" />
+                          <span className="font-bold text-amber-700 dark:text-amber-300">จดใหม่ {elecVal}</span>
+                          <span className="text-[10px] bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 px-1.5 py-0.2 rounded font-bold">
+                            ลดลง {r.electricPrev - elecVal} หน่วย
+                          </span>
+                        </div>
+                      )}
+
+                      {isWaterDec && (
+                        <div className="flex items-center gap-2 text-sky-900 dark:text-sky-200 font-mono">
+                          <Droplets className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                          <span className="font-sans font-medium text-[11px]">น้ำ:</span>
+                          <span className="text-slate-500 line-through">เดิม {r.waterPrev}</span>
+                          <ArrowRight className="w-3 h-3 text-sky-600" />
+                          <span className="font-bold text-sky-700 dark:text-sky-300">จดใหม่ {waterVal}</span>
+                          <span className="text-[10px] bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 px-1.5 py-0.2 rounded font-bold">
+                            ลดลง {r.waterPrev - waterVal} หน่วย
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRecheckModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition cursor-pointer"
+              >
+                กลับไปแก้ไข / ตรวจสอบ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecheckModalOpen(false);
+                  executeSave();
+                }}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold text-xs shadow-lg shadow-amber-500/25 transition cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>ยืนยันตัวเลขลดลง และบันทึกต่อ</span>
+              </button>
             </div>
           </div>
         </div>

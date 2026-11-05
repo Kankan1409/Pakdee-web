@@ -34,6 +34,7 @@ export function QuickMeterModal({
 
   const [electricNew, setElectricNew] = useState<number | "">(0);
   const [waterNew, setWaterNew] = useState<number | "">(0);
+  const [isConfirmDecreaseOpen, setIsConfirmDecreaseOpen] = useState(false);
 
   // Sync index when modal opens or initialRoomId changes
   useEffect(() => {
@@ -86,20 +87,7 @@ export function QuickMeterModal({
   const handleSaveAndNext = () => {
     // If any meter reading decreased, prompt Recheck Confirmation Popup
     if (hasDecreasedMeter) {
-      const warnings: string[] = [];
-      if (isElectricDecreased) {
-        warnings.push(`• ค่าไฟฟ้า: เลขเดิม ${elecPrev} ➔ จดใหม่ ${elecVal} (ลดลง ${elecPrev - elecVal} หน่วย)`);
-      }
-      if (isWaterDecreased) {
-        warnings.push(`• ค่าน้ำประปา: เลขเดิม ${waterPrev} ➔ จดใหม่ ${waterVal} (ลดลง ${waterPrev - waterVal} หน่วย)`);
-      }
-
-      globalPopup.warning(
-        `แจ้งเตือน: เลขมิเตอร์ห้อง ${currentRoom.roomNumber} ลดลงกว่าเดิม`,
-        `ระบบตรวจพบว่าเลขมิเตอร์ที่กรอกมีค่าน้อยกว่าเลขเดิม กรุณา Recheck อีกครั้ง:\n\n${warnings.join("\n")}\n\nหากมีการเปลี่ยนมิเตอร์ใหม่หรือยืนยันว่าถูกต้อง ให้กด "ยืนยันการดำเนินการ" เพื่อบันทึกต่อไป`,
-        () => executeSave(),
-        "กลับไปแก้ไข"
-      );
+      setIsConfirmDecreaseOpen(true);
       return;
     }
 
@@ -281,6 +269,92 @@ export function QuickMeterModal({
           </div>
         </div>
       </div>
+
+      {/* Recheck Warning Confirmation Dialog */}
+      {isConfirmDecreaseOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity"
+            onClick={() => setIsConfirmDecreaseOpen(false)}
+          />
+          <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 border-2 border-amber-500/60 rounded-3xl p-5 shadow-2xl z-10 animate-in zoom-in-95 fade-in duration-150">
+            <div className="flex items-center justify-between mb-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                <span>ยืนยันการบันทึก (Recheck)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsConfirmDecreaseOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1 mb-3">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                เลขมิเตอร์ห้อง {currentRoom.roomNumber} ลดลงกว่าเดิม
+              </h4>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                กรุณาตรวจสอบว่าเป็นการเปลี่ยนมิเตอร์ใหม่หรือพิมพ์ตัวเลขผิดพลาด:
+              </p>
+            </div>
+
+            <div className="space-y-2 mb-4 p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs font-mono">
+              {isElectricDecreased && (
+                <div className="flex items-center justify-between text-amber-950 dark:text-amber-200">
+                  <span className="flex items-center gap-1.5 font-bold font-sans">
+                    <Zap className="w-3.5 h-3.5 text-amber-600" /> ไฟ:
+                  </span>
+                  <span>
+                    <span className="line-through text-slate-500">{elecPrev}</span> ➔{" "}
+                    <strong className="text-amber-700 dark:text-amber-300">{elecVal}</strong>{" "}
+                    <span className="text-[10px] bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 px-1 py-0.2 rounded font-sans">
+                      ลดลง {elecPrev - elecVal}
+                    </span>
+                  </span>
+                </div>
+              )}
+              {isWaterDecreased && (
+                <div className="flex items-center justify-between text-sky-950 dark:text-sky-200">
+                  <span className="flex items-center gap-1.5 font-bold font-sans">
+                    <Droplets className="w-3.5 h-3.5 text-sky-600" /> น้ำ:
+                  </span>
+                  <span>
+                    <span className="line-through text-slate-500">{waterPrev}</span> ➔{" "}
+                    <strong className="text-sky-700 dark:text-sky-300">{waterVal}</strong>{" "}
+                    <span className="text-[10px] bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 px-1 py-0.2 rounded font-sans">
+                      ลดลง {waterPrev - waterVal}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsConfirmDecreaseOpen(false)}
+                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                กลับไปแก้ไข
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmDecreaseOpen(false);
+                  executeSave();
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>ยืนยันและบันทึก</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
