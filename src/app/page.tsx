@@ -115,6 +115,7 @@ export default function HomePage() {
   const [expenses, setExpenses] = useState<ExpenseItem[]>(initialExpenses);
   const [branchSettings, setBranchSettings] = useState<BranchSettingsDetail>(initialBranchSettings);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [branchAccessUserId, setBranchAccessUserId] = useState<string | null>(null);
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
 
   // Modals state
@@ -317,10 +318,23 @@ export default function HomePage() {
       // Synchronize with Host Machine Database (/api/db) on user's computer
       await DatabaseService.init();
 
+      const accessibleBranches = await DatabaseService.getAllProperties();
+      setBranches(accessibleBranches);
       const activeId =
         typeof targetPropertyId === "string" && targetPropertyId
           ? targetPropertyId
           : DatabaseService.getActivePropertyId();
+      if (!accessibleBranches.some((branch) => branch.id === activeId)) {
+        setRooms([]);
+        setTenants([]);
+        setInvoices([]);
+        setBroadcasts([]);
+        setBranchAccessUserId(currentUser?.id || null);
+        setCurrentTab("branches");
+        setIsBranchSelectorOpen(true);
+        return;
+      }
+      setBranchAccessUserId(currentUser?.id || null);
       const [
         propData,
         roomsData,
@@ -526,9 +540,10 @@ export default function HomePage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
     loadData();
 
     // Supabase Live Cloud Realtime listener
@@ -546,7 +561,7 @@ export default function HomePage() {
         window.removeEventListener("pakdee_db_updated", handleRealtimeUpdate);
       }
     };
-  }, [loadData, currentUser?.id]);
+  }, [loadData, currentUser?.id, isAuthLoading, isAuthenticated]);
 
   // Clean URL Routing & Dynamic Page Title Map (No ?tab= or ?view=)
   const ROUTE_CONFIG: Record<string, { path: string; title: string }> = {
@@ -2335,6 +2350,13 @@ export default function HomePage() {
     branch: BranchItem,
     targetTab: string = "room-grid"
   ) => {
+    const accessibleBranches = await DatabaseService.getAllProperties();
+    if (!accessibleBranches.some((item) => item.id === branch.id)) {
+      setBranches(accessibleBranches);
+      syncNavigation("branches", true, false);
+      showToast("คุณไม่มีสิทธิ์เข้าถึงสาขานี้ กรุณาเลือกสาขาที่ได้รับอนุญาต", "error");
+      return;
+    }
     DatabaseService.setActivePropertyId(branch.id);
     setProperty(branch);
 
@@ -2562,8 +2584,17 @@ export default function HomePage() {
     }
   }, [isAuthenticated, isAuthLoading]);
 
+  const hasBranchAccess = branchAccessUserId === currentUser?.id &&
+    branches.some((branch) => branch.id === property.id);
+
+  useEffect(() => {
+    if (isAuthenticated && branchAccessUserId === currentUser?.id && !hasBranchAccess) {
+      syncNavigation("branches", true, false);
+    }
+  }, [isAuthenticated, branchAccessUserId, currentUser?.id, hasBranchAccess, currentTab, isBranchSelectorOpen, syncNavigation]);
+
   // Auth Loading Gate (Sunlight White Theme)
-  if (isAuthLoading) {
+  if (isAuthLoading || (isAuthenticated && branchAccessUserId !== currentUser?.id)) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#FFFDF9] text-slate-800 select-none relative overflow-hidden">
         <div className="absolute top-[-50px] right-[-50px] w-96 h-96 rounded-full bg-amber-200/30 blur-3xl pointer-events-none" />
@@ -2582,7 +2613,7 @@ export default function HomePage() {
   }
 
   // Full Screen Branch Selector View if active
-  if (currentTab === "branches" || isBranchSelectorOpen) {
+  if (!hasBranchAccess || currentTab === "branches" || isBranchSelectorOpen) {
     return (
       <>
         <BranchSelectorView
