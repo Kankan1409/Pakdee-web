@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import {
-  broadcastLineMessage,
   multicastLineMessage,
 } from "@/lib/line/line-client";
 import { buildBroadcastFlexMessage } from "@/lib/line/flex-templates";
@@ -27,6 +26,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!["all", "floor", "room"].includes(targetType) ||
+        (targetType !== "all" && !String(targetValue || "").trim())) {
+      return NextResponse.json({ error: "กรุณาเลือกกลุ่มผู้รับให้ถูกต้อง" }, { status: 400 });
+    }
+    if (!(await DatabaseService.init())) {
+      return NextResponse.json({ error: "โหลดข้อมูลผู้เช่าปัจจุบันไม่สำเร็จ กรุณาลองใหม่" }, { status: 503 });
+    }
     const activePropId = propertyId || DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
@@ -39,34 +45,39 @@ export async function POST(req: NextRequest) {
     const allRooms = await DatabaseService.getRooms(activePropId);
     const allTenants = await DatabaseService.getTenants(activePropId);
 
-    let targetTenants = allTenants;
+    let targetRooms = allRooms.filter((r) =>
+      r.currentTenant && ["occupied", "overdue", "daily"].includes(r.status)
+    );
     let targetInfo = "ผู้พักอาศัยทุกท่าน";
 
     if (targetType === "floor" && targetValue) {
       const floorStr = String(targetValue);
-      const floorRooms = allRooms
-        .filter((r) => String(r.floor) === floorStr)
-        .map((r) => r.roomNumber);
-      targetTenants = targetTenants.filter(
-        (t) => t.roomNumber && floorRooms.includes(t.roomNumber)
-      );
-      targetInfo = `ผู้พักอาศัยชั้น ${floorStr} (${floorRooms.length} ห้อง)`;
+      targetRooms = targetRooms.filter((r) => String(r.floor) === floorStr);
+      targetInfo = `ผู้พักอาศัยปัจจุบันชั้น ${floorStr} (${targetRooms.length} ห้อง)`;
     } else if (targetType === "room" && targetValue) {
       const roomArr = String(targetValue)
         .split(",")
         .map((s) => s.trim().toLowerCase());
-      targetTenants = targetTenants.filter(
-        (t) =>
-          (t.roomNumber && roomArr.includes(t.roomNumber.toLowerCase())) ||
-          (t.roomId && roomArr.includes(t.roomId.toLowerCase()))
+      targetRooms = targetRooms.filter(
+        (r) => roomArr.includes(r.roomNumber.toLowerCase()) || roomArr.includes(r.id.toLowerCase())
       );
       targetInfo = `ห้อง ${targetValue}`;
     }
 
     // รวบรวม Line User ID ของผู้เช่าที่ผูกไว้แล้ว
-    const linkedLineUserIds = targetTenants
-      .map((t) => t.lineUserId)
-      .filter((uid): uid is string => Boolean(uid && uid.startsWith("U")));
+    const linkedLineUserIds = [...new Set(targetRooms
+      .map((r) => {
+        const tenant = allTenants.find((t) => t.id === r.currentTenant!.id);
+        return (tenant ? tenant.lineUserId : r.currentTenant!.lineUserId)?.trim();
+      })
+      .filter((uid): uid is string => Boolean(uid && uid.startsWith("U"))))];
+
+    if (linkedLineUserIds.length === 0) {
+      return NextResponse.json({ error: "ไม่มีผู้เช่าปัจจุบันที่ผูก LINE ในกลุ่มที่เลือก จึงยังไม่ได้ส่งประกาศ" }, { status: 400 });
+    }
+    if (!channelAccessToken.trim()) {
+      return NextResponse.json({ error: "กรุณาตั้งค่า LINE Channel Access Token ก่อนส่งประกาศ" }, { status: 400 });
+    }
 
     // 2. สร้าง Flex Message ตามมาตรฐาน LINE
     const flexMsg = buildBroadcastFlexMessage(
@@ -79,42 +90,16 @@ export async function POST(req: NextRequest) {
     );
     const lineMessages = [flexMsg];
 
-    let lineResult: any = { success: true, isSimulated: true };
-    let liveSendType = "none";
-
-    // 3. ส่งข้อความผ่าน LINE Messaging API
-    if (channelAccessToken && channelAccessToken.trim() !== "") {
-      if (targetType === "all") {
-        // หากเป็นการประกาศถึงทุกคน: ใช้ Broadcast API ของ LINE เพื่อส่งถึงผู้ติดตามทั้งหมดของ LINE OA
-        lineResult = await broadcastLineMessage(channelAccessToken, lineMessages);
-        liveSendType = "broadcast_all";
-      } else {
-        // หากเป็นการส่งเฉพาะชั้น หรือเฉพาะห้อง: ใช้ Multicast API ไปยังกลุ่มผู้ใช้ที่ผูกบัญชี LINE ไว้
-        if (linkedLineUserIds.length > 0) {
-          lineResult = await multicastLineMessage(
-            channelAccessToken,
-            linkedLineUserIds,
-            lineMessages
-          );
-          liveSendType = "multicast";
-        } else {
-          // ยังไม่มีผู้เช่าในกลุ่มเป้าหมายผูก LINE
-          lineResult = {
-            success: true,
-            isSimulated: true,
-            message: "บันทึกประกาศเรียบร้อย (ยังไม่มีผู้เช่าในกลุ่มนี้ผูกบัญชี LINE)",
-          };
-          liveSendType = "queued";
-        }
-      }
-    } else {
-      // โหมด Simulated (ยังไม่ได้ระบุ Channel Access Token ในการตั้งค่า)
-      lineResult = {
-        success: true,
-        isSimulated: true,
-        message: "บันทึกประกาศเรียบร้อย (โหมดจำลอง: ยังไม่ได้ใส่ LINE Channel Access Token ในหน้าตั้งค่า)",
-      };
-      liveSendType = "simulated";
+    let lineResult: any = { success: true };
+    const liveSendType = "multicast";
+    // Send only explicit current-tenant IDs, in LINE's supported batch size.
+    for (let offset = 0; offset < linkedLineUserIds.length; offset += 500) {
+      lineResult = await multicastLineMessage(
+        channelAccessToken,
+        linkedLineUserIds.slice(offset, offset + 500),
+        lineMessages
+      );
+      if (!lineResult.success) break;
     }
 
     if (!lineResult.success) {
@@ -131,7 +116,7 @@ export async function POST(req: NextRequest) {
 
     // 4. บันทึกลงฐานข้อมูล DatabaseService
     const recipientCount =
-      targetType === "all" ? allRooms.length || 1 : targetTenants.length || 1;
+      linkedLineUserIds.length;
     const broadcastRecord = await DatabaseService.sendBroadcast({
       propertyId: activePropId,
       template,

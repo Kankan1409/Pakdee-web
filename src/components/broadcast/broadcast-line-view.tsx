@@ -86,11 +86,12 @@ export function BroadcastLineView({
   };
 
   const getRecipientCount = () => {
-    if (targetType === "all") return rooms.filter((r) => r.currentTenant).length || rooms.length;
+    const currentRooms = rooms.filter((r) => r.currentTenant && ["occupied", "overdue", "daily"].includes(r.status));
+    if (targetType === "all") return currentRooms.length;
     if (targetType === "floor") {
-      return rooms.filter((r) => r.floor.toString() === selectedFloor).length;
+      return currentRooms.filter((r) => r.floor.toString() === selectedFloor).length;
     }
-    return selectedRooms.length;
+    return currentRooms.filter((r) => selectedRooms.includes(r.roomNumber) || selectedRooms.includes(r.id)).length;
   };
 
   const handleSend = async () => {
@@ -210,7 +211,7 @@ export function BroadcastLineView({
             </label>
             <div className="flex flex-wrap items-center gap-2">
               {[
-                { id: "all", label: "ผู้เช่าทุกห้อง (ทุกคน)" },
+                { id: "all", label: "ผู้เช่าปัจจุบันทุกห้อง" },
                 { id: "floor", label: "แยกตามชั้น" },
                 { id: "room", label: "เลือกเฉพาะบางห้อง" },
               ].map((t) => (
@@ -282,7 +283,7 @@ export function BroadcastLineView({
           {/* Action Button */}
           <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
             <div className="text-xs text-[var(--muted)]">
-              ผู้รับโดยประมาณ: <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{getRecipientCount()} คน</strong>
+              ผู้เช่าปัจจุบันในกลุ่ม: <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{getRecipientCount()} ห้อง</strong> (ส่งเฉพาะผู้ที่ผูก LINE)
             </div>
 
             <button
@@ -291,7 +292,7 @@ export function BroadcastLineView({
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold text-xs shadow-lg shadow-emerald-500/25 transition cursor-pointer disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{isSending ? "กำลังบรอดแคสต์..." : `ส่งประกาศ LINE (${getRecipientCount()} คน)`}</span>
+              <span>{isSending ? "กำลังส่งประกาศ..." : "ส่งประกาศถึงผู้เช่าปัจจุบัน"}</span>
             </button>
           </div>
         </div>
