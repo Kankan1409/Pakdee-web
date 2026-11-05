@@ -1867,7 +1867,7 @@ export default function HomePage() {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const invoiceNumber = `INV-D-${dateStr.replace(/-/g, "")}-${booking.roomNumber}`;
-    const utilityAmount = chargeUtilities ? ((electricCost || 0) + (waterCost || 0)) : 0;
+    const utilityAmount = 0; // Daily stays include water and electricity.
     const totalAmount = (booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 650) + (extraCharges || 0) + utilityAmount;
 
     const targetRoom = rooms.find((r) => r.roomNumber === booking.roomNumber);
@@ -1890,7 +1890,7 @@ export default function HomePage() {
 
     // เมื่อมิเตอร์เปลี่ยน นำข้อมูลมาคิดคำนวณ: หากเลือกคิดในบิลจะเพิ่มยอดเงิน หากไม่เลือกจะแสดงเป็นข้อมูลต้นทุนรวมในค่าห้อง
     if (electricCurr !== undefined) {
-      const isCharged = chargeUtilities && (electricCost || 0) > 0;
+      const isCharged = false;
       items.push({
         name: `ค่าไฟฟ้า (${electricPrev ?? targetRoom?.currentElectricMeter ?? 0} -> ${electricCurr} ขยับไป ${elecUnits} หน่วย @ ฿${property.electricRate}${isCharged ? "" : " - รวมในค่าห้องแล้ว"})`,
         units: elecUnits,
@@ -1901,7 +1901,7 @@ export default function HomePage() {
       });
     }
     if (waterCurr !== undefined) {
-      const isCharged = chargeUtilities && (waterCost || 0) > 0;
+      const isCharged = false;
       items.push({
         name: `ค่าน้ำประปา (${waterPrev ?? targetRoom?.currentWaterMeter ?? 0} -> ${waterCurr} ขยับไป ${waterUnits} หน่วย @ ฿${property.waterRate}${isCharged ? "" : " - รวมในค่าห้องแล้ว"})`,
         units: waterUnits,

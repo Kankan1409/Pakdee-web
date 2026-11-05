@@ -61,7 +61,7 @@ export function DailyCheckoutModal({
   const [elecCurr, setElecCurr] = useState<number | "">(0);
   const [waterPrev, setWaterPrev] = useState<number | "">(0);
   const [waterCurr, setWaterCurr] = useState<number | "">(0);
-  const [chargeUtilities, setChargeUtilities] = useState<boolean>(true);
+  const chargeUtilities = false;
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export function DailyCheckoutModal({
       setExtraCharges(0);
       setExtraNote("");
       setPaymentMethod("promptpay");
-      setChargeUtilities(true);
+
       setIsSubmitting(false);
 
       const baseElec = room?.currentElectricMeter ?? booking.electricCheckIn ?? 0;
@@ -239,18 +239,10 @@ export function DailyCheckoutModal({
               <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
                 <div className="flex items-center gap-1.5 font-bold text-xs text-[var(--foreground)]">
                   <Zap className="w-3.5 h-3.5 text-amber-500" />
-                  <span>บันทึกเลขมิเตอร์วันเช็คเอาท์ & คำนวณค่าน้ำ-ไฟ</span>
+                  <span>บันทึกเลขมิเตอร์วันเช็คเอาท์</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 text-[11px] cursor-pointer font-medium text-[var(--foreground)] select-none">
-                    <input
-                      type="checkbox"
-                      checked={chargeUtilities}
-                      onChange={(e) => setChargeUtilities(e.target.checked)}
-                      className="rounded border-[var(--border)] text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
-                    />
-                    <span>นำมาคิดคำนวณในบิล</span>
-                  </label>
+
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
                     chargeUtilities
                       ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border-emerald-500/30"
@@ -266,10 +258,7 @@ export function DailyCheckoutModal({
                 <div className="p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <Zap className="w-3 h-3" /> มิเตอร์ไฟ (@฿{electricRate}/หน่วย)
-                    </span>
-                    <span className="font-mono font-bold text-[10px] text-amber-700 dark:text-amber-300">
-                      +{elecUnitsUsed} หน่วย {elecUnitsUsed > 0 && `(=฿${elecCost.toFixed(2)})`}
+                      <Zap className="w-3 h-3" /> มิเตอร์ไฟ
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
@@ -278,7 +267,7 @@ export function DailyCheckoutModal({
                       <input
                         type="number"
                         value={elecPrev}
-                        onChange={(e) => setElecPrev(e.target.value === "" ? "" : Number(e.target.value))}
+                        readOnly aria-label="Previous electricity meter"
                         className="w-full px-2 py-1 rounded-lg bg-[var(--subtle)] border border-[var(--border)] font-mono text-xs"
                       />
                     </div>
@@ -286,6 +275,7 @@ export function DailyCheckoutModal({
                       <span className="text-[10px] font-semibold text-[var(--foreground)] block">วันเช็คเอาท์:</span>
                       <input
                         type="number"
+                        min={elecPrevNum}
                         value={elecCurr}
                         onChange={(e) => setElecCurr(e.target.value === "" ? "" : Number(e.target.value))}
                         placeholder="0"
@@ -299,10 +289,7 @@ export function DailyCheckoutModal({
                 <div className="p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                      <Droplets className="w-3 h-3" /> มิเตอร์น้ำ (@฿{waterRate}/หน่วย)
-                    </span>
-                    <span className="font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300">
-                      +{waterUnitsUsed} หน่วย {waterUnitsUsed > 0 && `(=฿${waterCost.toFixed(2)})`}
+                      <Droplets className="w-3 h-3" /> มิเตอร์น้ำ
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
@@ -311,7 +298,7 @@ export function DailyCheckoutModal({
                       <input
                         type="number"
                         value={waterPrev}
-                        onChange={(e) => setWaterPrev(e.target.value === "" ? "" : Number(e.target.value))}
+                        readOnly aria-label="Previous water meter"
                         className="w-full px-2 py-1 rounded-lg bg-[var(--subtle)] border border-[var(--border)] font-mono text-xs"
                       />
                     </div>
@@ -319,6 +306,7 @@ export function DailyCheckoutModal({
                       <span className="text-[10px] font-semibold text-[var(--foreground)] block">วันเช็คเอาท์:</span>
                       <input
                         type="number"
+                        min={waterPrevNum}
                         value={waterCurr}
                         onChange={(e) => setWaterCurr(e.target.value === "" ? "" : Number(e.target.value))}
                         placeholder="0"
@@ -330,7 +318,7 @@ export function DailyCheckoutModal({
               </div>
 
               <p className="text-[10px] text-[var(--muted)] leading-tight">
-                * เมื่อมิเตอร์เปลี่ยน ระบบจะนำหน่วยที่เปลี่ยนมาคำนวณค่าน้ำ-ไฟทันที และอัปเดตลงเลขมิเตอร์ของผังห้องพักพร้อมบันทึกลงระบบบัญชีหอพัก
+                * รายวันไม่คิดค่าน้ำ–ไฟเพิ่มเติม เลขมิเตอร์วันเช็คเอาท์จะบันทึกไว้และอัปเดตในผังห้องพัก มิเตอร์เดิมแก้ไขไม่ได้
               </p>
             </div>
 
@@ -363,12 +351,6 @@ export function DailyCheckoutModal({
                 <div className="flex justify-between items-center text-xs text-blue-600 dark:text-blue-400">
                   <span>ค่าน้ำประปา ({waterUnitsUsed} หน่วย x ฿{waterRate})</span>
                   <span className="font-semibold">+{formatCurrency(waterCost)}</span>
-                </div>
-              )}
-              {!chargeUtilities && totalUtilityCost > 0 && (
-                <div className="flex justify-between items-center text-xs text-slate-500 italic">
-                  <span>ค่าน้ำ-ไฟที่ใช้จริง ({elecUnitsUsed} หน่วยไฟ, {waterUnitsUsed} หน่วยน้ำ)</span>
-                  <span>รวมในค่าห้อง (ต้นทุนหอ ฿{totalUtilityCost.toFixed(2)})</span>
                 </div>
               )}
               {Number(extraCharges) > 0 && (
