@@ -5,7 +5,7 @@
  */
 
 import crypto from "crypto";
-import { Invoice } from "@/types/dormitory";
+import type { Invoice } from "../types/dormitory";
 
 export interface VerifySlipOptions {
   imageBuffer?: Buffer | null;
