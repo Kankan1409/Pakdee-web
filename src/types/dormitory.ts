@@ -176,6 +176,10 @@ export interface Invoice {
   qrCodeUrl?: string;
   invoiceType?: "monthly" | "move_in" | "custom";
   slipStatus?: "passed" | "action_needed" | "retrying" | "none";
+  slipVerifiedAt?: string;
+  slipVerifiedBy?: "ai" | "manual";
+  slipTransRef?: string;
+  slipBank?: string;
   lineSentAt?: string;
   lineDeliveryStatus?: "sent" | "failed" | "not_sent";
   payments?: Payment[];

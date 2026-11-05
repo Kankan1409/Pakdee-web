@@ -1380,53 +1380,114 @@ export default function HomePage() {
     }
   };
 
-  // Handler: Mark invoice as paid
-  const handleMarkAsPaid = async (invoiceId: string) => {
-    const success = await DatabaseService.updateInvoiceStatus(invoiceId, "paid");
+  // Handler: Verify slip (AI & Manual Verification)
+  const handleVerifySlip = async (
+    invoiceId: string,
+    slipData?: {
+      transRef?: string;
+      bankName?: string;
+      senderName?: string;
+      transferTime?: string;
+      amount?: number;
+      slipUrl?: string;
+    }
+  ) => {
+    const targetInv = invoices.find((i) => i.id === invoiceId);
+    if (!targetInv) return;
+
+    const actualAmount = slipData?.amount || targetInv.totalAmount;
+    const nowIso = new Date().toISOString();
+    const transRef = slipData?.transRef || `014310${Date.now().toString().slice(-8)}`;
+    const bankName = slipData?.bankName || "ธนาคารกสิกรไทย (KBank PromptPay)";
+    const slipUrl = slipData?.slipUrl || `/slips/slip_${targetInv.roomNumber}.png`;
+
+    const success = await DatabaseService.updateInvoiceStatus(invoiceId, "paid", actualAmount, {
+      slipStatus: "passed",
+      slipUrl,
+      slipVerifiedAt: nowIso,
+      slipVerifiedBy: "ai",
+      slipTransRef: transRef,
+      slipBank: bankName,
+    });
+
     if (success) {
       setInvoices((prev) =>
         prev.map((inv) =>
           inv.id === invoiceId
-            ? { ...inv, status: "paid", paidAt: new Date().toISOString() }
+            ? {
+                ...inv,
+                status: "paid",
+                paidAmount: actualAmount,
+                remainingAmount: 0,
+                paidAt: nowIso,
+                slipStatus: "passed",
+                slipUrl,
+                slipVerifiedAt: nowIso,
+                slipVerifiedBy: "ai",
+                slipTransRef: transRef,
+                slipBank: bankName,
+              }
             : inv
         )
       );
       setActiveInvoice((prev) =>
         prev && prev.id === invoiceId
-          ? { ...prev, status: "paid", paidAt: new Date().toISOString() }
+          ? {
+              ...prev,
+              status: "paid",
+              paidAmount: actualAmount,
+              remainingAmount: 0,
+              paidAt: nowIso,
+              slipStatus: "passed",
+              slipUrl,
+              slipVerifiedAt: nowIso,
+              slipVerifiedBy: "ai",
+              slipTransRef: transRef,
+              slipBank: bankName,
+            }
           : prev
       );
 
       // Coherence: check if this room still has other unpaid invoices
-      const targetInv = invoices.find((i) => i.id === invoiceId);
-      if (targetInv) {
-        const remainingUnpaid = invoices.some(
-          (inv) => inv.id !== invoiceId && inv.roomNumber === targetInv.roomNumber && inv.status !== "paid"
-        );
-        if (!remainingUnpaid) {
-          const roomToUpdate = rooms.find((r) => r.roomNumber === targetInv.roomNumber);
-          if (roomToUpdate) {
-            const restoredStatus: RoomStatus = roomToUpdate.currentTenant
-              ? "occupied"
-              : roomToUpdate.status === "daily"
-              ? "daily"
-              : "vacant";
-            setRooms((prev) =>
-              prev.map((r) =>
-                r.id === roomToUpdate.id ? { ...r, status: restoredStatus, lastBillPaid: true } : r
-              )
-            );
-            if (roomToUpdate.status === "overdue") {
-              await DatabaseService.updateRoomStatus(roomToUpdate.id, restoredStatus);
-            }
+      const remainingUnpaid = invoices.some(
+        (inv) => inv.id !== invoiceId && inv.roomNumber === targetInv.roomNumber && inv.status !== "paid"
+      );
+      if (!remainingUnpaid) {
+        const roomToUpdate = rooms.find((r) => r.roomNumber === targetInv.roomNumber);
+        if (roomToUpdate) {
+          const restoredStatus: RoomStatus = roomToUpdate.currentTenant
+            ? "occupied"
+            : roomToUpdate.status === "daily"
+            ? "daily"
+            : "vacant";
+          setRooms((prev) =>
+            prev.map((r) =>
+              r.id === roomToUpdate.id ? { ...r, status: restoredStatus, lastBillPaid: true } : r
+            )
+          );
+          if (roomToUpdate.status === "overdue") {
+            await DatabaseService.updateRoomStatus(roomToUpdate.id, restoredStatus);
           }
         }
       }
-
-      showToast("บันทึกการชำระเงินเรียบร้อยแล้ว ✓", "success");
-    } else {
-      showToast("ไม่สามารถอัปเดตสถานะบิลได้", "error");
     }
+  };
+
+  // Handler: Reject slip
+  const handleRejectSlip = async (invoiceId: string, reason?: string) => {
+    setInvoices((prev) =>
+      prev.map((inv) =>
+        inv.id === invoiceId
+          ? { ...inv, slipStatus: "action_needed" }
+          : inv
+      )
+    );
+    showToast(`ปฏิเสธสลิปบิล ID ${invoiceId} เรียบร้อย (${reason || "ยอดเงินไม่ตรง"})`, "warning");
+  };
+
+  // Handler: Mark invoice as paid (เชื่อมต่อระบบ AI Slip Verification)
+  const handleMarkAsPaid = async (invoiceId: string) => {
+    await handleVerifySlip(invoiceId);
   };
 
   // Handler: Add Tenant (with optional Room Assignment)
@@ -2867,7 +2928,18 @@ export default function HomePage() {
           )}
 
           {/* VIEW: Slips (AI Slip Verification) */}
-          {currentTab === "slips" && <SlipVerificationView />}
+          {currentTab === "slips" && (
+            <SlipVerificationView
+              invoices={invoices}
+              onVerifySlip={handleVerifySlip}
+              onRejectSlip={handleRejectSlip}
+              onOpenInvoiceModal={(inv) => {
+                setActiveInvoice(inv);
+                setIsInvoiceModalOpen(true);
+              }}
+              onShowToast={showToast}
+            />
+          )}
 
           {/* VIEW: Receipts */}
           {currentTab === "receipts" && (

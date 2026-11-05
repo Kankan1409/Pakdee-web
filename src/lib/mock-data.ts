@@ -50,6 +50,12 @@ export const sampleInvoice: Invoice = {
   totalAmount: 5064,
   status: "paid",
   paidAt: "2026-10-26 10:15 น.",
+  slipStatus: "passed",
+  slipUrl: "/slips/slip_101.png",
+  slipVerifiedAt: "2026-10-26 10:15 น.",
+  slipVerifiedBy: "ai",
+  slipTransRef: "014310101882",
+  slipBank: "ธนาคารกสิกรไทย (KBank PromptPay)",
 };
 
 export const sampleOverdueInvoice: Invoice = {
