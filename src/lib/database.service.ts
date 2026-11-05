@@ -1522,7 +1522,7 @@ export const DatabaseService = {
 
   async updateInvoiceStatus(
     invoiceId: string,
-    status: "paid" | "unpaid" | "overdue" | "partial",
+    status: "paid" | "unpaid" | "overdue" | "partial" | "pending_review" | "cancelled",
     paidAmount?: number,
     extraData?: Partial<Invoice>
   ): Promise<boolean> {

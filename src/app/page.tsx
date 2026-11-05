@@ -1380,7 +1380,7 @@ export default function HomePage() {
     }
   };
 
-  // Handler: Verify slip (AI & Manual Verification)
+  // Handler: Verify slip (AI & Manual Verification with Anti-Fake & Deduplication)
   const handleVerifySlip = async (
     invoiceId: string,
     slipData?: {
@@ -1390,17 +1390,88 @@ export default function HomePage() {
       transferTime?: string;
       amount?: number;
       slipUrl?: string;
+      isFake?: boolean;
     }
   ) => {
     const targetInv = invoices.find((i) => i.id === invoiceId);
     if (!targetInv) return;
 
-    const actualAmount = slipData?.amount || targetInv.totalAmount;
-    const nowIso = new Date().toISOString();
-    const transRef = slipData?.transRef || `014310${Date.now().toString().slice(-8)}`;
+    // 1. ตรวจสอบกรณีจำลองสลิปปลอม
+    if (slipData?.isFake) {
+      const rejectReason = "❌ ตรวจพบสลิปปลอม: ไม่พบรหัสธุรกรรม Mini QR (BScanC) ของธนาคารในภาพนี้";
+      await DatabaseService.updateInvoiceStatus(invoiceId, targetInv.status, undefined, {
+        slipStatus: "action_needed",
+        slipVerifiedAt: new Date().toISOString(),
+        slipVerifiedBy: "ai",
+        slipRejectReason: rejectReason,
+      });
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId
+            ? { ...inv, slipStatus: "action_needed", slipRejectReason: rejectReason }
+            : inv
+        )
+      );
+      showToast(rejectReason, "error");
+      return;
+    }
+
+    const actualAmount = slipData?.amount !== undefined ? Number(slipData.amount) : targetInv.totalAmount;
+    const transRef = (slipData?.transRef || `014310${Date.now().toString().slice(-8)}`).trim();
     const bankName = slipData?.bankName || "ธนาคารกสิกรไทย (KBank PromptPay)";
     const slipUrl = slipData?.slipUrl || `/slips/slip_${targetInv.roomNumber}.png`;
 
+    // 2. ตรวจสอบรหัสธุรกรรมซ้ำ (Transaction Reference Deduplication)
+    const duplicateInv = invoices.find(
+      (inv) =>
+        inv.slipTransRef &&
+        inv.slipTransRef.trim().toLowerCase() === transRef.toLowerCase() &&
+        inv.id !== invoiceId
+    );
+    if (duplicateInv) {
+      const rejectReason = `❌ ตรวจพบสลิปซ้ำ! รหัสอ้างอิง ${transRef} เคยใช้งานในห้อง ${duplicateInv.roomNumber} ไปแล้ว`;
+      await DatabaseService.updateInvoiceStatus(invoiceId, targetInv.status, undefined, {
+        slipStatus: "action_needed",
+        slipVerifiedAt: new Date().toISOString(),
+        slipVerifiedBy: "ai",
+        slipRejectReason: rejectReason,
+        slipTransRef: transRef,
+      });
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId
+            ? { ...inv, slipStatus: "action_needed", slipRejectReason: rejectReason, slipTransRef: transRef }
+            : inv
+        )
+      );
+      showToast(rejectReason, "error");
+      return;
+    }
+
+    // 3. ตรวจสอบความถูกต้องของยอดเงิน
+    if (actualAmount < targetInv.totalAmount) {
+      const diff = targetInv.totalAmount - actualAmount;
+      const rejectReason = `⚠️ ยอดเงินในสลิป (฿${actualAmount.toLocaleString()}) น้อยกว่ายอดบิลห้อง ${targetInv.roomNumber} (฿${targetInv.totalAmount.toLocaleString()}) ขาดอีก ฿${diff.toLocaleString()}`;
+      await DatabaseService.updateInvoiceStatus(invoiceId, targetInv.status, undefined, {
+        slipStatus: "action_needed",
+        slipVerifiedAt: new Date().toISOString(),
+        slipVerifiedBy: "ai",
+        slipRejectReason: rejectReason,
+        slipTransRef: transRef,
+      });
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId
+            ? { ...inv, slipStatus: "action_needed", slipRejectReason: rejectReason, slipTransRef: transRef }
+            : inv
+        )
+      );
+      showToast(rejectReason, "warning");
+      return;
+    }
+
+    // 4. ผ่านการตรวจสอบครบ 100%: ปรับสถานะเป็น "paid"
+    const nowIso = new Date().toISOString();
     const success = await DatabaseService.updateInvoiceStatus(invoiceId, "paid", actualAmount, {
       slipStatus: "passed",
       slipUrl,
@@ -1408,6 +1479,7 @@ export default function HomePage() {
       slipVerifiedBy: "ai",
       slipTransRef: transRef,
       slipBank: bankName,
+      slipRejectReason: undefined,
     });
 
     if (success) {

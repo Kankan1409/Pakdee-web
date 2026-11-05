@@ -180,6 +180,8 @@ export interface Invoice {
   slipVerifiedBy?: "ai" | "manual";
   slipTransRef?: string;
   slipBank?: string;
+  slipHash?: string;
+  slipRejectReason?: string;
   lineSentAt?: string;
   lineDeliveryStatus?: "sent" | "failed" | "not_sent";
   payments?: Payment[];

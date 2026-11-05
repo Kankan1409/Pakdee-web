@@ -6,6 +6,7 @@ import {
   Receipt,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Send,
   Plus,
   ChevronRight,
@@ -295,9 +296,30 @@ export function InvoicesBillingView({
                     )
                   ) : (
                     <>
-                      <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg">
-                        ค้างชำระ
-                      </span>
+                      {inv.slipStatus === "action_needed" ? (
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="bg-rose-500/15 text-rose-700 dark:text-rose-300 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 border border-rose-500/30 text-xs"
+                            title={inv.slipRejectReason || "สลิปไม่ผ่านการตรวจสอบ"}
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                            <span>สลิปไม่ผ่าน AI</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSlipInvoice(inv)}
+                            className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center gap-1 border border-rose-500/25 transition cursor-pointer"
+                            title="ดูสาเหตุและสลิปที่ถูกปฏิเสธ"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-rose-500" />
+                            <span>ตรวจสลิป</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg">
+                          ค้างชำระ
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => {

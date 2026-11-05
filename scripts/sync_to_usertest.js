@@ -6,6 +6,7 @@ const files = [
   'src/lib/database.service.ts',
   'src/lib/mock-data.ts',
   'src/lib/validators.ts',
+  'src/lib/slip-verification.ts',
   'src/lib/popup-context.tsx',
   'src/lib/line/flex-templates.ts',
   'src/lib/line/line-client.ts',

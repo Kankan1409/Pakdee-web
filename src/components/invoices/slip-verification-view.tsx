@@ -34,6 +34,7 @@ export interface SlipVerificationViewProps {
       transferTime?: string;
       amount?: number;
       slipUrl?: string;
+      isFake?: boolean;
     }
   ) => Promise<void> | void;
   onRejectSlip?: (invoiceId: string, reason?: string) => Promise<void> | void;
@@ -60,6 +61,7 @@ export function SlipVerificationView({
   const [uploadedAmount, setUploadedAmount] = useState<number | "">("");
   const [uploadedBank, setUploadedBank] = useState<string>("ธนาคารกสิกรไทย (KBank)");
   const [uploadedRef, setUploadedRef] = useState<string>(`014310${Date.now().toString().slice(-8)}`);
+  const [testMode, setTestMode] = useState<"valid" | "duplicate" | "fake">("valid");
 
   // Compute Metrics
   const paidInvoices = useMemo(
@@ -126,7 +128,13 @@ export function SlipVerificationView({
     }
   };
 
-  // Handler: Submit uploaded slip test
+  // Helper: List all invoices that already have a slipTransRef for duplicate testing
+  const invoicesWithRef = useMemo(
+    () => invoices.filter((i) => i.slipTransRef && i.slipTransRef.trim() !== ""),
+    [invoices]
+  );
+
+  // Handler: Submit uploaded slip test (Anti-Fake & Anti-Duplicate Verified)
   const handleUploadAndScan = async () => {
     if (!uploadedRoom) {
       onShowToast("กรุณาเลือกหรือระบุหมายเลขห้องพัก", "warning");
@@ -136,12 +144,51 @@ export function SlipVerificationView({
       (i) => i.roomNumber.toLowerCase() === uploadedRoom.trim().toLowerCase()
     );
     if (!targetInv) {
-      onShowToast(`ไม่พบบิลค้างชำระของห้อง ${uploadedRoom}`, "error");
+      onShowToast(`ไม่พบบิลของห้อง ${uploadedRoom}`, "error");
       return;
     }
 
     setIsUploadModalOpen(false);
-    await handleRunAiVerify(targetInv);
+    setScanningTargetId(targetInv.id);
+    setIsScanning(true);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      if (testMode === "fake") {
+        await onVerifySlip(targetInv.id, {
+          isFake: true,
+          amount: uploadedAmount !== "" ? Number(uploadedAmount) : targetInv.totalAmount,
+          bankName: uploadedBank,
+          slipUrl: `/slips/slip_${targetInv.roomNumber}.png`,
+        });
+      } else if (testMode === "duplicate") {
+        const refToUse = uploadedRef.trim() || (invoicesWithRef[0]?.slipTransRef || "0143105829104829");
+        await onVerifySlip(targetInv.id, {
+          transRef: refToUse,
+          isFake: false,
+          amount: uploadedAmount !== "" ? Number(uploadedAmount) : targetInv.totalAmount,
+          bankName: uploadedBank,
+          senderName: targetInv.tenantName,
+          transferTime: new Date().toLocaleString("th-TH"),
+          slipUrl: `/slips/slip_${targetInv.roomNumber}.png`,
+        });
+      } else {
+        const freshRef = `014310${Math.floor(10000000 + Math.random() * 90000000)}`;
+        await onVerifySlip(targetInv.id, {
+          transRef: freshRef,
+          isFake: false,
+          amount: uploadedAmount !== "" ? Number(uploadedAmount) : targetInv.totalAmount,
+          bankName: uploadedBank,
+          senderName: targetInv.tenantName,
+          transferTime: new Date().toLocaleString("th-TH"),
+          slipUrl: `/slips/slip_${targetInv.roomNumber}.png`,
+        });
+      }
+    } finally {
+      setIsScanning(false);
+      setScanningTargetId(null);
+    }
   };
 
   return (
@@ -368,15 +415,19 @@ export function SlipVerificationView({
 
                       {/* Slip Thumbnail */}
                       <td className="p-3.5 text-center">
-                        {isPaid ? (
+                        {isPaid || inv.slipUrl || inv.slipStatus === "action_needed" ? (
                           <button
                             type="button"
                             onClick={() => setSelectedSlipInvoice(inv)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/25 transition cursor-pointer font-bold text-[11px]"
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition cursor-pointer font-bold text-[11px] ${
+                              inv.slipStatus === "action_needed"
+                                ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30"
+                                : "bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/25"
+                            }`}
                             title="คลิกเพื่อดูสลิปหลักฐานฉบับเต็ม"
                           >
-                            <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-                            <span>ดูสลิป</span>
+                            <ImageIcon className={`w-3.5 h-3.5 ${inv.slipStatus === "action_needed" ? "text-rose-500" : "text-blue-500"}`} />
+                            <span>{inv.slipStatus === "action_needed" ? "ตรวจสลิป" : "ดูสลิป"}</span>
                           </button>
                         ) : (
                           <span className="text-[11px] text-[var(--muted)] italic">
@@ -429,6 +480,18 @@ export function SlipVerificationView({
                             <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
                               (ยืนยันยอดถูกต้อง ✓)
                             </span>
+                          </div>
+                        ) : inv.slipStatus === "action_needed" ? (
+                          <div className="inline-flex flex-col items-center gap-0.5 max-w-[210px] mx-auto">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              <span>สลิปไม่ผ่าน / มีปัญหา</span>
+                            </span>
+                            {inv.slipRejectReason && (
+                              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium text-center line-clamp-2" title={inv.slipRejectReason}>
+                                {inv.slipRejectReason}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
@@ -586,10 +649,22 @@ export function SlipVerificationView({
                       {formatCurrency(selectedSlipInvoice.totalAmount)}
                     </span>
                   </div>
-                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>AI ยืนยันสลิปถูกต้อง ตัดยอดบิลและสร้างใบเสร็จเรียบร้อย</span>
-                  </div>
+                  {selectedSlipInvoice.slipStatus === "action_needed" ? (
+                    <div className="text-[11px] text-rose-700 dark:text-rose-300 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/25 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-rose-800 dark:text-rose-200">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>สลิปนี้ไม่ผ่านการตรวจสอบอัตโนมัติ</span>
+                      </div>
+                      <div className="text-[10px] leading-relaxed">
+                        {selectedSlipInvoice.slipRejectReason || "ไม่พบรหัสธุรกรรม BScanC ของธนาคาร หรือยอดเงินไม่ครบถ้วน"}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>AI ยืนยันสลิปถูกต้อง ตัดยอดบิลและสร้างใบเสร็จเรียบร้อย</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -698,15 +773,115 @@ export function SlipVerificationView({
                 />
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs space-y-1">
-                <div className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  <span>ระบบ AI Slip Matching</span>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1.5">
+                  เลือกโหมดการทดสอบตรวจสลิป
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTestMode("valid");
+                      const match = invoices.find((i) => i.roomNumber === uploadedRoom);
+                      if (match) setUploadedAmount(match.totalAmount);
+                      setUploadedRef(`014310${Date.now().toString().slice(-8)}`);
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                      testMode === "valid"
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs"
+                        : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    ✓ สลิปปกติ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTestMode("duplicate");
+                      if (invoicesWithRef.length > 0) {
+                        setUploadedRef(invoicesWithRef[0].slipTransRef || "0143105829104829");
+                      }
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                      testMode === "duplicate"
+                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500 shadow-xs"
+                        : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    ⚠️ ทดสอบสลิปซ้ำ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTestMode("fake");
+                      setUploadedAmount(500);
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                      testMode === "fake"
+                        ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs"
+                        : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    ❌ ทดสอบสลิปปลอม
+                  </button>
                 </div>
-                <p className="text-[11px] text-blue-800 dark:text-blue-300">
-                  เมื่อกดยืนยัน AI จะจับคู่ยอดเงินกับบิลห้อง {uploadedRoom || "..."} ตรวจสอบเลขอ้างอิง และตัดยอดเป็น &quot;ชำระแล้ว&quot; บนหน้าเว็บทันที
-                </p>
               </div>
+
+              {testMode === "duplicate" && (
+                <div className="space-y-1.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs">
+                  <div className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    <span>รหัสธุรกรรมที่จะทดสอบส่งซ้ำ</span>
+                  </div>
+                  {invoicesWithRef.length > 0 ? (
+                    <select
+                      value={uploadedRef}
+                      onChange={(e) => setUploadedRef(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono font-bold"
+                    >
+                      {invoicesWithRef.map((inv) => (
+                        <option key={inv.id} value={inv.slipTransRef}>
+                          Ref: {inv.slipTransRef} (ห้อง {inv.roomNumber})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={uploadedRef}
+                      onChange={(e) => setUploadedRef(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono font-bold"
+                    />
+                  )}
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                    เมื่อกดตรวจ AI จะสกัดกั้นการใช้รหัสซ้ำ และปฏิเสธการตัดยอดทันที
+                  </p>
+                </div>
+              )}
+
+              {testMode === "fake" && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-xs space-y-1">
+                  <div className="font-bold text-rose-900 dark:text-rose-200 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>จำลองสลิปปลอม (ไม่มี QR ธนาคาร หรือยอดไม่ครบ)</span>
+                  </div>
+                  <p className="text-[11px] text-rose-800 dark:text-rose-300">
+                    AI จะปฏิเสธสลิปนี้ทันที บิลห้อง {uploadedRoom || "..."} จะไม่ถูกตัดเป็นชำระแล้ว และจะถูกขึ้นสถานะเตือนสีแดงให้เจ้าหน้าที่ตรวจสอบ
+                  </p>
+                </div>
+              )}
+
+              {testMode === "valid" && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
+                  <div className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>จำลองสลิปถูกต้อง 100%</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                    AI จะจับคู่ยอดเงิน ตรวจสอบรหัสธุรกรรม และตัดยอดบิลห้อง {uploadedRoom || "..."} เป็น &quot;ชำระแล้ว&quot; ทันที
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
