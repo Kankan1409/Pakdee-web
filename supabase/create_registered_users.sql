@@ -26,3 +26,4 @@ CREATE POLICY "Allow public access to registered_users"
   FOR ALL
   USING (true)
   WITH CHECK (true);
+
