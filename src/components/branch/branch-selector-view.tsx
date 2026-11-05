@@ -93,7 +93,7 @@ export function BranchSelectorView({
     promptpayName: "",
     electricRate: 8,
     waterRate: 18,
-    initialRoomCount: 8,
+    initialRoomCount: 0,
     imageUrl: "",
   });
 
@@ -256,7 +256,7 @@ export function BranchSelectorView({
           promptpayName: "",
           electricRate: 8,
           waterRate: 18,
-          initialRoomCount: 8,
+          initialRoomCount: 0,
           imageUrl: "",
         });
       } else {
@@ -682,7 +682,7 @@ export function BranchSelectorView({
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        initialRoomCount: parseInt(e.target.value) || 8,
+                        initialRoomCount: parseInt(e.target.value) || 0,
                       })
                     }
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white"

@@ -529,7 +529,7 @@ export const DatabaseService = {
       electricRate: branchData.electricRate,
       waterRate: branchData.waterRate,
       plan: "pro",
-      totalRooms: branchData.initialRoomCount,
+      totalRooms: 0,
       buildingName: "อาคาร 1",
       imageUrl: branchData.imageUrl || undefined,
       ownerId: sessionUser?.id || "usr-owner-01",
@@ -553,34 +553,14 @@ export const DatabaseService = {
       imageUrl: branchData.imageUrl || undefined,
     };
 
-    // Seed initial isolated rooms for the new branch
+    // สาขาใหม่เริ่มต้นด้วย 0 ห้องเสมอ (ไม่สร้างห้องอัตโนมัติ ให้ผู้ใช้กดเพิ่มห้องเอง)
     const existingRooms = this.getAllRawRooms();
-    const newRooms: Room[] = [];
-    const roomsPerFloor = Math.ceil(branchData.initialRoomCount / 3) || 1;
-    for (let i = 1; i <= branchData.initialRoomCount; i++) {
-      const floor = Math.floor((i - 1) / roomsPerFloor) + 1;
-      const roomNum = `${floor}${String((i - 1) % roomsPerFloor + 1).padStart(2, "0")}`;
-      newRooms.push({
-        id: `room-${newId}-${roomNum}`,
-        propertyId: newId,
-        buildingId: `bldg-${newId}`,
-        roomNumber: roomNum,
-        floor,
-        type: "Standard",
-        monthlyRate: 4000,
-        dailyRate: 650,
-        status: "vacant",
-        currentElectricMeter: 100,
-        currentWaterMeter: 50,
-      });
-    }
 
-    // Atomically persist all 4 items together to Host Database
     await this.persistBatch({
       [KEYS.PROPERTIES]: updatedProps,
       [KEYS.ACTIVE_PROPERTY_ID]: newId,
       [this.getBranchSettingsKey(newId)]: newSettings,
-      [KEYS.ROOMS]: [...newRooms, ...existingRooms],
+      [KEYS.ROOMS]: existingRooms,
     });
 
     await this.logActivity(
@@ -697,9 +677,22 @@ export const DatabaseService = {
       return seeded;
     }
 
-    // Auto migrate any legacy rooms missing propertyId into prop-1
+    // Auto migrate any legacy rooms missing propertyId into prop-1 and strip auto-seeded branch rooms
     let needsUpdate = false;
-    const migrated = rooms.map((r) => {
+    const cleaned = rooms.filter((r) => {
+      const isAutoSeededBranchRoom =
+        /^room-prop-\d+-\d+$/.test(r.id) &&
+        r.currentElectricMeter === 100 &&
+        r.currentWaterMeter === 50 &&
+        r.status === "vacant" &&
+        !r.currentTenant;
+      if (isAutoSeededBranchRoom) {
+        needsUpdate = true;
+        return false;
+      }
+      return true;
+    });
+    const migrated = cleaned.map((r) => {
       if (!r.propertyId) {
         needsUpdate = true;
         return { ...r, propertyId: "prop-1" };
@@ -710,7 +703,7 @@ export const DatabaseService = {
       setLocal(KEYS.ROOMS, migrated);
       return migrated;
     }
-    return rooms;
+    return migrated;
   },
 
   async getRooms(propertyId?: string, buildingId?: string): Promise<Room[]> {
