@@ -11,6 +11,7 @@ import {
   Camera,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Search,
   X,
   Download,
@@ -205,26 +206,16 @@ export function MeterSpreadsheetView({
   ).length;
 
   // Validation: Check for any readings less than previous reading
-  const invalidRows = useMemo(() => {
+  const decreasedRows = useMemo(() => {
     return rows.filter((r) => {
       const elecVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
       const waterVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
       return elecVal < r.electricPrev || waterVal < r.waterPrev;
     });
   }, [rows]);
-  const hasValidationError = invalidRows.length > 0;
+  const hasDecreasedMeters = decreasedRows.length > 0;
 
-  const handleSaveAll = () => {
-    // Strict safeguard: Reject saving if any row has reading lower than previous
-    if (hasValidationError) {
-      const roomNumbers = invalidRows.map((r) => `ห้อง ${r.roomNumber}`).join(", ");
-      globalPopup.error(
-        "ไม่สามารถบันทึกได้ (เลขมิเตอร์ไม่ถูกต้อง)",
-        `พบว่ามีเลขมิเตอร์ต่ำกว่าเลขเดิม (${invalidRows.length} ห้อง: ${roomNumbers})\nกรุณาตรวจสอบและแก้ไขตัวเลขที่ไฮไลต์สีแดงให้ถูกต้องก่อนบันทึก`
-      );
-      return;
-    }
-
+  const executeSave = () => {
     const readingsPayload = rows.map((r) => ({
       roomId: r.roomId,
       roomNumber: r.roomNumber,
@@ -265,6 +256,35 @@ export function MeterSpreadsheetView({
     });
 
     setHistoryRecords((prev) => [...newHistoryItems, ...prev]);
+  };
+
+  const handleSaveAll = () => {
+    // If any meter reading is lower than previous, prompt Recheck Confirmation Popup
+    if (hasDecreasedMeters) {
+      const detailLines = decreasedRows.map((r) => {
+        const eVal = r.electricCurr === "" ? r.electricPrev : Number(r.electricCurr);
+        const wVal = r.waterCurr === "" ? r.waterPrev : Number(r.waterCurr);
+        const diffs: string[] = [];
+        if (eVal < r.electricPrev) {
+          diffs.push(`ไฟ: เดิม ${r.electricPrev} ➔ จดใหม่ ${eVal} (ลดลง ${r.electricPrev - eVal} หน่วย)`);
+        }
+        if (wVal < r.waterPrev) {
+          diffs.push(`น้ำ: เดิม ${r.waterPrev} ➔ จดใหม่ ${wVal} (ลดลง ${r.waterPrev - wVal} หน่วย)`);
+        }
+        return `• ห้อง ${r.roomNumber}: ${diffs.join(", ")}`;
+      });
+
+      globalPopup.warning(
+        `แจ้งเตือน: พบ ${decreasedRows.length} ห้องที่เลขมิเตอร์ลดลงกว่าเดิม`,
+        `ระบบตรวจพบว่ามีห้องที่เลขมิเตอร์จดได้น้อยกว่าเลขเดิม กรุณา Recheck อีกครั้ง:\n\n${detailLines.join("\n")}\n\nหากมีการเปลี่ยนมิเตอร์ใหม่หรือวนรอบ และยืนยันว่าถูกต้องแล้ว ให้กดยืนยันเพื่อบันทึกต่อไป`,
+        () => executeSave(),
+        "กลับไปตรวจสอบ"
+      );
+      return;
+    }
+
+    // Normal save without popup if all values are valid
+    executeSave();
   };
 
   // Available unique months from history
@@ -365,16 +385,16 @@ export function MeterSpreadsheetView({
         {activeTab === "entry" && (
           <button
             onClick={handleSaveAll}
-            className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold shadow-md transition cursor-pointer text-xs ${
-              hasValidationError
-                ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/25"
-                : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-emerald-500/20"
-            }`}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md shadow-emerald-500/20 transition cursor-pointer text-xs"
           >
-            {hasValidationError ? <AlertCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {hasDecreasedMeters ? (
+              <AlertTriangle className="w-4 h-4 text-amber-300" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
             <span>
-              {hasValidationError
-                ? `มีเลขมิเตอร์ไม่ถูกต้อง (${invalidRows.length} ห้อง)`
+              {hasDecreasedMeters
+                ? `บันทึกมิเตอร์ (มี ${decreasedRows.length} ห้องเลขลดลง - คลิกเพื่อ Recheck)`
                 : `บันทึกเลขมิเตอร์ทั้งหมด (${rows.length} ห้อง)`}
             </span>
           </button>
@@ -532,12 +552,12 @@ export function MeterSpreadsheetView({
               </div>
             </div>
 
-            {/* Validation Error Alert Banner */}
-            {hasValidationError && (
-              <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border-2 border-rose-500/30 flex items-center gap-3 text-rose-700 dark:text-rose-300 text-xs font-semibold animate-in fade-in">
-                <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
+            {/* Recheck Notice if any meter decreased */}
+            {hasDecreasedMeters && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-900 dark:text-amber-100 text-xs font-medium animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
                 <div className="flex-1">
-                  <span className="font-bold">⚠️ ตรวจพบเลขมิเตอร์ต่ำกว่าครั้งก่อน:</span> มี {invalidRows.length} ห้อง ({invalidRows.map((r) => `ห้อง ${r.roomNumber}`).join(", ")}) ที่ตัวเลขต่ำกว่ามิเตอร์เดิม ระบบจะไม่อนุญาตให้บันทึกจนกว่าจะแก้ไขให้ถูกต้อง
+                  <span className="font-bold">แจ้งเตือน Recheck:</span> มี {decreasedRows.length} ห้อง ({decreasedRows.map((r) => `ห้อง ${r.roomNumber}`).join(", ")}) ที่ตัวเลขจดได้น้อยกว่าครั้งก่อน เมื่อกดบันทึกจะมีหน้าต่าง Popup ให้ตรวจสอบยืนยันอีกครั้ง
                 </div>
               </div>
             )}
@@ -608,10 +628,10 @@ export function MeterSpreadsheetView({
                     filteredRows.map((row) => {
                       const elecVal = row.electricCurr === "" ? row.electricPrev : Number(row.electricCurr);
                       const waterVal = row.waterCurr === "" ? row.waterPrev : Number(row.waterCurr);
-                      const isElecInvalid = row.electricCurr !== "" && Number(row.electricCurr) < row.electricPrev;
-                      const isWaterInvalid = row.waterCurr !== "" && Number(row.waterCurr) < row.waterPrev;
-                      const elecDiff = isElecInvalid ? 0 : Math.max(0, elecVal - row.electricPrev);
-                      const waterDiff = isWaterInvalid ? 0 : Math.max(0, waterVal - row.waterPrev);
+                      const isElecDecreased = row.electricCurr !== "" && Number(row.electricCurr) < row.electricPrev;
+                      const isWaterDecreased = row.waterCurr !== "" && Number(row.waterCurr) < row.waterPrev;
+                      const elecDiff = Math.max(0, elecVal - row.electricPrev);
+                      const waterDiff = Math.max(0, waterVal - row.waterPrev);
                       const cost = elecDiff * electricRate + waterDiff * waterRate;
 
                       return (
@@ -643,25 +663,24 @@ export function MeterSpreadsheetView({
                             </div>
                           </td>
 
-                          {/* ELECTRIC CURRENT INPUT WITH ERROR SAFEGUARD */}
+                          {/* ELECTRIC CURRENT INPUT WITH RECHECK WARNING */}
                           <td className="p-2 text-center bg-amber-500/5 border-r border-amber-200/50">
                             <div className="flex flex-col items-center justify-center">
                               <div className="relative">
                                 <input
                                   type="number"
-                                  min={row.electricPrev}
                                   value={row.electricCurr}
                                   placeholder={String(row.electricPrev)}
                                   onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
                                   className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
-                                    isElecInvalid
-                                      ? "bg-red-50 border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-400/20"
+                                    isElecDecreased
+                                      ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-amber-950 dark:text-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
                                       : "bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 shadow-2xs"
                                   }`}
                                 />
-                                {isElecInvalid && (
-                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
-                                    ⚠️ ต่ำกว่าเดิม
+                                {isElecDecreased && (
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    ลดลง
                                   </span>
                                 )}
                               </div>
@@ -669,9 +688,7 @@ export function MeterSpreadsheetView({
                           </td>
 
                           <td className="p-2.5 text-right font-mono font-bold bg-amber-500/5 border-r border-[var(--border)]">
-                            {isElecInvalid ? (
-                              <span className="text-red-500 text-xs font-semibold">ไม่ถูกต้อง</span>
-                            ) : elecDiff > 0 ? (
+                            {elecDiff > 0 ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 font-bold text-xs">
                                 +{elecDiff}
                               </span>
@@ -692,25 +709,24 @@ export function MeterSpreadsheetView({
                             </div>
                           </td>
 
-                          {/* WATER CURRENT INPUT WITH ERROR SAFEGUARD */}
+                          {/* WATER CURRENT INPUT WITH RECHECK WARNING */}
                           <td className="p-2 text-center bg-sky-500/5 border-r border-sky-200/50">
                             <div className="flex flex-col items-center justify-center">
                               <div className="relative">
                                 <input
                                   type="number"
-                                  min={row.waterPrev}
                                   value={row.waterCurr}
                                   placeholder={String(row.waterPrev)}
                                   onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
                                   className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
-                                    isWaterInvalid
-                                      ? "bg-red-50 border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-400/20"
+                                    isWaterDecreased
+                                      ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-sky-950 dark:text-sky-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
                                       : "bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-sky-950 dark:text-sky-100 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 shadow-2xs"
                                   }`}
                                 />
-                                {isWaterInvalid && (
-                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
-                                    ⚠️ ต่ำกว่าเดิม
+                                {isWaterDecreased && (
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    ลดลง
                                   </span>
                                 )}
                               </div>
@@ -718,9 +734,7 @@ export function MeterSpreadsheetView({
                           </td>
 
                           <td className="p-2.5 text-right font-mono font-bold bg-sky-500/5 border-r border-[var(--border)]">
-                            {isWaterInvalid ? (
-                              <span className="text-red-500 text-xs font-semibold">ไม่ถูกต้อง</span>
-                            ) : waterDiff > 0 ? (
+                            {waterDiff > 0 ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-200 dark:bg-sky-900/60 text-sky-900 dark:text-sky-100 font-bold text-xs">
                                 +{waterDiff}
                               </span>

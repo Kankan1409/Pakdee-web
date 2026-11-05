@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Room } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
 import { globalPopup } from "@/lib/popup-context";
-import { X, Zap, Droplets, ArrowRight, ArrowLeft, Check, AlertCircle } from "lucide-react";
+import { X, Zap, Droplets, ArrowRight, ArrowLeft, Check, AlertCircle, AlertTriangle } from "lucide-react";
 
 interface QuickMeterModalProps {
   rooms: Room[];
@@ -62,10 +62,10 @@ export function QuickMeterModal({
   const elecVal = electricNew === "" ? elecPrev : Number(electricNew);
   const waterVal = waterNew === "" ? waterPrev : Number(waterNew);
 
-  // Validation rules: New readings MUST NOT be less than previous readings
-  const isElectricInvalid = electricNew !== "" && Number(electricNew) < elecPrev;
-  const isWaterInvalid = waterNew !== "" && Number(waterNew) < waterPrev;
-  const hasValidationError = isElectricInvalid || isWaterInvalid;
+  // Check if readings decreased compared to previous
+  const isElectricDecreased = electricNew !== "" && Number(electricNew) < elecPrev;
+  const isWaterDecreased = waterNew !== "" && Number(waterNew) < waterPrev;
+  const hasDecreasedMeter = isElectricDecreased || isWaterDecreased;
 
   const electricUnits = Math.max(0, elecVal - elecPrev);
   const electricCost = electricUnits * electricRate;
@@ -73,24 +73,7 @@ export function QuickMeterModal({
   const waterUnits = Math.max(0, waterVal - waterPrev);
   const waterCost = waterUnits * waterRate;
 
-  const handleSaveAndNext = () => {
-    // Strict safeguard check
-    if (isElectricInvalid) {
-      globalPopup.error(
-        "เลขมิเตอร์ไฟฟ้าไม่ถูกต้อง",
-        `เลขมิเตอร์ไฟฟ้า (${elecVal}) ต้องไม่น้อยกว่าเลขเดิม (${elecPrev})`
-      );
-      return;
-    }
-
-    if (isWaterInvalid) {
-      globalPopup.error(
-        "เลขมิเตอร์น้ำประปาไม่ถูกต้อง",
-        `เลขมิเตอร์น้ำประปา (${waterVal}) ต้องไม่น้อยกว่าเลขเดิม (${waterPrev})`
-      );
-      return;
-    }
-
+  const executeSave = () => {
     onSaveReading(currentRoom.id, elecVal, waterVal);
     if (currentIndex < activeRooms.length - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -98,6 +81,29 @@ export function QuickMeterModal({
       globalPopup.info("บันทึกสำเร็จ", "บันทึกมิเตอร์ครบทุกห้องเรียบร้อยแล้ว!");
       onClose();
     }
+  };
+
+  const handleSaveAndNext = () => {
+    // If any meter reading decreased, prompt Recheck Confirmation Popup
+    if (hasDecreasedMeter) {
+      const warnings: string[] = [];
+      if (isElectricDecreased) {
+        warnings.push(`• ค่าไฟฟ้า: เลขเดิม ${elecPrev} ➔ จดใหม่ ${elecVal} (ลดลง ${elecPrev - elecVal} หน่วย)`);
+      }
+      if (isWaterDecreased) {
+        warnings.push(`• ค่าน้ำประปา: เลขเดิม ${waterPrev} ➔ จดใหม่ ${waterVal} (ลดลง ${waterPrev - waterVal} หน่วย)`);
+      }
+
+      globalPopup.warning(
+        `แจ้งเตือน: เลขมิเตอร์ห้อง ${currentRoom.roomNumber} ลดลงกว่าเดิม`,
+        `ระบบตรวจพบว่าเลขมิเตอร์ที่กรอกมีค่าน้อยกว่าเลขเดิม กรุณา Recheck อีกครั้ง:\n\n${warnings.join("\n")}\n\nหากมีการเปลี่ยนมิเตอร์ใหม่หรือยืนยันว่าถูกต้อง ให้กด "ยืนยันการดำเนินการ" เพื่อบันทึกต่อไป`,
+        () => executeSave(),
+        "กลับไปแก้ไข"
+      );
+      return;
+    }
+
+    executeSave();
   };
 
   const handlePrev = () => {
@@ -139,8 +145,8 @@ export function QuickMeterModal({
 
           {/* Electric Meter Card */}
           <div className={`border rounded-2xl p-4 transition-all ${
-            isElectricInvalid 
-              ? "bg-red-500/10 border-red-500/50" 
+            isElectricDecreased 
+              ? "bg-amber-500/10 border-amber-500/50" 
               : "bg-amber-500/5 border-amber-500/20"
           }`}>
             <div className="flex items-center justify-between text-xs mb-2.5">
@@ -157,26 +163,30 @@ export function QuickMeterModal({
             <div className="relative">
               <input
                 type="number"
-                min={elecPrev}
                 value={electricNew}
                 placeholder={String(elecPrev)}
                 onChange={(e) => setElectricNew(e.target.value === "" ? "" : Number(e.target.value))}
                 className={`w-full bg-[var(--card)] rounded-xl px-4 py-2.5 text-center text-xl font-bold font-mono transition-all ${
-                  isElectricInvalid
-                    ? "border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-500/20"
+                  isElectricDecreased
+                    ? "border-2 border-amber-500 text-amber-800 dark:text-amber-200 focus:outline-none focus:ring-4 focus:ring-amber-500/20"
                     : "border-2 border-amber-400 dark:border-amber-600 text-[var(--foreground)] focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20"
                 }`}
               />
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-amber-600/70 dark:text-amber-400/70 select-none">
                 จดใหม่
               </span>
+              {isElectricDecreased && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold bg-amber-500/20 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded-md">
+                  ลดลง
+                </span>
+              )}
             </div>
 
-            {/* Validation Error Banner */}
-            {isElectricInvalid ? (
-              <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-semibold mt-2 bg-red-100/80 dark:bg-red-950/60 p-2 rounded-lg border border-red-300 dark:border-red-800">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>ห้ามจดน้อยกว่ามิเตอร์เดิม ({elecPrev})</span>
+            {/* Warning or Units calculation */}
+            {isElectricDecreased ? (
+              <div className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300 font-medium mt-2 bg-amber-100/80 dark:bg-amber-950/60 p-2 rounded-lg border border-amber-300 dark:border-amber-800">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                <span>เลขลดลงจากเดิม ({elecPrev}) — เมื่อกดบันทึกจะมี Popup ให้ Recheck</span>
               </div>
             ) : (
               <div className="flex items-center justify-between text-xs text-amber-700 dark:text-amber-300 font-medium mt-2">
@@ -188,8 +198,8 @@ export function QuickMeterModal({
 
           {/* Water Meter Card */}
           <div className={`border rounded-2xl p-4 transition-all ${
-            isWaterInvalid 
-              ? "bg-red-500/10 border-red-500/50" 
+            isWaterDecreased 
+              ? "bg-amber-500/10 border-amber-500/50" 
               : "bg-sky-500/5 border-sky-500/20"
           }`}>
             <div className="flex items-center justify-between text-xs mb-2.5">
@@ -206,26 +216,30 @@ export function QuickMeterModal({
             <div className="relative">
               <input
                 type="number"
-                min={waterPrev}
                 value={waterNew}
                 placeholder={String(waterPrev)}
                 onChange={(e) => setWaterNew(e.target.value === "" ? "" : Number(e.target.value))}
                 className={`w-full bg-[var(--card)] rounded-xl px-4 py-2.5 text-center text-xl font-bold font-mono transition-all ${
-                  isWaterInvalid
-                    ? "border-2 border-red-500 text-red-600 focus:outline-none focus:ring-4 focus:ring-red-500/20"
+                  isWaterDecreased
+                    ? "border-2 border-amber-500 text-amber-800 dark:text-amber-200 focus:outline-none focus:ring-4 focus:ring-amber-500/20"
                     : "border-2 border-sky-400 dark:border-sky-600 text-[var(--foreground)] focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20"
                 }`}
               />
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-sky-600/70 dark:text-sky-400/70 select-none">
                 จดใหม่
               </span>
+              {isWaterDecreased && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold bg-amber-500/20 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded-md">
+                  ลดลง
+                </span>
+              )}
             </div>
 
-            {/* Validation Error Banner */}
-            {isWaterInvalid ? (
-              <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-semibold mt-2 bg-red-100/80 dark:bg-red-950/60 p-2 rounded-lg border border-red-300 dark:border-red-800">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>ห้ามจดน้อยกว่ามิเตอร์เดิม ({waterPrev})</span>
+            {/* Warning or Units calculation */}
+            {isWaterDecreased ? (
+              <div className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300 font-medium mt-2 bg-amber-100/80 dark:bg-amber-950/60 p-2 rounded-lg border border-amber-300 dark:border-amber-800">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                <span>เลขลดลงจากเดิม ({waterPrev}) — เมื่อกดบันทึกจะมี Popup ให้ Recheck</span>
               </div>
             ) : (
               <div className="flex items-center justify-between text-xs text-sky-700 dark:text-sky-300 font-medium mt-2">
@@ -249,15 +263,20 @@ export function QuickMeterModal({
             )}
             <button
               onClick={handleSaveAndNext}
-              disabled={hasValidationError}
               className={`flex-1 font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition cursor-pointer ${
-                hasValidationError
-                  ? "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed shadow-none"
+                hasDecreasedMeter
+                  ? "bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/25"
                   : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/25"
               }`}
             >
               <span>{currentIndex === activeRooms.length - 1 ? "บันทึกเสร็จสิ้น" : "บันทึก & ห้องถัดไป"}</span>
-              {currentIndex === activeRooms.length - 1 ? <Check className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+              {hasDecreasedMeter ? (
+                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">Recheck</span>
+              ) : currentIndex === activeRooms.length - 1 ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
             </button>
           </div>
         </div>
