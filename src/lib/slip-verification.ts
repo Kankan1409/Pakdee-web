@@ -1,10 +1,13 @@
 /**
  * PAKDEE SYSTEM - SLIP VERIFICATION & DEDUPLICATION ENGINE
  * ระบบตรวจสอบสลิปโอนเงิน ป้องกันสลิปปลอม และสกัดกั้นการใช้สลิปซ้ำ 100%
- * มาตรฐาน: Defensive Architecture & Zero Float Math
+ * มาตรฐาน: Defensive Architecture, Real Pixel QR (jsQR), BScanC Bank Decoder & Zero Float Math
  */
 
 import crypto from "crypto";
+import jpeg from "jpeg-js";
+import { PNG } from "pngjs";
+import jsQR from "jsqr";
 import type { Invoice } from "../types/dormitory";
 
 export interface VerifySlipOptions {
@@ -89,8 +92,155 @@ export function validateImageSignature(buffer: Buffer): {
 }
 
 /**
- * สแกน Signature ของธนาคารในระดับ Buffer ไบนารี
- * ตรวจจับร่องรอย Thai Bank BScanC, PromptPay QR, และ Mobile Banking Tokens
+ * สแกนและถอดรหัส Mini QR Code จากพิกเซลของรูปภาพสลิปจริง (JPEG/PNG)
+ */
+export function extractQrFromImage(buffer: Buffer): string | null {
+  try {
+    let width = 0;
+    let height = 0;
+    let data: Uint8Array | Uint8ClampedArray | null = null;
+
+    // ถอดรหัส JPEG
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      const decoded = jpeg.decode(buffer, { useTArray: true });
+      width = decoded.width;
+      height = decoded.height;
+      data = decoded.data;
+    }
+    // ถอดรหัส PNG
+    else if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+      const png = PNG.sync.read(buffer);
+      width = png.width;
+      height = png.height;
+      data = png.data;
+    }
+
+    if (!data || width === 0 || height === 0) return null;
+
+    // 1. สแกนทั้งภาพก่อน
+    const code = jsQR(data as any, width, height);
+    if (code && code.data && code.data.trim()) {
+      return code.data.trim();
+    }
+
+    // 2. หากยังไม่พบ ให้ครอปเฉพาะส่วนครึ่งล่าง (ตำแหน่งมาตรฐาน Mini QR ของสลิปธนาคารไทย)
+    const startY = Math.floor(height * 0.35);
+    const croppedHeight = height - startY;
+    const croppedData = new Uint8ClampedArray(width * croppedHeight * 4);
+    const sourceOffset = startY * width * 4;
+    croppedData.set(data.subarray(sourceOffset, sourceOffset + croppedData.length));
+
+    const croppedCode = jsQR(croppedData, width, croppedHeight);
+    if (croppedCode && croppedCode.data && croppedCode.data.trim()) {
+      return croppedCode.data.trim();
+    }
+
+    return null;
+  } catch (err) {
+    console.warn("[SLIP-VERIFY] Error decoding QR matrix from image:", err);
+    return null;
+  }
+}
+
+/**
+ * ถอดรหัสโครงสร้างมาตรฐาน Mini QR Code ของธนาคารไทย (BScanC / PromptPay)
+ */
+export function parseBScanC(qrData: string): {
+  isBScanC: boolean;
+  bankCode?: string;
+  bankName?: string;
+  transRef?: string;
+  rawRef?: string;
+} | null {
+  if (!qrData || typeof qrData !== "string") return null;
+
+  // โครงสร้างมาตรฐาน BScanC สมาคมธนาคารไทย ขึ้นต้นด้วย 0046 หรือ 00XX
+  if (!qrData.startsWith("00")) {
+    // กรณีเป็น QR โอนเงิน PromptPay ทั่วไป (ขึ้นต้นด้วย 000201)
+    if (qrData.startsWith("000201")) {
+      return {
+        isBScanC: true,
+        bankName: "ระบบพร้อมเพย์ (PromptPay)",
+        transRef: `PP-${Date.now().toString().slice(-8)}`,
+      };
+    }
+    return null;
+  }
+
+  try {
+    let pos = 0;
+    const tags: Record<string, string> = {};
+    while (pos < qrData.length) {
+      const tag = qrData.substring(pos, pos + 2);
+      const len = parseInt(qrData.substring(pos + 2, pos + 4), 10);
+      if (isNaN(len)) break;
+      const val = qrData.substring(pos + 4, pos + 4 + len);
+      tags[tag] = val;
+      pos = pos + 4 + len;
+    }
+
+    const sub00 = tags["00"];
+    if (!sub00) return null;
+
+    let subPos = 0;
+    const subTags: Record<string, string> = {};
+    while (subPos < sub00.length) {
+      const stag = sub00.substring(subPos, subPos + 2);
+      const slen = parseInt(sub00.substring(subPos + 2, subPos + 4), 10);
+      if (isNaN(slen)) break;
+      const sval = sub00.substring(subPos + 4, subPos + 4 + slen);
+      subTags[stag] = sval;
+      subPos = subPos + 4 + slen;
+    }
+
+    const bankCode = subTags["01"]; // 025 (Krungsri), 004 (KBank), 014 (SCB), 002 (BBL), etc.
+    const rawRef = subTags["02"];   // รหัสธุรกรรม
+
+    const bankMap: Record<string, string> = {
+      "002": "ธนาคารกรุงเทพ (BBL)",
+      "004": "ธนาคารกสิกรไทย (KBank)",
+      "006": "ธนาคารกรุงไทย (KTB)",
+      "011": "ธนาคารทหารไทยธนชาต (TTB)",
+      "014": "ธนาคารไทยพาณิชย์ (SCB)",
+      "025": "ธนาคารกรุงศรีอยุธยา (Krungsri/BAY)",
+      "030": "ธนาคารออมสิน (GSB)",
+      "034": "ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)",
+      "067": "ธนาคารทิสโก้ (TISCO)",
+      "069": "ธนาคารเกียรตินาคินภัทร (KKP)",
+      "070": "ธนาคารไทยเครดิต",
+      "073": "ธนาคารแลนด์ แอนด์ เฮ้าส์ (LH Bank)",
+    };
+
+    const bankName = bankCode ? bankMap[bankCode] || `ธนาคารรหัส ${bankCode}` : "ธนาคารพาณิชย์ (BScanC)";
+
+    // จัดรูปแบบ transRef ให้ตรงกับที่พิมพ์บนหน้าสลิป
+    let transRef = rawRef;
+    if (rawRef) {
+      const m = rawRef.match(/^[A-Za-z0-9]+/);
+      if (m) {
+        transRef = m[0];
+        // ตัด suffix hash หากมีความยาวเกิน 20 หลัก (เช่น Krungsri KSA... 20 ตัวอักษร)
+        if (transRef.length > 20 && transRef.startsWith("KSA")) {
+          transRef = transRef.substring(0, 20);
+        }
+      }
+    }
+
+    return {
+      isBScanC: true,
+      bankCode,
+      bankName,
+      transRef: transRef || rawRef,
+      rawRef,
+    };
+  } catch (err) {
+    console.warn("[SLIP-VERIFY] Error parsing BScanC payload:", err);
+    return null;
+  }
+}
+
+/**
+ * สแกน Signature ของธนาคารในระดับ Buffer ไบนารี (กรณีตรวจ EXIF/Fallback)
  */
 export function detectBankSignatures(buffer: Buffer): {
   hasBankSignature: boolean;
@@ -99,22 +249,20 @@ export function detectBankSignatures(buffer: Buffer): {
 } {
   const rawString = buffer.toString("latin1");
 
-  // รายการคีย์เวิร์ดที่ต้องมีในสลิปธนาคารมาตรฐาน หรือใน Metadata / EXIF / BScanC payload
   const bankPatterns: { name: string; regex: RegExp }[] = [
     { name: "ธนาคารกสิกรไทย (KBank)", regex: /kbank|kplus|kasikorn|004/i },
     { name: "ธนาคารไทยพาณิชย์ (SCB)", regex: /scbeasy|scb|siam commercial|014/i },
     { name: "ธนาคารกรุงเทพ (BBL)", regex: /bbl|bangkokbank|002/i },
     { name: "ธนาคารกรุงไทย (KTB)", regex: /ktb|krungthai|006/i },
     { name: "ธนาคารทหารไทยธนชาต (TTB)", regex: /ttb|tmb|thanachart|011/i },
-    { name: "ธนาคารกรุงศรีอยุธยา (BAY)", regex: /bay|krungsri|025/i },
+    { name: "ธนาคารกรุงศรีอยุธยา (BAY/Krungsri)", regex: /bay|krungsri|025/i },
     { name: "ธนาคารออมสิน (GSB)", regex: /gsb|mymo|030/i },
     { name: "ระบบพร้อมเพย์ (PromptPay / Thai QR)", regex: /promptpay|thaiqr|bscanc|000201|0046/i },
   ];
 
   for (const b of bankPatterns) {
     if (b.regex.test(rawString)) {
-      // ดึงรหัสอ้างอิงถ้าพบตัวเลข 16-25 หลัก
-      const refMatch = rawString.match(/\b(202[4-9]\d{12,20}|014\d{13,20}|004\d{13,20})\b/);
+      const refMatch = rawString.match(/\b(202[4-9]\d{12,20}|014\d{13,20}|004\d{13,20}|KSA\d{12,20})\b/);
       return {
         hasBankSignature: true,
         detectedBank: b.name,
@@ -128,7 +276,7 @@ export function detectBankSignatures(buffer: Buffer): {
 
 export class SlipVerificationService {
   /**
-   * ตรวจสอบสลิปอย่างละเอียดรอบด้าน (Deduplication, Fraud Detection, Amount Matching)
+   * ตรวจสอบสลิปอย่างละเอียดรอบด้าน (Deduplication, Pixel QR, BScanC Extraction, Amount Matching)
    */
   static verifySlip(options: VerifySlipOptions): SlipVerificationResult {
     const { imageBuffer, invoice, allInvoices, manualInput } = options;
@@ -140,7 +288,7 @@ export class SlipVerificationService {
       return {
         success: false,
         reason: "FAKE_OR_INVALID_SLIP",
-        message: "❌ ตรวจพบสลิปปลอม: ไม่พบรหัสธุรกรรม Mini QR (BScanC) ของธนาคาร หรือภาพสลิปนี้ไม่ได้สร้างจากแอปธนาคารจริง",
+        message: "❌ ตรวจพบสลิปปลอม: ไม่พบรหัสธุรกรรม Mini QR (BScanC) ของธนาคารในภาพสลิปนี้",
       };
     }
 
@@ -153,7 +301,7 @@ export class SlipVerificationService {
     // Gate 2: ตรวจสอบ Buffer รูปภาพจริง (กรณีส่งทาง LINE หรืออัปโหลด)
     // -------------------------------------------------------------
     if (imageBuffer) {
-      // ตรวจสอบความถูกต้องของไฟล์รูปภาพ
+      // 2.1 ตรวจสอบความถูกต้องของไฟล์รูปภาพ
       const sig = validateImageSignature(imageBuffer);
       if (!sig.isValid) {
         return {
@@ -163,7 +311,7 @@ export class SlipVerificationService {
         };
       }
 
-      // ตรวจสอบขนาดไฟล์: สลิปโอนเงินจริงต้องมีขนาดไม่ต่ำกว่า 10 KB
+      // 2.2 ตรวจสอบขนาดไฟล์: สลิปโอนเงินจริงต้องมีขนาดไม่ต่ำกว่า 10 KB
       if (imageBuffer.length < 10240) {
         return {
           success: false,
@@ -172,10 +320,10 @@ export class SlipVerificationService {
         };
       }
 
-      // คำนวณ SHA-256 Hash
+      // 2.3 คำนวณ SHA-256 Hash สำหรับตรวจสลิปซ้ำ
       slipHash = computeSlipHash(imageBuffer);
 
-      // Gate 2.1: ตรวจจับการส่งรูปภาพสลิปซ้ำ (Duplicate Image Hash)
+      // Gate 2.3.1: ตรวจจับการส่งรูปภาพสลิปซ้ำ (Duplicate Image Hash)
       const duplicateHashInvoice = allInvoices.find(
         (inv) => inv.slipHash && inv.slipHash === slipHash && inv.id !== invoice.id
       );
@@ -188,29 +336,43 @@ export class SlipVerificationService {
         };
       }
 
-      // Gate 2.2: ตรวจจับ Bank Signature & BScanC Marker
-      const bankSig = detectBankSignatures(imageBuffer);
-      if (!bankSig.hasBankSignature && !manualInput?.transRef) {
+      // 2.4 สแกนถอดรหัส Mini QR Code แท้จากพิกเซลภาพ
+      const qrData = extractQrFromImage(imageBuffer);
+      let isVerifiedBankQr = false;
+
+      if (qrData) {
+        const bscanc = parseBScanC(qrData);
+        if (bscanc && bscanc.isBScanC) {
+          isVerifiedBankQr = true;
+          if (bscanc.bankName) extractedBank = bscanc.bankName;
+          if (bscanc.transRef) extractedRef = bscanc.transRef;
+        }
+      }
+
+      // 2.5 Fallback: สแกน Bank Marker หากไม่พบ QR
+      if (!isVerifiedBankQr) {
+        const bankSig = detectBankSignatures(imageBuffer);
+        if (bankSig.hasBankSignature) {
+          isVerifiedBankQr = true;
+          if (bankSig.detectedBank) extractedBank = bankSig.detectedBank;
+          if (bankSig.detectedRef && !extractedRef) extractedRef = bankSig.detectedRef;
+        }
+      }
+
+      // หากทั้ง Mini QR และ Bank Signature ไม่พบเลย = ไม่ใช่สลิปธนาคาร (สลิปปลอม/ภาพทั่วไป)
+      if (!isVerifiedBankQr && !manualInput?.transRef) {
         return {
           success: false,
           reason: "FAKE_OR_INVALID_SLIP",
           slipHash,
-          message: "⚠️ ไม่สามารถยืนยันสลิปได้: ไม่พบรหัสธุรกรรม Mini QR (BScanC) ของธนาคาร หรือภาพที่ส่งมาไม่ใช่สลิปโอนเงิน กรุณาส่งสลิปโอนเงินตัวจริงที่มี QR Code ชัดเจน",
+          message: "⚠️ ไม่สามารถยืนยันสลิปได้: ไม่พบรหัสธุรกรรม Mini QR (BScanC) ของธนาคารในภาพ กรุณาส่งภาพสลิปโอนเงินตัวจริงที่มี QR Code ชัดเจน",
         };
-      }
-
-      if (bankSig.detectedBank) {
-        extractedBank = bankSig.detectedBank;
-      }
-      if (bankSig.detectedRef && !extractedRef) {
-        extractedRef = bankSig.detectedRef;
       }
     }
 
     // -------------------------------------------------------------
     // Gate 3: ตรวจสอบรหัสอ้างอิงธุรกรรมธนาคาร (Transaction Reference Deduplication)
     // -------------------------------------------------------------
-    // หากไม่มีรหัสอ้างอิง ให้สร้างรหัสมาตรฐานธุรกรรมเพื่อตรวจ
     const targetRef = (extractedRef || `014310${Date.now().toString().slice(-8)}`).trim();
 
     const duplicateRefInvoice = allInvoices.find(
