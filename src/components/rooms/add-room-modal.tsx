@@ -57,7 +57,7 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
   };
 
   // Batch Mode
-  const [batchPrefix, setBatchPrefix] = useState<string>("10");
+  const [batchPrefix, setBatchPrefix] = useState<string>("");
   const [batchStart, setBatchStart] = useState<number>(1);
   const [batchEnd, setBatchEnd] = useState<number>(6);
 
@@ -205,7 +205,6 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                   value={floor}
                   onChange={(e) => {
                     setFloor(Number(e.target.value));
-                    setBatchPrefix(`${e.target.value}0`);
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
                 />
