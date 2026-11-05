@@ -214,6 +214,9 @@ export async function pruneOrphanRows(table: string, keepIds: string[]): Promise
       .filter((id) => !keepSet.has(id.toLowerCase()));
 
     if (toDelete.length > 0) {
+      if (table === "tenants") {
+        await supabase.from("rooms").update({ current_tenant_id: null }).in("current_tenant_id", toDelete);
+      }
       await supabase.from(table).delete().in("id", toDelete);
     }
   } catch {}
@@ -311,11 +314,36 @@ export function collectUnifiedTenants(
 
   for (const t of rawTenants || []) {
     if (!t || !t.fullName) continue;
-    const key = t.id ? toUuid(t.id) : `${t.fullName.trim()}|${(t.phone || "").trim()}`;
-    byKey.set(key, {
-      ...t,
-      id: toUuid(t.id || `tenant-${t.fullName}-${t.phone}`),
-    });
+    const existingByName = Array.from(byKey.values()).find(
+      (x) =>
+        x.fullName.trim() === t.fullName.trim() &&
+        (x.propertyId || "prop-1") === (t.propertyId || "prop-1")
+    );
+    if (existingByName) {
+      const mergedId = toUuid(
+        existingByName.idCard && existingByName.idCard !== "-" ? existingByName.id : t.id
+      );
+      byKey.delete(toUuid(existingByName.id));
+      byKey.set(mergedId, {
+        ...existingByName,
+        ...t,
+        id: mergedId,
+        idCard:
+          t.idCard && t.idCard !== "-"
+            ? t.idCard
+            : existingByName.idCard && existingByName.idCard !== "-"
+            ? existingByName.idCard
+            : t.idCard || "-",
+        lineId: t.lineId || t.lineUserId || existingByName.lineId || existingByName.lineUserId,
+        lineUserId: t.lineUserId || existingByName.lineUserId,
+      });
+    } else {
+      const key = t.id ? toUuid(t.id) : `${t.fullName.trim()}|${(t.phone || "").trim()}`;
+      byKey.set(key, {
+        ...t,
+        id: toUuid(t.id || `tenant-${t.fullName}-${t.phone}`),
+      });
+    }
   }
 
   for (const r of rawRooms || []) {
@@ -330,6 +358,16 @@ export function collectUnifiedTenants(
           ...existing,
           ...ct,
           id: toUuid(existing.id),
+          idCard:
+            ct.idCard && ct.idCard !== "-"
+              ? ct.idCard
+              : existing.idCard && existing.idCard !== "-"
+              ? existing.idCard
+              : ct.idCard || "-",
+          lineId: ct.lineId || ct.lineUserId || existing.lineId || existing.lineUserId,
+          lineUserId: ct.lineUserId || existing.lineUserId,
+          emergencyContact: ct.emergencyContact || existing.emergencyContact,
+          vehiclePlate: ct.vehiclePlate || existing.vehiclePlate,
           propertyId: ct.propertyId || r.propertyId || existing.propertyId || "prop-1",
           roomId: r.id,
           roomNumber: r.roomNumber,
@@ -406,6 +444,7 @@ export async function syncTenantsToSupabase(
   }));
 
   await safeUpsert("tenants", rows, "id");
+  await pruneOrphanRows("tenants", rows.map((r) => r.id));
 }
 
 export async function syncRoomsToSupabase(

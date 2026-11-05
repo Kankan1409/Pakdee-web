@@ -65,6 +65,10 @@ let isServerSynced = false;
 const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 function scheduleRelationalSync(normKey: string, value: any): void {
   if (normKey === "activity_logs" || normKey === "active_property_id") return;
+  if (typeof window === "undefined") {
+    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+    return;
+  }
   if (relationalSyncTimers[normKey]) {
     clearTimeout(relationalSyncTimers[normKey]);
   }
@@ -1038,12 +1042,29 @@ export const DatabaseService = {
       return null;
     }
 
-    // 3. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง (currentTenant) เป็นหลัก
-    // หากหน้าแผนผังมีชื่อผู้เช่า (เช่น ผู้เช่าใหม่) ให้ใช้ชื่อและข้อมูลผู้เช่าจากหน้าแผนผังเสมอ
+    // 3. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง (currentTenant) และทะเบียนผู้เช่าเดิมเป็นหลัก (อัปเดตตัวเดิม ไม่สร้างซ้ำ)
     const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${cleanRoom}`;
-    const activePhone = roomMatch.currentTenant?.phone || "-";
-    const activeIdCard = roomMatch.currentTenant?.idCard || "-";
-    const tenantId = roomMatch.currentTenant?.id || `t-${roomMatch.propertyId || "prop-1"}-${cleanRoom}`;
+    const existingTenantRecord = allTenants.find(
+      (t) =>
+        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+        ((roomMatch!.currentTenant?.id && t.id === roomMatch!.currentTenant.id) ||
+          (t.roomNumber || "").trim() === cleanRoom ||
+          t.roomId === roomMatch!.id ||
+          t.fullName.trim() === activeName.trim())
+    );
+
+    const activePhone =
+      (existingTenantRecord?.phone && existingTenantRecord.phone !== "-" ? existingTenantRecord.phone : undefined) ||
+      (roomMatch.currentTenant?.phone && roomMatch.currentTenant.phone !== "-" ? roomMatch.currentTenant.phone : undefined) ||
+      "-";
+    const activeIdCard =
+      (existingTenantRecord?.idCard && existingTenantRecord.idCard !== "-" ? existingTenantRecord.idCard : undefined) ||
+      (roomMatch.currentTenant?.idCard && roomMatch.currentTenant.idCard !== "-" ? roomMatch.currentTenant.idCard : undefined) ||
+      "-";
+    const tenantId =
+      existingTenantRecord?.id ||
+      roomMatch.currentTenant?.id ||
+      `t-${roomMatch.propertyId || "prop-1"}-${cleanRoom}`;
 
     // 4. แทนสิทธิ์ (Replace Rights): ปลดสิทธิ์ผู้เช่าคนเดิมที่มีชื่อไม่ตรงกันออกจากห้องนี้
     const updatedTenants = allTenants.map((t) => {
@@ -1051,7 +1072,7 @@ export const DatabaseService = {
         (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
         (t.roomNumber || "").trim() === cleanRoom &&
         t.id !== tenantId &&
-        t.fullName !== activeName
+        t.fullName.trim() !== activeName.trim()
       ) {
         // คนเก่าถูกปลดสิทธิ์ออกจากห้องนี้
         return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
@@ -1059,14 +1080,18 @@ export const DatabaseService = {
       return t;
     });
 
-    // 5. บันทึก / อัปเดตข้อมูลผู้เช่าคนปัจจุบันที่ผูกกับห้องนี้
+    // 5. บันทึก / อัปเดตข้อมูลผู้เช่าคนปัจจุบันที่ผูกกับห้องนี้ (อัปเดตแถวเดิม ไม่สร้างแถวซ้ำ)
     const currentTenantIdx = updatedTenants.findIndex(
       (t) =>
         (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
-        (t.id === tenantId || (t.roomNumber || "").trim() === cleanRoom)
+        (t.id === tenantId ||
+          (t.roomNumber || "").trim() === cleanRoom ||
+          t.roomId === roomMatch!.id ||
+          t.fullName.trim() === activeName.trim())
     );
 
     const targetTenant: Tenant = {
+      ...(roomMatch.currentTenant || {}),
       ...(currentTenantIdx !== -1 ? updatedTenants[currentTenantIdx] : {}),
       id: tenantId,
       propertyId: roomMatch.propertyId || propId,
@@ -1075,6 +1100,7 @@ export const DatabaseService = {
       fullName: activeName,
       phone: activePhone,
       idCard: activeIdCard,
+      lineId: lineUserId,
       lineUserId,
       lineDisplayName: lineDisplayName || activeName,
       lineLinkedAt: new Date().toISOString(),
@@ -1085,7 +1111,19 @@ export const DatabaseService = {
     } else {
       updatedTenants.push(targetTenant);
     }
-    setLocal(KEYS.TENANTS, updatedTenants);
+
+    // ลบรายการซ้ำของคนเดียวกันในห้องเดียวกัน (ถ้าเคยเกิดซ้ำมาก่อน) ให้เหลือแถวเดียว
+    const dedupedTenants = updatedTenants.filter(
+      (t, idx) =>
+        idx === currentTenantIdx ||
+        t.id === tenantId ||
+        !(
+          (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+          t.fullName.trim() === activeName.trim() &&
+          t.id !== tenantId
+        )
+    );
+    setLocal(KEYS.TENANTS, dedupedTenants);
 
     // 6. อัปเดตสถานะห้องในหน้าแผนผัง (Room Matrix) ให้มี currentTenant ที่ผูก LINE สำเร็จ
     const updatedRooms = allRooms.map((r) => {
@@ -1153,12 +1191,22 @@ export const DatabaseService = {
     if (!tenant) return false;
 
     const allRooms = this.getAllRawRooms();
+    const targetRoom = allRooms.find((r) => r.id === roomId);
+    const enrichedTenant: Tenant = {
+      ...tenant,
+      roomId,
+      roomNumber: targetRoom?.roomNumber || tenant.roomNumber,
+    };
+
+    const updatedTenants = tenants.map((t) => (t.id === tenantId ? enrichedTenant : t));
+    setLocal(KEYS.TENANTS, updatedTenants);
+
     const updated = allRooms.map((r) =>
       r.id === roomId
         ? {
             ...r,
             status: "occupied" as RoomStatus,
-            currentTenant: tenant,
+            currentTenant: enrichedTenant,
             leaseEndDate: leaseEndDate || r.leaseEndDate || "2027-10-31",
           }
         : r
@@ -1453,20 +1501,32 @@ export const DatabaseService = {
     };
     setLocal(KEYS.CONTRACTS, [newContract, ...all]);
 
-    // Synchronize Room to occupied in database
+    // Synchronize Room to occupied in database (preserve existing tenant ID & details)
     const allRooms = this.getAllRawRooms();
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const matchedTenant = allTenants.find(
+      (t) =>
+        (t.propertyId || "prop-1") === propId &&
+        ((t.roomNumber || "").trim() === (item.roomNumber || "").trim() ||
+          t.fullName.trim() === (item.tenantName || "").trim())
+    );
+
     const updatedRooms = allRooms.map((r) => {
       if ((r.propertyId || "prop-1") === propId && r.roomNumber === item.roomNumber) {
+        const baseTenant = matchedTenant || r.currentTenant;
         return {
           ...r,
           status: "occupied" as RoomStatus,
           leaseEndDate: item.endDate,
           currentTenant: {
-            id: `t-${Date.now()}`,
+            ...(baseTenant || {}),
+            id: baseTenant?.id || `t-${Date.now()}`,
             propertyId: propId,
-            fullName: item.tenantName,
-            phone: item.tenantPhone,
-            idCard: "-",
+            roomId: r.id,
+            roomNumber: r.roomNumber,
+            fullName: item.tenantName || baseTenant?.fullName || "",
+            phone: item.tenantPhone || baseTenant?.phone || "-",
+            idCard: baseTenant?.idCard && baseTenant.idCard !== "-" ? baseTenant.idCard : "-",
           },
         };
       }
