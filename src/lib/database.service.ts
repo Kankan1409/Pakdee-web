@@ -1397,8 +1397,9 @@ export const DatabaseService = {
 
   async updateInvoiceStatus(
     invoiceId: string,
-    status: "paid" | "unpaid" | "overdue" | "partial",
-    paidAmount?: number
+    status: "paid" | "unpaid" | "overdue" | "partial" | "pending_review" | "cancelled",
+    paidAmount?: number,
+    extraData?: Partial<Invoice>
   ): Promise<boolean> {
     const allInvoices = this.getAllRawInvoices();
     const target = allInvoices.find((i) => i.id === invoiceId);
@@ -1417,6 +1418,7 @@ export const DatabaseService = {
             paidAmount: actualPaid,
             remainingAmount: remaining,
             paidAt: actualPaid > 0 ? new Date().toLocaleString("th-TH") : inv.paidAt,
+            ...(extraData || {}),
           }
         : inv
     );

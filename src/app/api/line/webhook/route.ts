@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
+import path from "path";
+import fsStandard from "fs";
 import {
   verifyLineSignature,
   replyLineMessage,
+  getLineMessageContent,
 } from "@/lib/line/line-client";
+import { SlipVerificationService } from "@/lib/slip-verification";
 import {
   buildInvoiceFlexMessage,
   buildReceiptFlexMessage,
@@ -244,7 +248,7 @@ export async function POST(req: NextRequest) {
         }
 
         // -------------------------------------------------------------
-        // B. ข้อความประเภทรูปภาพ (Image) — ตรวจสลิปโอนเงินอัตโนมัติ
+        // B. ข้อความประเภทรูปภาพ (Image) — ตรวจสลิปโอนเงินอัตโนมัติ (Anti-Fraud & Anti-Duplicate)
         // -------------------------------------------------------------
         if (message.type === "image") {
           const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
@@ -264,35 +268,96 @@ export async function POST(req: NextRequest) {
             (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
           );
 
-          if (unpaid) {
-            // ทำเครื่องหมายว่าชำระแล้วผ่านระบบ Slip Matching
-            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid");
-
-            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
-            const receiptFlex = buildReceiptFlexMessage(
-              unpaid,
-              receiptNo,
-              unpaid.totalAmount,
-              branchName
-            );
-
-            await replyLineMessage(channelAccessToken, replyToken, [
-              {
-                type: "text",
-                text: "🤖 AI ตรวจสอบสลิปโอนเงินเรียบร้อยแล้ว: ยอดเงินถูกต้อง 100%! ออกใบเสร็จรับเงินให้อัตโนมัติครับ",
-              },
-              receiptFlex,
-            ]);
-          } else {
+          if (!unpaid) {
             await replyLineMessage(channelAccessToken, replyToken, [
               {
                 type: "text",
                 text: `ขอบคุณครับ ห้อง ${tenant.roomNumber} ไม่มีบิลค้างชำระในระบบขณะนี้ หากต้องการติดต่อเจ้าหน้าที่กรุณาโทร ${settings?.phone || "เบอร์สำนักงานหอพัก"} ครับ`,
               },
             ]);
+            continue;
+          }
+
+          // 1. ดาวน์โหลดรูปภาพสลิปจริงจาก LINE Content API
+          const imageBuffer = await getLineMessageContent(channelAccessToken, message.id);
+          if (!imageBuffer) {
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: "⚠️ ไม่สามารถดาวน์โหลดรูปภาพจากเซิร์ฟเวอร์ LINE ได้ กรุณาลองส่งใหม่อีกครั้งครับ",
+              },
+            ]);
+            continue;
+          }
+
+          // 2. บันทึกรูปภาพลงโฟลเดอร์ public/slips เพื่อให้เจ้าหน้าที่ดูได้ในระบบ
+          const slipsDir = path.join(process.cwd(), "public", "slips");
+          if (!fsStandard.existsSync(slipsDir)) {
+            fsStandard.mkdirSync(slipsDir, { recursive: true });
+          }
+          const slipFilename = `slip_${unpaid.roomNumber}_${Date.now()}.jpg`;
+          const slipFilePath = path.join(slipsDir, slipFilename);
+          fsStandard.writeFileSync(slipFilePath, imageBuffer);
+          const slipUrl = `/slips/${slipFilename}`;
+
+          // 3. รัน Slip Verification Engine (ตรวจสลิปปลอม, สลิปซ้ำ, และยอดเงิน)
+          const verificationResult = SlipVerificationService.verifySlip({
+            imageBuffer,
+            invoice: unpaid,
+            allInvoices: invoices,
+            propertySettings: settings,
+          });
+
+          if (verificationResult.success) {
+            // ผ่านการตรวจสอบ 100%: มาร์กเป็น paid พร้อมบันทึกหลักฐาน
+            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verificationResult.amount, {
+              slipStatus: "passed",
+              slipUrl,
+              slipVerifiedAt: verificationResult.verifiedAt || new Date().toISOString(),
+              slipVerifiedBy: "ai",
+              slipTransRef: verificationResult.transRef,
+              slipBank: verificationResult.bankName,
+              slipHash: verificationResult.slipHash,
+            });
+
+            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
+            const receiptFlex = buildReceiptFlexMessage(
+              { ...unpaid, paidAmount: verificationResult.amount },
+              receiptNo,
+              verificationResult.amount || unpaid.totalAmount,
+              branchName
+            );
+
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: `✅ AI ตรวจสอบสลิปถูกต้อง 100%!\n🏦 ${verificationResult.bankName}\n🔢 รหัสอ้างอิง: ${verificationResult.transRef}\n💵 ยอดเงิน: ฿${(verificationResult.amount || unpaid.totalAmount).toLocaleString()}\n\nระบบตัดยอดบิลห้อง ${unpaid.roomNumber} เป็นชำระแล้ว และออกใบเสร็จรับเงินให้อัตโนมัติครับ`,
+              },
+              receiptFlex,
+            ]);
+          } else {
+            // ไม่ผ่านการตรวจสอบ (สลิปปลอม, สลิปซ้ำ, หรือยอดไม่ครบ): ห้ามตัดบิลเด็ดขาด!
+            const safeStatus = (unpaid.status === "paid" ? "unpaid" : unpaid.status) as any;
+            await DatabaseService.updateInvoiceStatus(unpaid.id, safeStatus, undefined, {
+              slipStatus: "action_needed",
+              slipUrl,
+              slipVerifiedAt: new Date().toISOString(),
+              slipVerifiedBy: "ai",
+              slipRejectReason: verificationResult.message,
+              slipHash: verificationResult.slipHash,
+            });
+
+            await replyLineMessage(channelAccessToken, replyToken, [
+              {
+                type: "text",
+                text: `${verificationResult.message}\n\n📌 สถานะบิลห้อง ${unpaid.roomNumber}: ยังคงเป็น "ค้างชำระ"\nระบบได้ส่งภาพนี้ให้เจ้าหน้าที่หอพักตรวจสอบด้วยตนเองแล้ว หากมีข้อสงสัยกรุณาโทร ${settings?.phone || "เบอร์สำนักงาน"}`,
+              },
+            ]);
           }
           continue;
         }
+
+
       }
     }
 
