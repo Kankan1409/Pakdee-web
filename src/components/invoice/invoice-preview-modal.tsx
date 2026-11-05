@@ -81,9 +81,9 @@ export function InvoicePreviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white text-slate-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white text-slate-800 rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Top Action Bar */}
-        <div className="px-6 py-3.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
+        <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-3 items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
               ตัวอย่างเอกสารใบแจ้งหนี้
@@ -125,71 +125,71 @@ export function InvoicePreviewModal({
         </div>
 
         {/* Printable Invoice Sheet */}
-        <div className="p-6 md:p-8 overflow-y-auto space-y-6">
+        <div className="p-5 sm:p-8 md:p-10 overflow-y-auto space-y-6 leading-relaxed">
           {/* Header */}
-          <div className="flex justify-between items-start border-b border-slate-200 pb-5">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 border-t-4 border-t-slate-800 border-b border-b-slate-200 pt-5 pb-6">
+            <div className="min-w-0">
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                🏢 {propertyName || "พักดี แมนชั่น (สาขา 1)"}
+                {propertyName || "พักดี แมนชั่น (สาขา 1)"}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
                 {propertyAddress || "123/45 ซอยสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110"}
               </p>
               <p className="text-xs text-slate-500">โทร: {propertyPhone || "081-234-5678"}</p>
             </div>
-            <div className="text-right">
-              <span className="inline-block bg-slate-900 text-white text-[11px] font-bold px-3 py-1 rounded-lg uppercase tracking-wider">
-                ใบแจ้งหนี้ / INVOICE
-              </span>
+            <div className="sm:text-right tabular-nums">
+              <h3 className="text-xl font-semibold text-slate-900">ใบแจ้งหนี้</h3>
+              <p className="text-[10px] font-medium tracking-[0.22em] text-slate-500">INVOICE</p>
               <div className="text-xs text-slate-500 mt-2">
                 เลขที่: <strong className="text-slate-800">{invoice.invoiceNumber}</strong>
               </div>
               <div className="text-xs text-slate-500">
                 วันที่ออก: {invoice.billingDate}
               </div>
-              <div className="text-xs text-rose-600 font-semibold">
+              <div className="text-xs text-slate-800 font-semibold mt-1">
                 กำหนดชำระ: {invoice.dueDate}
               </div>
             </div>
           </div>
 
           {/* Tenant Box */}
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex justify-between items-center text-xs">
+          <div className="bg-slate-50/70 rounded-md p-4 border border-slate-200 flex flex-wrap gap-4 justify-between items-center text-xs">
             <div>
               <div className="text-slate-500">
-                ผู้เช่า: <strong className="text-slate-900 text-sm">{invoice.tenantName}</strong>
+                เรียน / ผู้เช่า: <strong className="text-slate-900 text-sm">{invoice.tenantName}</strong>
               </div>
               <div className="text-slate-500 mt-0.5">เบอร์โทร: {invoice.tenantPhone}</div>
             </div>
             <div className="text-right">
               <div className="text-slate-500">
-                ห้องพัก: <strong className="text-emerald-700 text-base font-bold">{invoice.roomNumber}</strong>
+                ห้องพัก: <strong className="text-slate-900 text-base font-bold">{invoice.roomNumber}</strong>
               </div>
               <div className="text-slate-500">อาคาร A</div>
             </div>
           </div>
 
           {/* Table Items */}
-          <table className="w-full text-xs">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[390px] text-xs tabular-nums">
             <thead>
-              <tr className="border-b-2 border-slate-300 text-slate-600 font-semibold">
-                <th className="py-2 text-left">รายการ</th>
-                <th className="py-2 text-center">หน่วยที่ใช้</th>
-                <th className="py-2 text-right">ราคา/หน่วย</th>
-                <th className="py-2 text-right">จำนวนเงิน (บาท)</th>
+              <tr className="border-y border-slate-300 bg-slate-50 text-slate-700 font-semibold">
+                <th scope="col" className="py-3 pl-3 text-left">รายการ</th>
+                <th scope="col" className="py-3 px-2 text-center whitespace-nowrap">หน่วยที่ใช้</th>
+                <th scope="col" className="py-3 px-2 text-right whitespace-nowrap">ราคา/หน่วย</th>
+                <th scope="col" className="py-3 pr-3 text-right whitespace-nowrap">จำนวนเงิน (บาท)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {invoice.items.map((item, idx) => (
                 <tr key={idx}>
-                  <td className="py-2.5 font-medium">{item.name}</td>
+                  <td className="py-3 pl-3 pr-2 font-medium">{item.name}</td>
                   <td className="py-2.5 text-center text-slate-500">
                     {item.units !== undefined ? `${item.units}` : "-"}
                   </td>
                   <td className="py-2.5 text-right text-slate-500">
                     {item.rate !== undefined && item.rate > 0 ? item.rate.toFixed(2) : "-"}
                   </td>
-                  <td className="py-2.5 text-right font-semibold">
+                  <td className="py-3 pr-3 text-right font-semibold whitespace-nowrap">
                     {item.amount.toLocaleString("th-TH", {
                       minimumFractionDigits: 2,
                     })}
@@ -198,20 +198,21 @@ export function InvoicePreviewModal({
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-slate-300 font-bold text-slate-900 text-sm">
-                <td colSpan={3} className="py-3 text-right">
-                  ยอดรวมทั้งสิ้นที่ต้องชำระ:
+              <tr className="border-y-2 border-slate-700 bg-slate-50 font-bold text-slate-900 text-sm">
+                <td colSpan={3} className="py-4 px-3 text-right">
+                  ยอดรวมทั้งสิ้น
                 </td>
-                <td className="py-3 text-right text-emerald-700 text-base">
+                <td className="py-4 pr-3 text-right text-slate-900 text-lg whitespace-nowrap">
                   {formatCurrency(invoice.totalAmount)}
                 </td>
               </tr>
             </tfoot>
           </table>
+          </div>
 
           {/* PromptPay QR Code Box */}
-          <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-5">
-            <div className="bg-white p-2 rounded-xl border border-slate-300 shadow-xs text-center shrink-0">
+          <div className="bg-white border border-slate-200 rounded-md p-5 flex flex-col sm:flex-row items-center gap-5">
+            <div className="bg-white p-2 rounded-md border border-slate-200 text-center shrink-0">
               {qrCodeDataUrl ? (
                 <img
                   src={qrCodeDataUrl}
@@ -230,13 +231,14 @@ export function InvoicePreviewModal({
 
             <div className="text-xs text-slate-600 space-y-1">
               <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                <span>📲 สแกน QR ชำระเงินผ่าน Mobile Banking</span>
+                <span>ช่องทางการชำระเงิน</span>
               </div>
-              <div>• ธนาคาร: พร้อมเพย์ (PromptPay)</div>
-              <div>• ชื่อบัญชี: {promptpayName || "หอพัก พักดี แมนชั่น"}</div>
-              <div>• ยอดชำระ: <strong>{formatCurrency(invoice.totalAmount)}</strong></div>
-              <div className="text-rose-600 font-semibold pt-1">
-                ⚠️ เมื่อโอนแล้ว ระบบจะตรวจสลิปและปรับสถานะอัตโนมัติ
+              <div>สแกน QR ผ่านแอปพลิเคชันธนาคาร</div>
+              <div>ระบบพร้อมเพย์ (PromptPay)</div>
+              <div>ชื่อบัญชี: {promptpayName || "หอพัก พักดี แมนชั่น"}</div>
+              <div>ยอดชำระ: <strong className="tabular-nums">{formatCurrency(invoice.totalAmount)}</strong></div>
+              <div className="text-slate-500 text-[11px] border-t border-slate-100 mt-2 pt-2">
+                เมื่อโอนแล้ว ระบบจะตรวจสลิปและปรับสถานะอัตโนมัติ
               </div>
             </div>
           </div>
