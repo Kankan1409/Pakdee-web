@@ -42,6 +42,23 @@ export interface SlipVerificationViewProps {
   onShowToast?: (message: string, type: "success" | "error" | "info" | "warning") => void;
 }
 
+function SlipImagePreview({ url }: { url?: string }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const safeUrl = url && (/^https?:\/\//i.test(url) || /^\/(?!\/)/.test(url)) ? url : undefined;
+  if (!safeUrl || failedUrl === safeUrl) {
+    return <div className="rounded-xl border border-[var(--border)] bg-[var(--subtle)] p-6 text-center text-sm text-[var(--muted)]">
+      {safeUrl ? "โหลดรูปสลิปไม่ได้ ไฟล์อาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" : "ยังไม่มีรูปสลิปที่บันทึกไว้"}
+      {safeUrl && <button type="button" className="block mx-auto mt-3 text-blue-600 underline" onClick={() => setFailedUrl(null)}>ลองโหลดใหม่</button>}
+    </div>;
+  }
+  return <div className="rounded-xl border border-[var(--border)] bg-[var(--subtle)] p-3">
+    <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="block">
+      <img src={safeUrl} alt="หลักฐานการโอนเงินที่บันทึกไว้" onError={() => setFailedUrl(safeUrl)} className="w-full h-auto max-h-[65vh] object-contain rounded-lg" />
+      <span className="block text-center mt-3 text-xs text-blue-600 underline">เปิดรูปสลิปขนาดเต็ม</span>
+    </a>
+  </div>;
+}
+
 export function SlipVerificationView({
   invoices = [],
   onVerifySlip = () => {},
@@ -415,7 +432,7 @@ export function SlipVerificationView({
 
                       {/* Slip Thumbnail */}
                       <td className="p-3.5 text-center">
-                        {isPaid || inv.slipUrl || inv.slipStatus === "action_needed" ? (
+                        {inv.slipUrl ? (
                           <button
                             type="button"
                             onClick={() => setSelectedSlipInvoice(inv)}
@@ -552,7 +569,7 @@ export function SlipVerificationView({
             className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity"
             onClick={() => setSelectedSlipInvoice(null)}
           />
-          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl z-10 animate-in zoom-in-95 fade-in">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl z-10 animate-in zoom-in-95 fade-in">
             {/* Top Bar */}
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
               <div className="flex items-center gap-2">
@@ -575,52 +592,7 @@ export function SlipVerificationView({
             {/* Content: Side-by-Side (Slip on Left, Invoice on Right) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               {/* Left: Realistic Simulated Bank Slip */}
-              <div className="bg-gradient-to-b from-emerald-600 via-teal-700 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3 font-sans relative overflow-hidden">
-                <div className="flex items-center justify-between border-b border-white/20 pb-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-6 h-6 rounded-full bg-white text-emerald-700 font-bold flex items-center justify-center text-xs">
-                      K
-                    </div>
-                    <span className="font-bold text-xs tracking-tight">K PLUS • ธ.กสิกรไทย</span>
-                  </div>
-                  <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-                    โอนเงินสำเร็จ
-                  </span>
-                </div>
-
-                <div className="text-center py-2">
-                  <div className="text-[11px] text-emerald-100">จำนวนเงินโอน</div>
-                  <div className="text-2xl font-black font-mono tracking-tight mt-0.5">
-                    ฿{(selectedSlipInvoice.paidAmount || selectedSlipInvoice.totalAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                  </div>
-                </div>
-
-                <div className="space-y-2 text-xs bg-black/20 p-3 rounded-xl border border-white/10">
-                  <div className="flex justify-between">
-                    <span className="text-emerald-100 text-[10px]">ผู้โอน:</span>
-                    <span className="font-bold">{selectedSlipInvoice.tenantName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-emerald-100 text-[10px]">ผู้รับโอน:</span>
-                    <span className="font-bold">หอพัก พักดี แมนชั่น (PromptPay)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>
-                    <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "26 ต.ค. 2026 09:38 น."}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-emerald-100 text-[10px]">รหัสอ้างอิง:</span>
-                    <span className="font-mono text-[10px] text-amber-200">
-                      {selectedSlipInvoice.slipTransRef || `014310${selectedSlipInvoice.roomNumber}882`}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-[10px] text-center text-white/70 flex items-center justify-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>สแกนตรวจสอบลายเซ็นดิจิทัล BScanC ผ่าน 100%</span>
-                </div>
-              </div>
+              <SlipImagePreview url={selectedSlipInvoice.slipUrl} />
 
               {/* Right: Invoice Items Comparison */}
               <div className="bg-[var(--subtle)] p-4 rounded-2xl border border-[var(--border)] flex flex-col justify-between space-y-3">
