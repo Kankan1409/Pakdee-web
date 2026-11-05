@@ -58,90 +58,9 @@ const KEYS = {
   DAILY_BOOKINGS: "pakdee_dev_daily_bookings",
 };
 
-// In-Memory Host Synchronized Cache
+// In-Memory Supabase Cloud Synchronized Cache (data/db_port3000.json completely disabled)
 const memoryDb: Record<string, any> = {};
 let isServerSynced = false;
-let lastDbMtime = 0;
-
-// Resolve DB file path when running in Node.js server context
-function getDbFilePath(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = eval("require")("fs");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = eval("require")("path");
-    const candidates = [
-      path.join(process.cwd(), "data", "db_port3000.json"),
-      path.join(process.cwd(), "Pakdee", "data", "db_port3000.json"),
-      "D:\\DESKTOP\\Pakdee\\data\\db_port3000.json",
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) return c;
-    }
-    return candidates[0];
-  } catch {
-    return "";
-  }
-}
-
-// Synchronize in-memory cache with host file DB when running on the server
-function syncServerDbIfNeeded(): void {
-  if (typeof window !== "undefined") return;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = eval("require")("fs");
-    const filePath = getDbFilePath();
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const stats = fs.statSync(filePath);
-    if (stats.mtimeMs > lastDbMtime) {
-      lastDbMtime = stats.mtimeMs;
-      const raw = fs.readFileSync(filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      Object.assign(memoryDb, parsed);
-      isServerSynced = true;
-    }
-  } catch (e) {
-    console.warn("[DatabaseService] syncServerDbIfNeeded warning:", e);
-  }
-}
-
-// Write to host file DB when running on the server
-function writeServerDb(key: string, value: any): void {
-  if (typeof window !== "undefined") return;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = eval("require")("fs");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = eval("require")("path");
-    const filePath = getDbFilePath() || path.join(process.cwd(), "data", "db_port3000.json");
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    let currentDb: Record<string, any> = {};
-    if (fs.existsSync(filePath)) {
-      try {
-        currentDb = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      } catch {}
-    }
-    currentDb[key] = value;
-    const normKey = key.replace(/^pakdee_(dev|test)_/, "");
-    currentDb[normKey] = value;
-    fs.writeFileSync(filePath, JSON.stringify(currentDb, null, 2), "utf8");
-    try {
-      lastDbMtime = fs.statSync(filePath).mtimeMs;
-    } catch {}
-
-    // Also sync server-side changes (e.g. LINE webhook room bindings & invoice status) to Supabase
-    supabase
-      .from("pakdee_store")
-      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" })
-      .then(() => {});
-    scheduleRelationalSync(normKey, value);
-  } catch (e) {
-    console.warn("[DatabaseService] writeServerDb warning:", e);
-  }
-}
 
 const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 function scheduleRelationalSync(normKey: string, value: any): void {
@@ -155,14 +74,9 @@ function scheduleRelationalSync(normKey: string, value: any): void {
   }, 1200);
 }
 
-// Safe Local & Server-Synchronized Storage Helper
+// Safe Supabase-Synchronized Storage Helper
 function getLocal<T>(key: string, fallback: T): T {
-  // 1. Sync from server DB file if in Node.js runtime
-  if (typeof window === "undefined") {
-    syncServerDbIfNeeded();
-  }
-
-  // 2. In-memory cache synced from Host Server has highest priority
+  // 1. In-memory cache synced from Supabase Cloud has highest priority
   if (memoryDb[key] !== undefined && memoryDb[key] !== null) {
     return memoryDb[key] as T;
   }
@@ -171,11 +85,10 @@ function getLocal<T>(key: string, fallback: T): T {
     return memoryDb[normKey] as T;
   }
 
-  // 3. Client-side LocalStorage fallback
+  // 2. Client-side LocalStorage fallback
   if (typeof window === "undefined") return fallback;
   try {
     let raw = localStorage.getItem(key) || localStorage.getItem(normKey);
-    // Backward compatibility: If dev key not found yet, check legacy key
     if (!raw && key.startsWith("pakdee_dev_")) {
       const legacyKey = key.replace("pakdee_dev_", "pakdee_");
       raw = localStorage.getItem(legacyKey);
@@ -198,41 +111,34 @@ function setLocal<T>(key: string, value: T): void {
   const normKey = key.replace(/^pakdee_(dev|test)_/, "");
   memoryDb[normKey] = value;
 
-  // 2. Server-side Node.js File Database Sync
-  if (typeof window === "undefined") {
-    writeServerDb(key, value);
-    return;
+  // 2. Save to client LocalStorage (browser cache mirror)
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.warn(`Failed to save to localStorage [${key}]:`, e);
+    }
   }
 
-  // 3. Save to client LocalStorage (cache mirror)
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn(`Failed to save to localStorage [${key}]:`, e);
-  }
-
-  // 4. Persist directly to Host Machine Database via /api/db (local mirror only; client persists to Supabase below)
-  fetch("/api/db", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, value, localOnly: true }),
-    keepalive: true,
-  }).catch((err) => {
-    console.warn(`[HostDB] Sync failed for [${key}]:`, err);
-  });
-
-  // 5. Live persist to Supabase Cloud pakdee_store + debounced relational table mirror
+  // 3. Persist ONLY to Supabase Cloud (pakdee_store + debounced relational table mirror)
+  // data/db_port3000.json is completely disabled
   try {
     const nowIso = new Date().toISOString();
+    const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [
+      { key, value, updated_at: nowIso },
+    ];
+    if (normKey !== key) {
+      rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
+    }
     supabase
       .from("pakdee_store")
-      .upsert({ key, value, updated_at: nowIso }, { onConflict: "key" })
+      .upsert(rowsToUpsert, { onConflict: "key" })
       .then(({ error }: any) => {
-        if (error) console.warn(`[Supabase] Client upsert error [${key}]:`, error.message);
+        if (error) console.warn(`[Supabase] Upsert error [${key}]:`, error.message);
       });
     scheduleRelationalSync(normKey, value);
   } catch (err) {
-    console.warn(`[Supabase] Client upsert skipped [${key}]:`, err);
+    console.warn(`[Supabase] Upsert skipped [${key}]:`, err);
   }
 }
 
@@ -301,25 +207,22 @@ function setupRealtimeSync(): void {
 
 export const DatabaseService = {
   /**
-   * Initialize and synchronize with Supabase Cloud & Host Machine Database (/api/db)
-   * Ensures devices connecting via Cloud or LAN always have the authoritative live data
+   * Initialize and synchronize directly with Supabase Cloud (qygelgekosmklwrgnaxq)
+   * Local file data/db_port3000.json is completely disabled.
    */
   async init(): Promise<boolean> {
-    if (typeof window === "undefined") {
-      syncServerDbIfNeeded();
-      return true;
-    }
-
     if (activeInitPromise) {
       return activeInitPromise;
     }
 
     activeInitPromise = (async () => {
       try {
-        // 1. Activate live real-time subscription on Supabase Cloud
-        setupRealtimeSync();
+        // 1. Activate live real-time subscription on Supabase Cloud (browser only)
+        if (typeof window !== "undefined") {
+          setupRealtimeSync();
+        }
 
-        // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq) with 2.5s timeout
+        // 2. Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
         try {
           const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
             setTimeout(() => resolve({ data: null, error: { message: "Supabase init query timeout (2.5s)" } }), 2500)
@@ -344,43 +247,19 @@ export const DatabaseService = {
               if (row.key === normKey) {
                 memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
               }
-              try {
-                localStorage.setItem(row.key, JSON.stringify(row.value));
-              } catch {}
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem(row.key, JSON.stringify(row.value));
+                } catch {}
+              }
             });
 
-            if (!isServerSynced) {
-              isServerSynced = true;
-              // Sync loaded cloud data to local server /api/db (localOnly: true so it doesn't re-upsert to Supabase!)
-              fetch("/api/db", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ data: memoryDb, localOnly: true }),
-              }).catch(() => {});
-            }
-
+            isServerSynced = true;
             console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
             return true;
           }
         } catch {}
 
-        // 3. Fast fallback to local server /api/db?local=1
-        try {
-          const res = await fetch("/api/db?local=1", { cache: "no-store" });
-          if (res.ok) {
-            const json = await res.json();
-            if (json.success && json.data) {
-              Object.entries(json.data).forEach(([k, v]) => {
-                memoryDb[k] = v;
-                try {
-                  localStorage.setItem(k, JSON.stringify(v));
-                } catch {}
-              });
-              isServerSynced = true;
-              return true;
-            }
-          }
-        } catch {}
         return false;
       } finally {
         activeInitPromise = null;
@@ -395,7 +274,7 @@ export const DatabaseService = {
   },
 
   /**
-   * Atomically persist multiple keys to memory, localStorage, and Host Machine Database (/api/db)
+   * Atomically persist multiple keys to memory, localStorage, and Supabase Cloud
    */
   async persistBatch(data: Record<string, any>): Promise<boolean> {
     // 1. Update in-memory cache and localStorage
@@ -410,7 +289,7 @@ export const DatabaseService = {
       }
     });
 
-    // 2. PRIMARY: Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + debounced relational mirror
+    // 2. Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + debounced relational mirror
     try {
       const nowIso = new Date().toISOString();
       Object.entries(data).forEach(([k, v]) => {
@@ -425,18 +304,6 @@ export const DatabaseService = {
       });
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
-    }
-
-    // 3. Secondary: Background sync to local /api/db mirror (localOnly: true to prevent duplicate Supabase upserts)
-    if (typeof window !== "undefined") {
-      try {
-        fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data, localOnly: true }),
-          keepalive: true,
-        }).catch(() => {});
-      } catch {}
     }
 
     return true;
@@ -976,20 +843,6 @@ export const DatabaseService = {
       setLocal(KEYS.TENANTS, updatedTenants);
     }
 
-    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
-          keepalive: true,
-        });
-      } catch (e) {
-        console.warn("[HostDB] Direct room status write error:", e);
-      }
-    }
-
     // Data Coherence: When a room becomes vacant or cleaning, automatically terminate active contracts for that room
     if ((status === "vacant" || status === "cleaning") && targetRoom?.roomNumber) {
       await this.terminateRoomContracts(targetRoom.roomNumber, targetRoom.propertyId);
@@ -1020,19 +873,6 @@ export const DatabaseService = {
       setLocal(KEYS.INVOICES, filteredInvoices);
     }
 
-    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
-          keepalive: true,
-        });
-      } catch (e) {
-        console.warn("[HostDB] Direct room status write error:", e);
-      }
-    }
     await this.logActivity("DELETE", "ROOM", `ลบห้องพัก ${target?.roomNumber || roomId}`, target?.propertyId);
     return { success: true };
   },
@@ -1049,19 +889,6 @@ export const DatabaseService = {
     const updated = allRooms.filter((r) => !roomIds.includes(r.id));
     setLocal(KEYS.ROOMS, updated);
 
-    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
-          keepalive: true,
-        });
-      } catch (e) {
-        console.warn("[HostDB] Direct room status write error:", e);
-      }
-    }
     await this.logActivity("DELETE", "ROOM", `ลบห้องพักจำนวน ${roomIds.length} ห้องพร้อมกัน`);
     return { success: true };
   },
@@ -1075,19 +902,6 @@ export const DatabaseService = {
     );
     setLocal(KEYS.ROOMS, updated);
 
-    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
-          keepalive: true,
-        });
-      } catch (e) {
-        console.warn("[HostDB] Direct room status write error:", e);
-      }
-    }
     await this.logActivity("UPDATE", "ROOM", `สรุปย้ายออกห้อง ID: ${roomId} และส่งต่อแผนกแม่บ้าน`);
     return true;
   },
@@ -1350,20 +1164,6 @@ export const DatabaseService = {
         : r
     );
     setLocal(KEYS.ROOMS, updated);
-
-    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page transitions
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.ROOMS, value: updated, localOnly: true }),
-          keepalive: true,
-        });
-      } catch (e) {
-        console.warn("[HostDB] Direct room status write error:", e);
-      }
-    }
     return true;
   },
 
@@ -1717,17 +1517,6 @@ export const DatabaseService = {
         : c
     );
     setLocal(KEYS.CONTRACTS, updated);
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: KEYS.CONTRACTS, value: updated }),
-        });
-      } catch (err) {
-        console.warn("[HostDB] Sync contract signature failed:", err);
-      }
-    }
     await this.logActivity("UPDATE", "CONTRACT", `ลงนามสัญญาเช่าอิเล็กทรอนิกส์ (E-Signature) เรียบร้อยแล้ว`);
     return true;
   },
@@ -1830,24 +1619,6 @@ export const DatabaseService = {
     });
     setLocal(KEYS.ROOMS, updatedRooms);
 
-    // Persist immediately to host database
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            data: {
-              [KEYS.DAILY_BOOKINGS]: updatedBookings,
-              [KEYS.ROOMS]: updatedRooms,
-            },
-          }),
-        });
-      } catch (err) {
-        console.warn("[HostDB] Sync daily booking failed:", err);
-      }
-    }
-
     await this.logActivity("CREATE", "ROOM", `บันทึกการจองรายวันห้อง ${booking.roomNumber} (${booking.guestName})`, propId);
     return item;
   },
@@ -1870,19 +1641,6 @@ export const DatabaseService = {
       setLocal(KEYS.ROOMS, updatedRooms);
     }
 
-    if (typeof window !== "undefined") {
-      try {
-        const payload: Record<string, any> = { [KEYS.DAILY_BOOKINGS]: updated };
-        if (updatedRooms) payload[KEYS.ROOMS] = updatedRooms;
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: payload }),
-        });
-      } catch (err) {
-        console.warn("[HostDB] Sync update daily booking failed:", err);
-      }
-    }
     return true;
   },
 
@@ -2170,19 +1928,6 @@ export const DatabaseService = {
           });
       } catch (e: any) {
         console.warn("[Supabase Cloud] Relational sync skipped:", e?.message);
-      }
-    }
-
-    // Force await sync to host database so file is written before any refresh
-    if (typeof window !== "undefined") {
-      try {
-        await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: branchSettingsKey, value: updated }),
-        });
-      } catch (err) {
-        console.warn("[HostDB] Await sync branch settings failed:", err);
       }
     }
 

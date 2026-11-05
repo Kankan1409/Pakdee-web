@@ -32,6 +32,7 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
   try {
+    await DatabaseService.init();
     const rawBody = await req.text();
     const signature = req.headers.get("x-line-signature") || "";
 

@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    await DatabaseService.init();
     const body = await req.json().catch(() => ({}));
     const { invoiceId, propertyId, mode } = body;
 
