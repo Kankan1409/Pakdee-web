@@ -85,7 +85,6 @@ interface AuthContextType {
   clearSessionExpired: () => void;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string; user?: AuthUser }>;
-  quickLoginAs: (role: UserRole) => void;
   verifyPassword: (pass: string) => boolean;
   logout: () => void;
 }
@@ -124,22 +123,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Restore session from localStorage on mount
+  // Revalidate saved credentials against the database before restoring access.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.id && (parsed.role === "owner" || parsed.role === "manager")) {
-          setCurrentUser(parsed);
-          lastActivityRef.current = Date.now();
+    const restore = async () => {
+      try {
+        const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+        const password = localStorage.getItem("pakdee_user_password");
+        const user = saved ? JSON.parse(saved) : null;
+        if (user && password) {
+          const result = await login(user.email || user.phone || "", password);
+          if (result.success) return;
         }
+        saveUserSession(null);
+        localStorage.removeItem("pakdee_user_password");
+      } catch {
+        saveUserSession(null);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (e) {
-      console.warn("Failed to restore Pakdee auth session:", e);
-    } finally {
-      setIsLoading(false);
-    }
+    };
+    void restore();
   }, []);
 
   // 15-Minute Inactivity Session Monitor
@@ -184,13 +187,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const term = identifier.trim().toLowerCase();
     const cleanPhone = identifier.replace(/[-\s]/g, "").trim();
 
+    if (!term) {
+      return { success: false, error: "กรุณากรอกเบอร์โทรศัพท์หรืออีเมล" };
+    }
+    if (term.includes("@") ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(term) : !/^0\d{8,9}$/.test(cleanPhone)) {
+      return { success: false, error: term.includes("@") ? "รูปแบบอีเมลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง" : "กรุณากรอกเบอร์โทรศัพท์ 9–10 หลักที่ขึ้นต้นด้วย 0 หรืออีเมลให้ถูกต้อง" };
+    }
+    if (!pass) {
+      return { success: false, error: "กรุณากรอกรหัสผ่าน" };
+    }
+
     // 1. Check Registered Users in Supabase `user_profiles` table first
     try {
       const { data: sbUsers, error: sbErr } = await supabase
         .from("user_profiles")
         .select("*");
 
-      if (!sbErr && Array.isArray(sbUsers)) {
+      if (sbErr || !Array.isArray(sbUsers)) {
+        return { success: false, error: "เชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
+      }
+      if (Array.isArray(sbUsers)) {
         const matchedSb = sbUsers.find((row: any) => {
           const rowPhoneClean = String(row.phone || "").replace(/[-\s]/g, "").trim();
           const rowEmail = String(row.email || "").trim().toLowerCase();
@@ -200,16 +216,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
         });
 
+        if (!matchedSb) {
+          return { success: false, error: "ไม่พบบัญชีเบอร์โทรศัพท์หรืออีเมลนี้ในฐานข้อมูล กรุณาตรวจสอบข้อมูล หรือสมัครสมาชิกก่อนเข้าสู่ระบบ" };
+        }
+        if (matchedSb.is_active !== true || !["owner", "manager"].includes(matchedSb.role)) {
+          return { success: false, error: "บัญชีนี้ยังไม่เปิดใช้งานหรือไม่มีสิทธิ์เข้าใช้งาน กรุณาติดต่อผู้ดูแลระบบ" };
+        }
         if (matchedSb) {
           const branchArr: string[] = Array.isArray(matchedSb.assigned_branch_ids)
             ? matchedSb.assigned_branch_ids
             : [];
           const pwdTag = branchArr.find((x) => typeof x === "string" && x.startsWith("pwd:"));
-          const storedPwd =
-            (pwdTag ? pwdTag.slice(4) : null) ||
-            localStorage.getItem(`pakdee_pwd_${cleanPhone}`);
+          const storedPwd = pwdTag ? pwdTag.slice(4) : null;
 
-          if (storedPwd && pass !== storedPwd && pass !== "P12345") {
+          if (!storedPwd) {
+            return { success: false, error: "บัญชีนี้ยังไม่มีรหัสผ่านในฐานข้อมูล กรุณาติดต่อผู้ดูแลระบบ" };
+          }
+          if (pass !== storedPwd) {
             return {
               success: false,
               error: "รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านของคุณอีกครั้ง",
@@ -245,123 +268,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (e) {
-      console.warn("Supabase user_profiles lookup skipped:", e);
+      return { success: false, error: "เชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
     }
 
-    // 2. Fallback: Check Registered Users in localStorage
-    try {
-      const rawRegistered = localStorage.getItem(REGISTERED_USERS_KEY);
-      if (rawRegistered) {
-        const registeredList: StoredRegisteredUser[] = JSON.parse(rawRegistered);
-        if (Array.isArray(registeredList)) {
-          const matchedRecord = registeredList.find((item) => {
-            const itemPhoneClean = (item.user.phone || "").replace(/[-\s]/g, "").trim();
-            const itemEmail = (item.user.email || "").trim().toLowerCase();
-            return (
-              (cleanPhone.length >= 9 && itemPhoneClean === cleanPhone) ||
-              (term && itemEmail === term)
-            );
-          });
-
-          if (matchedRecord) {
-            const overridePwd = localStorage.getItem(`pakdee_pwd_${cleanPhone}`);
-            const expectedPass = overridePwd || matchedRecord.password;
-            if (pass !== expectedPass && pass !== "P12345") {
-              return {
-                success: false,
-                error: "รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านของคุณอีกครั้ง",
-              };
-            }
-            setSessionExpired(false);
-            lastActivityRef.current = Date.now();
-            try {
-              localStorage.setItem("pakdee_user_password", pass);
-            } catch {}
-            saveUserSession(matchedRecord.user);
-            return { success: true };
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to read registered users:", e);
-    }
-
-    // Verify Password (ค่าเริ่มต้นคือ P12345)
-    const isPasswordValid = pass === "P12345" || pass === "123456" || pass.length >= 6;
-    if (!isPasswordValid) {
-      return {
-        success: false,
-        error: "รหัสผ่านไม่ถูกต้อง (รหัสผ่านเริ่มต้นของระบบคือ P12345)",
-      };
-    }
-
-    // Match Owner by Phone or Email/Username
-    const ownerPhoneClean = (PRESET_USERS.owner.phone || "").replace(/[-\s]/g, "");
-    if (
-      cleanPhone === ownerPhoneClean ||
-      term === "081-999-8888" ||
-      term === "owner@pakdee.com" ||
-      term === "owner" ||
-      term === "admin" ||
-      term === "pakdee"
-    ) {
-      setSessionExpired(false);
-      lastActivityRef.current = Date.now();
-      try {
-        localStorage.setItem("pakdee_user_password", pass);
-      } catch {}
-      saveUserSession(PRESET_USERS.owner);
-      return { success: true };
-    }
-
-    // Match Manager by Phone or Email/Username
-    const managerPhoneClean = (PRESET_USERS.manager.phone || "").replace(/[-\s]/g, "");
-    if (
-      cleanPhone === managerPhoneClean ||
-      term === "089-777-6666" ||
-      term === "manager@pakdee.com" ||
-      term === "manager"
-    ) {
-      setSessionExpired(false);
-      lastActivityRef.current = Date.now();
-      try {
-        localStorage.setItem("pakdee_user_password", pass);
-      } catch {}
-      saveUserSession(PRESET_USERS.manager);
-      return { success: true };
-    }
-
-    // Match custom phone number (9-10 digits) or email
-    if (cleanPhone.length >= 9 || term.includes("@")) {
-      const customUser: AuthUser = {
-        id: "usr-" + Date.now(),
-        name: cleanPhone.length >= 9 ? `ผู้ใช้งาน (${identifier})` : term.split("@")[0],
-        email: term.includes("@") ? term : `${cleanPhone}@pakdee.com`,
-        phone: identifier,
-        role: "manager",
-        roleTitle: "ผู้จัดการหอพัก (Manager / Branch Admin)",
-        avatarText: "ผจ",
-        permissions: {
-          canDeleteBranch: false,
-          canEditBankSettings: false,
-          canViewExecutivePL: false,
-          canResetSystem: false,
-          canManageManagers: false,
-        },
-      };
-      setSessionExpired(false);
-      lastActivityRef.current = Date.now();
-      try {
-        localStorage.setItem("pakdee_user_password", pass);
-      } catch {}
-      saveUserSession(customUser);
-      return { success: true };
-    }
-
-    return {
-      success: false,
-      error: "เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง (ตัวอย่าง: 081-999-8888 รหัสผ่าน P12345)",
-    };
+    return { success: false, error: "ไม่สามารถตรวจสอบบัญชีได้ กรุณาลองใหม่อีกครั้ง" };
   };
 
   const register = async (
@@ -485,7 +395,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Save newly registered user to Supabase `user_profiles` table
       const profileUuid = toUuid(newUser.id, `user-${cleanPhone}`);
       newUser.id = profileUuid;
-      await supabase.from("user_profiles").upsert(
+      const { error: registrationError } = await supabase.from("user_profiles").upsert(
         {
           id: profileUuid,
           email: newUser.email,
@@ -499,6 +409,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { onConflict: "email" }
       );
 
+      if (registrationError) throw registrationError;
       setSessionExpired(false);
       lastActivityRef.current = Date.now();
       saveUserSession(newUser);
@@ -513,18 +424,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const quickLoginAs = (role: UserRole) => {
-    const user = PRESET_USERS[role];
-    if (user) {
-      setSessionExpired(false);
-      lastActivityRef.current = Date.now();
-      try {
-        localStorage.setItem("pakdee_user_password", "P12345");
-      } catch {}
-      saveUserSession(user);
-    }
-  };
-
   const verifyPassword = (pass: string): boolean => {
     const trimmed = pass.trim();
     if (!trimmed) return false;
@@ -533,7 +432,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saved = localStorage.getItem("pakdee_user_password");
     } catch {}
     if (saved && trimmed === saved.trim()) return true;
-    if (trimmed === "P12345" || trimmed === "123456") return true;
+
     return false;
   };
 
@@ -559,7 +458,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearSessionExpired,
         login,
         register,
-        quickLoginAs,
         verifyPassword,
         logout,
       }}
@@ -580,7 +478,6 @@ export function useAuth(): AuthContextType {
       clearSessionExpired: () => {},
       login: async () => ({ success: false, error: "AuthProvider not initialized" }),
       register: async () => ({ success: false, error: "AuthProvider not initialized" }),
-      quickLoginAs: () => {},
       verifyPassword: () => false,
       logout: () => {},
     };

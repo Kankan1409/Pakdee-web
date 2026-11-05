@@ -30,8 +30,8 @@ import {
 
 export function LoginView() {
   const { login, sessionExpired } = useAuth();
-  const [phone, setPhone] = useState("081-999-8888");
-  const [password, setPassword] = useState("P12345");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -138,7 +138,7 @@ export function LoginView() {
     setErrorMessage(null);
 
     if (!phone.trim()) {
-      setErrorMessage("กรุณากรอกเบอร์โทรศัพท์สำหรับเข้าสู่ระบบ");
+      setErrorMessage("กรุณากรอกเบอร์โทรศัพท์หรืออีเมลสำหรับเข้าสู่ระบบ");
       return;
     }
     if (!password) {
@@ -239,7 +239,7 @@ export function LoginView() {
               {/* Phone Number Field */}
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  เบอร์โทรศัพท์ (Phone Number) <span className="text-rose-500">*</span>
+                  เบอร์โทรศัพท์หรืออีเมล <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -247,7 +247,7 @@ export function LoginView() {
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="เช่น 081-999-8888 หรือ 089-777-6666"
+                    placeholder="เช่น 0812345678 หรือ name@example.com"
                     autoComplete="tel"
                     required
                     className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition font-medium tracking-wide"
