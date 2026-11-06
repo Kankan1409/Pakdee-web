@@ -26,12 +26,12 @@ export interface VerifySlipOptions {
 export interface SlipVerificationResult {
   success: boolean;
   reason?:
-    | "DUPLICATE_SLIP_HASH"
-    | "DUPLICATE_TRANS_REF"
-    | "AMOUNT_MISMATCH"
-    | "FAKE_OR_INVALID_SLIP"
-    | "CORRUPTED_IMAGE"
-    | "MISSING_DATA";
+  | "DUPLICATE_SLIP_HASH"
+  | "DUPLICATE_TRANS_REF"
+  | "AMOUNT_MISMATCH"
+  | "FAKE_OR_INVALID_SLIP"
+  | "CORRUPTED_IMAGE"
+  | "MISSING_DATA";
   message: string;
   transRef?: string;
   bankName?: string;
