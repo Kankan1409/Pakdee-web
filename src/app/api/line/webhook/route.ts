@@ -13,6 +13,7 @@ import {
   buildReceiptFlexMessage,
   buildRepairTicketFlexMessage,
   buildWelcomeFlexMessage,
+  getDefaultQuickReply,
 } from "@/lib/line/flex-templates";
 import { generatePromptPayQRCodeUrl } from "@/lib/promptpay";
 
@@ -129,6 +130,7 @@ export async function POST(req: NextRequest) {
                 {
                   type: "text",
                   text: `🎉 ผูกบัญชี LINE กับห้อง ${requestedRoom} (${boundTenant.fullName}) สำเร็จเรียบร้อยแล้วครับ!\n\nจากนี้ระบบจะส่งบิลแจ้งหนี้ค่าเช่าและค่าน้ำค่าไฟเข้าไลน์นี้ทุกเดือนครับ ✨`,
+                  quickReply: getDefaultQuickReply(),
                 },
               ];
 
@@ -153,6 +155,7 @@ export async function POST(req: NextRequest) {
                 {
                   type: "text",
                   text: `⚠️ ไม่พบข้อมูลห้องพัก "${requestedRoom}" หรือห้องนี้ยังไม่มีผู้เข้าพักลงทะเบียนในหน้าแผนผังครับ\n\nหากคุณเป็นผู้เช่ารายเดือนที่เพิ่งย้ายเข้าใหม่ กรุณาติดต่อผู้จัดการหอพักเพื่อลงทะเบียนเข้าพักในระบบก่อนครับ 🏢`,
+                  quickReply: getDefaultQuickReply(),
                 },
               ]);
               continue;
@@ -167,6 +170,7 @@ export async function POST(req: NextRequest) {
                 {
                   type: "text",
                   text: "🏢 คุณยังไม่ได้ผูกห้องพักกับระบบครับ\nกรุณาพิมพ์หมายเลขห้องพัก เช่น 'ห้อง 101' หรือ '101' เพื่อผูกข้อมูลก่อนครับ",
+                  quickReply: getDefaultQuickReply(),
                 },
               ]);
               continue;
@@ -193,6 +197,7 @@ export async function POST(req: NextRequest) {
                 {
                   type: "text",
                   text: `✨ ยอดเยี่ยมครับ! ห้อง ${tenant.roomNumber} (${tenant.fullName}) ไม่มีบิลค้างชำระในระบบแล้วครับ ขอบคุณครับ`,
+                  quickReply: getDefaultQuickReply(),
                 },
               ]);
             }
@@ -233,6 +238,7 @@ export async function POST(req: NextRequest) {
               {
                 type: "text",
                 text: `🏢 ${branchName}\n📍 ที่อยู่: ${settings?.address || property?.address || "ที่อยู่หอพัก"}\n📞 เบอร์ติดต่อ: ${settings?.phone || property?.phone || "081-234-5678"}\n⏰ เวลาทำการ: 08:30 - 20:00 น. ทุกวันครับ`,
+                quickReply: getDefaultQuickReply(),
               },
             ]);
             continue;
@@ -244,6 +250,7 @@ export async function POST(req: NextRequest) {
               {
                 type: "text",
                 text: `📜 กฎระเบียบและข้อปฏิบัติ ${branchName}:\n\n${settings?.contractTerms || "1. ห้ามส่งเสียงดังหลัง 22:00 น.\n2. ชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน\n3. ห้ามเลี้ยงสัตว์ทุกชนิด\n4. ช่วยกันรักษาความสะอาดพื้นที่ส่วนกลาง"}`,
+                quickReply: getDefaultQuickReply(),
               },
             ]);
             continue;
@@ -253,7 +260,8 @@ export async function POST(req: NextRequest) {
           await replyLineMessage(channelAccessToken, replyToken, [
             {
               type: "text",
-              text: `สวัสดีครับ 🙏 ${branchName} ยินดีให้บริการครับ\n\nคำสั่งที่สามารถพิมพ์ได้ 24 ชม.:\n• พิมพ์เลขห้อง (เช่น '101' หรือ 'ห้อง 101') เพื่อผูกข้อมูลห้อง\n• พิมพ์ 'ขอบิล' เพื่อดูยอดค่าใช้จ่ายและ QR สแกนจ่าย\n• พิมพ์ 'แจ้งซ่อม [รายละเอียด]' เพื่อแจ้งปัญหาห้องพัก\n• พิมพ์ 'ติดต่อ' หรือ 'กฎระเบียบ' เพื่อดูข้อมูลหอพัก\n• ส่งรูปภาพสลิปโอนเงิน เพื่อตรวจสอบยอดและรับใบเสร็จอัตโนมัติ`,
+              text: `สวัสดีครับ 🙏 ${branchName} ยินดีให้บริการครับ\n\nคำสั่งที่สามารถเลือกหรือพิมพ์ได้ 24 ชม.:\n• พิมพ์เลขห้อง (เช่น '101' หรือ 'ห้อง 101') เพื่อผูกข้อมูลห้อง\n• แตะปุ่ม 'ขอบิล' เพื่อดูยอดค่าใช้จ่ายและ QR สแกนจ่าย\n• แตะปุ่ม 'แจ้งซ่อม' เพื่อแจ้งปัญหาห้องพัก\n• ส่งรูปภาพสลิปโอนเงิน เพื่อส่งให้เจ้าหน้าที่ตรวจสอบ`,
+              quickReply: getDefaultQuickReply(),
             },
           ]);
           continue;
@@ -324,9 +332,10 @@ export async function POST(req: NextRequest) {
           });
 
           if (verificationResult.success) {
-            // ผ่านการตรวจสอบ 100%: มาร์กเป็น paid พร้อมบันทึกหลักฐาน
-            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verificationResult.amount, {
-              slipStatus: "passed",
+            // แนวทางที่ 1 (ปลอดภัย 100%): บันทึกสลิปลงระบบ แต่ "ยังไม่ตัดยอด paid อัตโนมัติ"
+            // สถานะบิลคงเป็น unpaid / slipStatus เป็น "action_needed" เพื่อรอแอดมินตรวจยอดเงินในแอปธนาคารจริง
+            await DatabaseService.updateInvoiceStatus(unpaid.id, unpaid.status, undefined, {
+              slipStatus: "action_needed",
               slipUrl,
               slipVerifiedAt: verificationResult.verifiedAt || new Date().toISOString(),
               slipVerifiedBy: "ai",
@@ -335,20 +344,12 @@ export async function POST(req: NextRequest) {
               slipHash: verificationResult.slipHash,
             });
 
-            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
-            const receiptFlex = buildReceiptFlexMessage(
-              { ...unpaid, paidAmount: verificationResult.amount },
-              receiptNo,
-              verificationResult.amount || unpaid.totalAmount,
-              branchName
-            );
-
             await replyLineMessage(channelAccessToken, replyToken, [
               {
                 type: "text",
-                text: `✅ AI ตรวจสอบสลิปถูกต้อง 100%!\n🏦 ${verificationResult.bankName}\n🔢 รหัสอ้างอิง: ${verificationResult.transRef}\n💵 ยอดเงิน: ฿${(verificationResult.amount || unpaid.totalAmount).toLocaleString()}\n\nระบบตัดยอดบิลห้อง ${unpaid.roomNumber} เป็นชำระแล้ว และออกใบเสร็จรับเงินให้อัตโนมัติครับ`,
+                text: `📥 ได้รับสลิปโอนเงินเรียบร้อยแล้วครับ!\n🏦 ธนาคาร: ${verificationResult.bankName}\n🔢 รหัสอ้างอิง: ${verificationResult.transRef}\n\n📌 สถานะ: รอเจ้าหน้าที่หอพักตรวจสอบยอดเงินเข้าบัญชี\nเมื่อเจ้าหน้าที่ตรวจสอบเสร็จสิ้น ระบบจะออกใบเสร็จรับเงินส่งให้ทาง LINE ทันทีครับ ✨`,
+                quickReply: getDefaultQuickReply(),
               },
-              receiptFlex,
             ]);
           } else {
             // ไม่ผ่านการตรวจสอบ (สลิปปลอม, สลิปซ้ำ, หรือยอดไม่ครบ): ห้ามตัดบิลเด็ดขาด!
@@ -366,6 +367,7 @@ export async function POST(req: NextRequest) {
               {
                 type: "text",
                 text: `${verificationResult.message}\n\n📌 สถานะบิลห้อง ${unpaid.roomNumber}: ยังคงเป็น "ค้างชำระ"\nระบบได้ส่งภาพนี้ให้เจ้าหน้าที่หอพักตรวจสอบด้วยตนเองแล้ว หากมีข้อสงสัยกรุณาโทร ${settings?.phone || "เบอร์สำนักงาน"}`,
+                quickReply: getDefaultQuickReply(),
               },
             ]);
           }

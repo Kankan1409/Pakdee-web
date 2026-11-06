@@ -1542,19 +1542,53 @@ export default function HomePage() {
           }
         }
       }
+
+      // ส่งข้อความ LINE แจ้งเตือนผู้เช่าว่าสลิปได้รับการอนุมัติแล้ว พร้อมใบเสร็จ
+      fetch("/api/line/notify-slip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceId,
+          action: "approve",
+          propertyId: property.id,
+        }),
+      }).catch((err) => console.warn("[NOTIFY-SLIP] Notify approve failed:", err));
+
+      showToast(`อนุมัติสลิปและบันทึกชำระเงินบิลห้อง ${targetInv.roomNumber} เรียบร้อยแล้ว`, "success");
     }
   };
 
-  // Handler: Reject slip
+  // Handler: Reject slip (พร้อมส่ง LINE แจ้งเตือนผู้เช่า)
   const handleRejectSlip = async (invoiceId: string, reason?: string) => {
+    const targetInv = invoices.find((i) => i.id === invoiceId);
+    const rejectReason = reason || "ยอดเงินไม่ตรง หรือภาพสลิปไม่สมบูรณ์";
+
+    await DatabaseService.updateInvoiceStatus(invoiceId, "unpaid", undefined, {
+      slipStatus: "action_needed",
+      slipRejectReason: rejectReason,
+    });
+
     setInvoices((prev) =>
       prev.map((inv) =>
         inv.id === invoiceId
-          ? { ...inv, slipStatus: "action_needed" }
+          ? { ...inv, slipStatus: "action_needed", slipRejectReason: rejectReason }
           : inv
       )
     );
-    showToast(`ปฏิเสธสลิปบิล ID ${invoiceId} เรียบร้อย (${reason || "ยอดเงินไม่ตรง"})`, "warning");
+
+    // ส่งข้อความ LINE แจ้งเตือนผู้เช่าว่าสลิปไม่ผ่าน
+    fetch("/api/line/notify-slip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invoiceId,
+        action: "reject",
+        reason: rejectReason,
+        propertyId: property.id,
+      }),
+    }).catch((err) => console.warn("[NOTIFY-SLIP] Notify reject failed:", err));
+
+    showToast(`ปฏิเสธสลิปบิลห้อง ${targetInv?.roomNumber || invoiceId} เรียบร้อย (${rejectReason})`, "warning");
   };
 
   // Handler: Mark invoice as paid (เชื่อมต่อระบบ AI Slip Verification)
