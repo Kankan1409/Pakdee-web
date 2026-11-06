@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
+import { savePaymentSlip, SlipError } from "@/lib/payment-slips-server";
 import path from "path";
-import fsStandard from "fs";
+import fs from "fs";
 import {
   verifyLineSignature,
   replyLineMessage,
@@ -292,15 +293,22 @@ export async function POST(req: NextRequest) {
 
           // 2. บันทึกรูปภาพลงโฟลเดอร์ public/slips เพื่อให้เจ้าหน้าที่ดูได้ในระบบ
           const slipsDir = path.join(process.cwd(), "public", "slips");
-          if (!fsStandard.existsSync(slipsDir)) {
-            fsStandard.mkdirSync(slipsDir, { recursive: true });
+          if (!fs.existsSync(slipsDir)) {
+            fs.mkdirSync(slipsDir, { recursive: true });
           }
           const slipFilename = `slip_${unpaid.roomNumber}_${Date.now()}.jpg`;
           const slipFilePath = path.join(slipsDir, slipFilename);
-          fsStandard.writeFileSync(slipFilePath, imageBuffer);
+          fs.writeFileSync(slipFilePath, imageBuffer);
           const slipUrl = `/slips/${slipFilename}`;
 
-          // 3. รัน Slip Verification Engine (ตรวจสลิปปลอม, สลิปซ้ำ, และยอดเงิน)
+          // สำรองข้อมูลรูปภาพสลิปเข้าตาราง payment_slips (ถ้ามีตารางและคอนฟิก)
+          try {
+            await savePaymentSlip(activePropId, unpaid.invoiceNumber, imageBuffer, "line-" + message.id);
+          } catch (e) {
+            console.warn("[LINE-PAYMENT-SLIPS-TABLE-WARN]", e);
+          }
+
+          // 3. รัน Slip Verification Engine (AI ตรวจสลิปปลอม, สลิปซ้ำ, และยอดเงิน)
           const verificationResult = SlipVerificationService.verifySlip({
             imageBuffer,
             invoice: unpaid,
@@ -310,38 +318,41 @@ export async function POST(req: NextRequest) {
 
           if (verificationResult.success) {
             // ผ่านการตรวจสอบ 100%: มาร์กเป็น paid พร้อมบันทึกหลักฐาน
-            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verificationResult.amount, {
+            const verifiedAmount = verificationResult.amount || unpaid.totalAmount;
+            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
+            const verifiedAt = verificationResult.verifiedAt || new Date().toLocaleString("th-TH");
+
+            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verifiedAmount, {
               slipStatus: "passed",
               slipUrl,
-              slipVerifiedAt: verificationResult.verifiedAt || new Date().toISOString(),
+              slipVerifiedAt: verifiedAt,
               slipVerifiedBy: "ai",
               slipTransRef: verificationResult.transRef,
               slipBank: verificationResult.bankName,
               slipHash: verificationResult.slipHash,
             });
 
-            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
             const receiptFlex = buildReceiptFlexMessage(
-              { ...unpaid, paidAmount: verificationResult.amount },
+              { ...unpaid, paidAmount: verifiedAmount },
               receiptNo,
-              verificationResult.amount || unpaid.totalAmount,
+              verifiedAmount,
               branchName
             );
 
             await replyLineMessage(channelAccessToken, replyToken, [
               {
                 type: "text",
-                text: `✅ AI ตรวจสอบสลิปถูกต้อง 100%!\n🏦 ${verificationResult.bankName}\n🔢 รหัสอ้างอิง: ${verificationResult.transRef}\n💵 ยอดเงิน: ฿${(verificationResult.amount || unpaid.totalAmount).toLocaleString()}\n\nระบบตัดยอดบิลห้อง ${unpaid.roomNumber} เป็นชำระแล้ว และออกใบเสร็จรับเงินให้อัตโนมัติครับ`,
+                text: `✅ AI ตรวจสอบสลิปถูกต้อง 100%!\n🏦 ธนาคาร: ${verificationResult.bankName || "พร้อมเพย์"}\n🔢 รหัสอ้างอิง: ${verificationResult.transRef || "-"}\n💵 ยอดเงิน: ฿${verifiedAmount.toLocaleString()}\n\nระบบตัดยอดบิลห้อง ${unpaid.roomNumber} เรียบร้อยแล้ว พร้อมส่งใบเสร็จรับเงินให้อัตโนมัติครับ 🎉`,
               },
               receiptFlex,
             ]);
           } else {
-            // ไม่ผ่านการตรวจสอบ (สลิปปลอม, สลิปซ้ำ, หรือยอดไม่ครบ): ห้ามตัดบิลเด็ดขาด!
+            // ไม่ผ่านการตรวจสอบ (สลิปปลอม, สลิปซ้ำ, หรือยอดไม่ครบ): ห้ามตัดบิล
             const safeStatus = (unpaid.status === "paid" ? "unpaid" : unpaid.status) as any;
             await DatabaseService.updateInvoiceStatus(unpaid.id, safeStatus, undefined, {
               slipStatus: "action_needed",
               slipUrl,
-              slipVerifiedAt: new Date().toISOString(),
+              slipVerifiedAt: new Date().toLocaleString("th-TH"),
               slipVerifiedBy: "ai",
               slipRejectReason: verificationResult.message,
               slipHash: verificationResult.slipHash,
@@ -350,7 +361,7 @@ export async function POST(req: NextRequest) {
             await replyLineMessage(channelAccessToken, replyToken, [
               {
                 type: "text",
-                text: `${verificationResult.message}\n\n📌 สถานะบิลห้อง ${unpaid.roomNumber}: ยังคงเป็น "ค้างชำระ"\nระบบได้ส่งภาพนี้ให้เจ้าหน้าที่หอพักตรวจสอบด้วยตนเองแล้ว หากมีข้อสงสัยกรุณาโทร ${settings?.phone || "เบอร์สำนักงาน"}`,
+                text: `⚠️ ระบบ AI ตรวจพบข้อผิดพลาดของสลิป:\n\n${verificationResult.message}\n\n📌 สถานะบิลห้อง ${unpaid.roomNumber}: ยังคงเป็น "ค้างชำระ"\nหากท่านได้โอนเงินจริง กรุณาติดต่อสำนักงานหอพัก ${settings?.phone ? "โทร " + settings.phone : ""} เพื่อให้เจ้าหน้าที่ตรวจสอบครับ`,
               },
             ]);
           }

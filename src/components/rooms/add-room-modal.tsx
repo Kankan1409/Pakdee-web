@@ -44,6 +44,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
       setType(def.name);
       setMonthlyRate(def.monthlyRate);
       setDailyRate(def.dailyRate);
+      setBatchPrefix("");
+      setRoomNumber("");
     }
   }, [isOpen, roomTypes]);
 
@@ -216,6 +218,7 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                   <input
                     type="text"
                     maxLength={5}
+                    placeholder="เว้นว่างได้"
                     value={batchPrefix}
                     onChange={(e) => setBatchPrefix(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"

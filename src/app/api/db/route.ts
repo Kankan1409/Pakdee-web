@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
         if (normKey !== canonicalKey) {
           rowsToUpsert.push({ key: normKey, value: body.value, updated_at: nowIso });
         }
-        syncKeyToRelationalTable(normKey, body.value).catch(() => {});
+        syncKeyToRelationalTable(normKey, body.value, body.data || {}).catch(() => {});
       } else if (body.data && typeof body.data === "object") {
         Object.entries(body.data).forEach(([k, val]) => {
           const normKey = normalizeKey(k);
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
           if (normKey !== canonicalKey) {
             rowsToUpsert.push({ key: normKey, value: val, updated_at: nowIso });
           }
-          syncKeyToRelationalTable(normKey, val).catch(() => {});
+          syncKeyToRelationalTable(normKey, val, body.data || {}).catch(() => {});
         });
       }
 
