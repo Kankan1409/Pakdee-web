@@ -17,6 +17,7 @@ const slipFailureMessages: Record<string, string> = {
 export async function verifyWithSlip2Go(secretKey: string, options: {
   qrCode?: string; imageBuffer?: Buffer; expectedAmount?: number;
   receiverAccount?: string; receiverBankCode?: string;
+  receiverAccountType?: "02001" | "02003" | "02004";
 }): Promise<Slip2GoVerifyResult> {
   const key = secretKey?.trim();
   const baseUrl = process.env.SLIP2GO_API_URL?.trim().replace(/\/+$/, "");
@@ -32,7 +33,8 @@ export async function verifyWithSlip2Go(secretKey: string, options: {
     return { success: false, error: "ข้อมูลบัญชีผู้รับหรือยอดบิลไม่ครบ กรุณาติดต่อเจ้าหน้าที่" };
   }
   const checkCondition = { checkDuplicate: true, checkAmount: { type: "eq", amount: options.expectedAmount },
-    checkReceiver: [{ accountNumber: account }] };
+    checkReceiver: [{ accountNumber: account,
+      ...(options.receiverAccountType ? { accountType: options.receiverAccountType } : {}) }] };
   let endpoint: string;
   let payload: Record<string, unknown>;
   // Prefer the actual image, not a guessed QR string from compressed file bytes.

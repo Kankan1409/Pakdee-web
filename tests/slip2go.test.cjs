@@ -63,6 +63,21 @@ test('network failure cannot approve', async () => {
   const api=load('src/lib/slip2go.ts',{fetch:async()=>{throw Error('timeout');}});
   assert.equal((await api.verifyWithSlip2Go('test',options)).success,false);
 });
+
+test('PromptPay national ID and mobile checks include their provider account types', async () => {
+  for (const [account, type] of [['1100000003453','02003'],['0812345678','02001'],['140000000000001','02004']]) {
+    let sent;
+    const api=load('src/lib/slip2go.ts',{fetch:async(url,init)=>{
+      sent=JSON.parse(init.body).payload.checkCondition;
+      return {ok:true,status:200,json:async()=>valid};
+    }});
+    assert.equal((await api.verifyWithSlip2Go('test',{...options,receiverAccount:account,receiverAccountType:type})).success,true);
+    assert.equal(sent.checkReceiver[0].accountType,type);
+    assert.equal(sent.checkReceiver[0].accountNumber,account);
+    assert.equal(sent.checkDuplicate,true);
+    assert.equal(sent.checkAmount.amount,200);
+  }
+});
 test('LINE provider failure never updates invoice or records a payment', async () => {
   let updates = 0;
   const api=load('src/lib/line/verify-payment.ts',{process:{env:{}},require(name){
