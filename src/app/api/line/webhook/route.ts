@@ -357,6 +357,10 @@ export async function POST(req: NextRequest) {
           // ตรวจสอบว่าสาขานี้เปิดใช้งาน Slip2Go API หรือไม่
           const slip2goKey = settings?.slip2goSecretKey || process.env.SLIP2GO_SECRET_KEY;
 
+          if (!slip2goKey) {
+            console.log(`[SLIP-CHECK] Slip2Go Key is not configured for branch ${branchName}. Using admin approval mode.`);
+          }
+
           if (slip2goKey && verificationResult.success) {
             console.log(`[SLIP2GO] Initiating Slip2Go verification for room ${unpaid.roomNumber}...`);
             const qrCodeString = extractQrFromImage(imageBuffer);
