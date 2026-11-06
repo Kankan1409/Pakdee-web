@@ -12,15 +12,36 @@ const slipFailureMessages: Record<string, string> = {
   "200000": "⚠️ พบข้อมูลสลิป แต่ยังไม่มีผลยืนยันว่าผ่านเงื่อนไขการรับชำระ",
 };
 
+function buildCheckReceiver(primary?: string, extras?: string[]): Array<{ accountType?: string; accountNumber: string }> {
+  const rawList = [primary, ...(extras || [])].filter(Boolean) as string[];
+  const list: Array<{ accountType?: string; accountNumber: string }> = [];
+  const seen = new Set<string>();
+  for (const raw of rawList) {
+    const acc = raw.replace(/[^0-9]/g, "");
+    if (acc.length < 10 || seen.has(acc)) continue;
+    seen.add(acc);
+    list.push({ accountNumber: acc });
+    if (acc.length === 13) {
+      list.push({ accountType: "02003", accountNumber: acc });
+      list.push({ accountType: "02002", accountNumber: acc });
+    } else if (acc.length === 10) {
+      list.push({ accountType: "02001", accountNumber: acc });
+    } else if (acc.length === 15) {
+      list.push({ accountType: "02004", accountNumber: acc });
+    }
+  }
+  return list;
+}
+
 // A successful HTTP request is not a successful slip verification.
 // https://slip2go.com/guide/response : 200200 = all requested checks passed.
 export async function verifyWithSlip2Go(secretKey: string, options: {
   qrCode?: string; imageBuffer?: Buffer; expectedAmount?: number;
-  receiverAccount?: string; receiverBankCode?: string;
+  receiverAccount?: string; receiverAccounts?: string[]; receiverBankCode?: string;
 }): Promise<Slip2GoVerifyResult> {
   const key = secretKey?.trim();
-  const baseUrl = process.env.SLIP2GO_API_URL?.trim().replace(/\/+$/, "");
-  const account = options.receiverAccount?.replace(/[^0-9]/g, "") || "";
+  const baseUrl = (process.env.SLIP2GO_API_URL?.trim() || "https://connect.slip2go.com").replace(/\/+$/, "");
+  const checkReceiver = buildCheckReceiver(options.receiverAccount, options.receiverAccounts);
   if (!key) return { success: false, error: "ยังไม่ได้ตั้งค่า Slip2Go จึงยังยืนยันการชำระเงินไม่ได้" };
   if (!baseUrl) return { success: false, error: "ยังไม่ได้ตั้งค่า API URL ของ Slip2Go กรุณาติดต่อเจ้าหน้าที่" };
   try {
@@ -28,11 +49,11 @@ export async function verifyWithSlip2Go(secretKey: string, options: {
     if (url.protocol !== "https:" || !(url.hostname === "slip2go.com" || url.hostname.endsWith(".slip2go.com")) ||
         url.username || url.password || url.search || url.hash) throw new Error("Invalid provider URL");
   } catch { return { success: false, error: "API URL ของ Slip2Go ไม่ถูกต้อง" }; }
-  if (account.length < 10 || !Number.isFinite(options.expectedAmount) || Number(options.expectedAmount) <= 0) {
+  if (!checkReceiver.length || !Number.isFinite(options.expectedAmount) || Number(options.expectedAmount) <= 0) {
     return { success: false, error: "ข้อมูลบัญชีผู้รับหรือยอดบิลไม่ครบ กรุณาติดต่อเจ้าหน้าที่" };
   }
   const checkCondition = { checkDuplicate: true, checkAmount: { type: "eq", amount: options.expectedAmount },
-    checkReceiver: [{ accountNumber: account }] };
+    checkReceiver };
   let endpoint: string;
   let payload: Record<string, unknown>;
   // Prefer the actual image, not a guessed QR string from compressed file bytes.
