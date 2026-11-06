@@ -7,7 +7,11 @@ import {
   replyLineMessage,
   getLineMessageContent,
 } from "@/lib/line/line-client";
-import { SlipVerificationService } from "@/lib/slip-verification";
+import {
+  SlipVerificationService,
+  verifyWithSlip2Go,
+  extractQrFromImage,
+} from "@/lib/slip-verification";
 import {
   buildInvoiceFlexMessage,
   buildReceiptFlexMessage,
@@ -323,7 +327,7 @@ export async function POST(req: NextRequest) {
           fsStandard.writeFileSync(slipFilePath, imageBuffer);
           const slipUrl = `/slips/${slipFilename}`;
 
-          // 3. รัน Slip Verification Engine (ตรวจสลิปปลอม, สลิปซ้ำ, และยอดเงิน)
+          // 3. รัน Slip Verification Engine (ตรวจสลิปปลอม, สลิปซ้ำ, และโครงสร้าง BScanC)
           const verificationResult = SlipVerificationService.verifySlip({
             imageBuffer,
             invoice: unpaid,
@@ -331,9 +335,96 @@ export async function POST(req: NextRequest) {
             propertySettings: settings,
           });
 
+          // ตรวจสอบว่าสาขานี้เปิดใช้งาน Slip2Go API หรือไม่
+          const slip2goKey = settings?.slip2goSecretKey || process.env.SLIP2GO_SECRET_KEY;
+
+          if (slip2goKey && verificationResult.success) {
+            console.log(`[SLIP2GO] Initiating Slip2Go verification for room ${unpaid.roomNumber}...`);
+            const qrCodeString = extractQrFromImage(imageBuffer);
+
+            const slip2goResult = await verifyWithSlip2Go(slip2goKey, {
+              qrCode: qrCodeString || undefined,
+              imageBuffer,
+              expectedAmount: unpaid.totalAmount,
+              receiverAccount: settings?.bankAccountNumber || settings?.promptpayNumber,
+            });
+
+            if (slip2goResult.success) {
+              const verifiedAmount = slip2goResult.amount || unpaid.totalAmount;
+              if (verifiedAmount >= unpaid.totalAmount) {
+                // ✅ Slip2Go ตรวจสอบผ่านธนาคาร 100%: ตัดบิลเป็น Paid และออกใบเสร็จอัตโนมัติทันที!
+                const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
+                await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verifiedAmount, {
+                  slipStatus: "passed",
+                  slipUrl,
+                  slipVerifiedAt: slip2goResult.date || new Date().toISOString(),
+                  slipVerifiedBy: "ai",
+                  slipTransRef: slip2goResult.transRef || verificationResult.transRef,
+                  slipBank: verificationResult.bankName,
+                  slipHash: verificationResult.slipHash,
+                });
+
+                const receiptFlex = buildReceiptFlexMessage(
+                  { ...unpaid, paidAmount: verifiedAmount, status: "paid" },
+                  receiptNo,
+                  verifiedAmount,
+                  branchName
+                );
+
+                await replyLineMessage(channelAccessToken, replyToken, [
+                  {
+                    type: "text",
+                    text: `✅ ตรวจสอบสลิปกับระบบธนาคารผ่าน Slip2Go สำเร็จเรียบร้อยแล้วครับ!\n🏦 ธนาคาร: ${verificationResult.bankName}\n🔢 รหัสอ้างอิง: ${slip2goResult.transRef || verificationResult.transRef}\n💰 ยอดชำระ: ฿${verifiedAmount.toLocaleString()} บาท\n\nระบบได้ออกใบเสร็จรับเงินให้อัตโนมัติเรียบร้อยครับ ขอบคุณที่ชำระตรงเวลาครับ 🙏✨`,
+                    quickReply: getDefaultQuickReply(),
+                  },
+                  receiptFlex,
+                ]);
+                continue;
+              } else {
+                // ⚠️ ยอดเงินไม่ครบตามบิล (เช่น โอนเงินขาด)
+                const diff = unpaid.totalAmount - verifiedAmount;
+                await DatabaseService.updateInvoiceStatus(unpaid.id, "unpaid", verifiedAmount, {
+                  slipStatus: "action_needed",
+                  slipUrl,
+                  slipVerifiedAt: new Date().toISOString(),
+                  slipVerifiedBy: "ai",
+                  slipRejectReason: `ยอดเงินโอนจริงจากธนาคารคือ ฿${verifiedAmount} ไม่ครบตามบิล (ขาด ฿${diff})`,
+                  slipHash: verificationResult.slipHash,
+                });
+
+                await replyLineMessage(channelAccessToken, replyToken, [
+                  {
+                    type: "text",
+                    text: `⚠️ ตรวจสอบพบยอดเงินไม่ครบตามบิล!\n💰 ยอดโอนจริงจากธนาคาร: ฿${verifiedAmount.toLocaleString()} บาท\n📌 ยอดบิลห้อง ${unpaid.roomNumber}: ฿${unpaid.totalAmount.toLocaleString()} บาท\n(ยังขาดอีก ฿${diff.toLocaleString()} บาท)\n\nกรุณาโอนส่วนที่เหลือ หรือติดต่อสำนักงาน โทร ${settings?.phone || "เบอร์สำนักงาน"} ครับ`,
+                    quickReply: getDefaultQuickReply(),
+                  },
+                ]);
+                continue;
+              }
+            } else {
+              // ❌ Slip2Go ปฏิเสธ (สลิปปลอม / ไม่พบในระบบธนาคาร / สลิปซ้ำ)
+              await DatabaseService.updateInvoiceStatus(unpaid.id, "unpaid", undefined, {
+                slipStatus: "action_needed",
+                slipUrl,
+                slipVerifiedAt: new Date().toISOString(),
+                slipVerifiedBy: "ai",
+                slipRejectReason: `Slip2Go: ${slip2goResult.error || "สลิปไม่ผ่านการตรวจสอบจากระบบธนาคาร"}`,
+                slipHash: verificationResult.slipHash,
+              });
+
+              await replyLineMessage(channelAccessToken, replyToken, [
+                {
+                  type: "text",
+                  text: `❌ สลิปไม่ผ่านการตรวจสอบจากระบบธนาคาร\n📌 สาเหตุ: ${slip2goResult.error || "ไม่พบข้อมูลธุรกรรม หรือข้อมูลไม่ถูกต้อง"}\n\nกรุณาตรวจสอบสลิป หรือติดต่อสำนักงานหอพัก โทร ${settings?.phone || "เบอร์สำนักงาน"} ครับ`,
+                  quickReply: getDefaultQuickReply(),
+                },
+              ]);
+              continue;
+            }
+          }
+
           if (verificationResult.success) {
-            // แนวทางที่ 1 (ปลอดภัย 100%): บันทึกสลิปลงระบบ แต่ "ยังไม่ตัดยอด paid อัตโนมัติ"
-            // สถานะบิลคงเป็น unpaid / slipStatus เป็น "action_needed" เพื่อรอแอดมินตรวจยอดเงินในแอปธนาคารจริง
+            // แนวทางที่ 1 (ยังไม่ได้ใส่คีย์ Slip2Go): บันทึกสลิปลงระบบ รอแอดมินกดอนุมัติบนหน้าเว็บ
             await DatabaseService.updateInvoiceStatus(unpaid.id, unpaid.status, undefined, {
               slipStatus: "action_needed",
               slipUrl,

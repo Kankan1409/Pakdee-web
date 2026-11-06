@@ -424,3 +424,150 @@ export class SlipVerificationService {
     };
   }
 }
+
+export interface Slip2GoVerifyResult {
+  success: boolean;
+  transRef?: string;
+  amount?: number;
+  date?: string;
+  senderBank?: string;
+  senderName?: string;
+  receiverBank?: string;
+  receiverName?: string;
+  receiverAccount?: string;
+  isDuplicate?: boolean;
+  rawResponse?: any;
+  error?: string;
+}
+
+/**
+ * เรียกใช้ Slip2Go API (https://api.slip2go.com) ตรวจสอบความถูกต้องของสลิปกับระบบธนาคารกลาง
+ * รองรับทั้งการส่งข้อมูล QR Code ตรง (รวดเร็ว <1s) หรือรูปภาพสลิป Base64
+ */
+export async function verifyWithSlip2Go(
+  secretKey: string,
+  options: {
+    qrCode?: string;
+    imageBuffer?: Buffer;
+    expectedAmount?: number;
+    receiverAccount?: string;
+    receiverBankCode?: string;
+  }
+): Promise<Slip2GoVerifyResult> {
+  const cleanKey = secretKey ? secretKey.trim() : "";
+  if (!cleanKey) {
+    return { success: false, error: "Slip2Go Secret Key ไม่ได้ถูกกำหนดในระบบ" };
+  }
+
+  try {
+    // 1. ตรวจสอบผ่าน QR Code ด้วย Endpoint: /api/verify-slip/qr-code/info
+    if (options.qrCode) {
+      const checkCondition: any = { checkDuplicate: true };
+      if (options.expectedAmount && options.expectedAmount > 0) {
+        checkCondition.checkAmount = { amount: Number(options.expectedAmount) };
+      }
+      if (options.receiverAccount) {
+        checkCondition.checkReceiver = [
+          {
+            accountNumber: options.receiverAccount.replace(/[^0-9]/g, ""),
+            ...(options.receiverBankCode ? { bankCode: options.receiverBankCode } : {}),
+          },
+        ];
+      }
+
+      console.log(`[SLIP2GO] Calling qr-code/info with key=${cleanKey.slice(0, 6)}... qrLen=${options.qrCode.length}`);
+      const res = await fetch("https://api.slip2go.com/api/verify-slip/qr-code/info", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cleanKey}`,
+        },
+        body: JSON.stringify({
+          payload: {
+            qrCode: options.qrCode,
+            checkCondition,
+          },
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+      console.log(`[SLIP2GO] Response HTTP=${res.status}:`, JSON.stringify(json)?.slice(0, 200));
+
+      if (!res.ok || !json) {
+        return {
+          success: false,
+          error: json?.message || json?.error || `Slip2Go API error: HTTP ${res.status}`,
+        };
+      }
+
+      // แกะ payload จาก Slip2Go
+      const data = json.data || json.payload || json;
+      const transRef = data.transRef || data.ref1 || data.transactionRef;
+      const amount = Number(data.amount) || Number(data.transferAmount) || 0;
+      const date = data.date || data.transDate;
+      const receiverName = data.receiver?.account?.name || data.receiver?.name;
+      const receiverAccount = data.receiver?.account?.accountNumber || data.receiver?.accountNumber;
+      const isDuplicate = data.isDuplicate === true;
+
+      // ตรวจสอบความถูกต้องของผลลัพธ์
+      if (json.code && json.code !== "200000" && json.code !== 200 && json.success === false) {
+        return {
+          success: false,
+          error: json.message || "สลิปไม่ผ่านการตรวจสอบจากระบบธนาคาร",
+          rawResponse: json,
+        };
+      }
+
+      return {
+        success: true,
+        transRef,
+        amount,
+        date,
+        receiverName,
+        receiverAccount,
+        isDuplicate,
+        rawResponse: json,
+      };
+    }
+
+    // 2. กรณีไม่มี QR Code ให้อัปโหลด Base64 ผ่าน /api/verify-slip/qr-image/info
+    if (options.imageBuffer) {
+      const base64 = options.imageBuffer.toString("base64");
+      console.log(`[SLIP2GO] Calling qr-image/info with key=${cleanKey.slice(0, 6)}... bytes=${options.imageBuffer.length}`);
+      const res = await fetch("https://api.slip2go.com/api/verify-slip/qr-image/info", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cleanKey}`,
+        },
+        body: JSON.stringify({
+          payload: {
+            image: `data:image/jpeg;base64,${base64}`,
+          },
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json) {
+        return {
+          success: false,
+          error: json?.message || json?.error || `Slip2Go API error: HTTP ${res.status}`,
+        };
+      }
+
+      const data = json.data || json.payload || json;
+      return {
+        success: true,
+        transRef: data.transRef || data.ref1,
+        amount: Number(data.amount) || 0,
+        date: data.date,
+        rawResponse: json,
+      };
+    }
+
+    return { success: false, error: "ไม่มีข้อมูล QR Code หรือรูปภาพสำหรับตรวจสอบ" };
+  } catch (err: any) {
+    console.error("[SLIP2GO-API-FATAL]", err);
+    return { success: false, error: err?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ Slip2Go" };
+  }
+}

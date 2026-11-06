@@ -354,6 +354,11 @@ export interface BranchSettingsDetail {
   lineChannelAccessToken?: string;
   lineChannelSecret?: string;
   lineWebhookUrl?: string;
+  // Slip Verification Provider (Slip2Go / SlipOK / Manual)
+  slipVerificationProvider?: "slip2go" | "slipok" | "manual";
+  slip2goSecretKey?: string;
+  slipokApiKey?: string;
+  slipokBranchId?: string;
   // Digital
   signatureUrl?: string;
   stampUrl?: string;
