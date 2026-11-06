@@ -64,7 +64,8 @@ export function DatabaseSlipView({ propertyId, invoices }: { propertyId: string;
     setBusy(true); setError(""); setMessage("");
     try {
       const data = await (await requestPaymentSlips(propertyId, "check", slip.id)).json();
-      setMessage(data.message); setSelected(slip);
+      setMessage(data.message); setSelected({ ...slip, verification_status: data.status || slip.verification_status });
+      setRevision(n => n + 1);
     } catch (e) { setError(e instanceof Error ? e.message : "ตรวจสอบไม่สำเร็จ"); }
     finally { setBusy(false); }
   };
@@ -72,7 +73,7 @@ export function DatabaseSlipView({ propertyId, invoices }: { propertyId: string;
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-xl font-bold">ตรวจสลิปโอนเงิน</h1>
-        <p className="text-sm text-[var(--muted)]">รูปหลักฐานและผลตรวจของสาขานี้ · แสดง 200 รายการล่าสุด</p></div>
+        <p className="text-sm text-[var(--muted)]">ตรวจผ่าน Slip2Go และรับชำระอัตโนมัติเมื่อผ่าน · แสดง 200 รายการล่าสุด</p></div>
       <button type="button" disabled={loading} onClick={() => setRevision(n => n + 1)} className="flex items-center gap-2 rounded-lg border p-2 text-sm disabled:opacity-50"><RefreshCw size={16} /> โหลดใหม่</button>
     </div>
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
@@ -88,7 +89,7 @@ export function DatabaseSlipView({ propertyId, invoices }: { propertyId: string;
       <label className="block text-sm">รูปสลิป (JPEG, PNG, WebP ไม่เกิน 10 MB)
         <input key={propertyId} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setFile(e.target.files?.[0] || null)} className="mt-1 block w-full text-sm" />
       </label>
-      <button type="button" onClick={upload} disabled={busy || !file || !invoiceNumber} className="inline-flex items-center gap-2 bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50"><UploadCloud size={16}/>{busy ? "กำลังดำเนินการ..." : "บันทึกสลิป"}</button>
+      <button type="button" onClick={upload} disabled={busy || !file || !invoiceNumber} className="inline-flex items-center gap-2 bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50"><UploadCloud size={16}/>{busy ? "กำลังตรวจสอบ..." : "บันทึกและตรวจผ่าน Slip2Go"}</button>
     </div>
     <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table className="w-full text-sm"><thead className="bg-[var(--subtle)]"><tr>
@@ -99,7 +100,7 @@ export function DatabaseSlipView({ propertyId, invoices }: { propertyId: string;
             <td className="p-3">{slip.invoices?.invoice_number || "—"}<div className="text-xs text-[var(--muted)]">{inv ? `ห้อง ${inv.roomNumber} · ${inv.tenantName}` : ""}</div></td>
             <td className="p-3">{new Date(slip.uploaded_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}</td>
             <td className="p-3">{labels[slip.verification_status]}{slip.rejection_reason && <p className="text-xs text-rose-600">{slip.rejection_reason}</p>}</td>
-            <td className="p-3 text-center whitespace-nowrap"><button type="button" onClick={() => setSelected(slip)} className="text-blue-600 underline mr-3">ดูรูป</button><button type="button" disabled={busy} onClick={() => check(slip)} className="text-emerald-700 underline disabled:opacity-50">ตรวจข้อมูลสลิป</button></td>
+            <td className="p-3 text-center whitespace-nowrap"><button type="button" onClick={() => setSelected(slip)} className="text-blue-600 underline mr-3">ดูรูป</button><button type="button" disabled={busy || slip.verification_status === "passed"} onClick={() => check(slip)} className="text-emerald-700 underline disabled:opacity-50">{busy ? "กำลังตรวจสอบ..." : "ตรวจผ่าน Slip2Go"}</button></td>
           </tr>; })}
         {!slips.length && <tr><td colSpan={4} className="p-8 text-center text-[var(--muted)]">{loading ? "กำลังโหลดสลิป..." : error ? "ยังโหลดรายการไม่ได้" : "ยังไม่มีสลิปที่บันทึกในตารางใหม่ของสาขานี้"}</td></tr>}
       </tbody></table>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeSlipRequest, decodeSlipImage, savePaymentSlip, SlipError } from "@/lib/payment-slips-server";
 import { validateImageSignature } from "@/lib/slip-verification";
+import { verifyStoredPayment } from "@/lib/line/verify-payment";
 
 export const runtime = "nodejs";
 const privateHeaders = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
@@ -17,7 +18,8 @@ export async function POST(request: NextRequest) {
       if (!(file instanceof File) || !invoiceNumber) throw new SlipError("กรุณาเลือกบิลและรูปสลิป");
       if (file.size > 10 * 1024 * 1024) throw new SlipError("รูปสลิปต้องมีขนาดไม่เกิน 10 MB", 413);
       const id = await savePaymentSlip(propertyId, invoiceNumber, Buffer.from(await file.arrayBuffer()), file.name);
-      return NextResponse.json({ id, message: "บันทึกรูปลงฐานข้อมูลแล้ว รอตรวจสอบการชำระเงิน" }, { headers: privateHeaders });
+      const result = await verifyStoredPayment(propertyId, id);
+      return NextResponse.json({ id, ...result }, { headers: privateHeaders });
     }
     if (action === "list") {
       const { data, error } = await db.from("payment_slips")
@@ -44,13 +46,9 @@ export async function POST(request: NextRequest) {
       .eq("property_id", propertyUuid).eq("image_sha256", slip.image_sha256)
       .neq("invoice_id", slip.invoice_id).limit(1);
     if (duplicateError) throw new SlipError("ตรวจรูปซ้ำไม่สำเร็จ", 503);
-    // Database checks alone must never approve a bank transfer or mark an invoice paid.
-    return NextResponse.json({ status: slip.verification_status, duplicate: Boolean(duplicates?.length), message:
-      duplicates?.length ? "พบรูปเดียวกันในบิลอื่นของสาขา กรุณาตรวจสอบก่อนรับชำระ" :
-      slip.verification_status === "passed" ? "สลิปนี้มีสถานะผ่านการตรวจสอบในฐานข้อมูลแล้ว" :
-      slip.verification_status === "rejected" ? (slip.rejection_reason || "สลิปนี้มีสถานะไม่ผ่านการตรวจสอบ") :
-      "อ่านรูปจากฐานข้อมูลได้และไม่พบรูปซ้ำในบิลอื่นของสาขา ยังต้องยืนยันยอดโอนกับธนาคารก่อนรับชำระ"
-    }, { headers: privateHeaders });
+    if (duplicates?.length) return NextResponse.json({ status: slip.verification_status, duplicate: true,
+      message: "พบรูปเดียวกันในบิลอื่นของสาขา จึงยังไม่รับชำระอัตโนมัติ" }, { headers: privateHeaders });
+    return NextResponse.json(await verifyStoredPayment(propertyId, id), { headers: privateHeaders });
   } catch (error) {
     return NextResponse.json({ error: error instanceof SlipError ? error.message : "ดำเนินการกับสลิปไม่สำเร็จ" },
       { status: error instanceof SlipError ? error.status : 500, headers: privateHeaders });

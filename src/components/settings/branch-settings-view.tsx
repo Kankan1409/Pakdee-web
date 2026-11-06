@@ -862,16 +862,16 @@ export function BranchSettingsView({
               <div className="flex items-center justify-between">
                 <div className="font-bold text-xs text-indigo-800 dark:text-indigo-300 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span>ระบบตรวจสลิปอัตโนมัติ 100% (Slip2Go API)</span>
+                  <span>ตรวจสลิปผ่าน Slip2Go</span>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   formData.slip2goSecretKey ? "bg-emerald-500 text-white" : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
                 }`}>
-                  {formData.slip2goSecretKey ? "เปิดใช้งาน Auto-Payment แล้ว" : "รอใส่ Secret Key (ทำงานโหมดแอดมินอนุมัติ)"}
+                  {formData.slip2goSecretKey ? "กรอกคีย์แล้ว · ยังไม่ใช่ผลทดสอบการเชื่อมต่อ" : "ยังไม่ได้กรอกคีย์ของสาขา"}
                 </span>
               </div>
               <p className="text-[11px] text-[var(--muted)]">
-                เชื่อมต่อระบบตรวจสลิปธนาคารกลางผ่าน <b>Slip2Go (slip2go.com)</b> เพื่อตรวจสลิปปลอม สลิปโอน 1 บาท และตัดบิลเป็น Paid พร้อมส่งใบเสร็จดิจิทัลให้ผู้เช่าอัตโนมัติทันที 24 ชม.
+                รับชำระอัตโนมัติเฉพาะเมื่อ <b>Slip2Go</b> ยืนยันว่าผ่านเงื่อนไขยอดเงิน บัญชีผู้รับ และการตรวจซ้ำ หากไม่มีผลยืนยันจะคงบิลไว้รอตรวจสอบ
               </p>
               <div>
                 <label className="block text-xs font-medium text-[var(--muted)] mb-1">

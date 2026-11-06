@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
-import { savePaymentSlip, SlipError } from "@/lib/payment-slips-server";
-import path from "path";
-import fs from "fs";
+import { SlipError } from "@/lib/payment-slips-server";
 import {
   verifyLineSignature,
   replyLineMessage,
   getLineMessageContent,
 } from "@/lib/line/line-client";
-import {
-  SlipVerificationService,
-  verifyWithSlip2Go,
-  extractQrFromImage,
-} from "@/lib/slip-verification";
+import { verifyLinePayment } from "@/lib/line/verify-payment";
 import {
   buildInvoiceFlexMessage,
   buildReceiptFlexMessage,
@@ -70,6 +64,7 @@ export async function POST(req: NextRequest) {
     const promptpayNumber = settings?.promptpayNumber || property?.promptpayNumber || "0812345678";
 
     // 2. ตรวจสอบ Signature เมื่อมีการตั้งค่า Channel Secret (ป้องกัน Spoofing)
+    if (!channelSecret.trim()) return NextResponse.json({ error: "Webhook secret not configured" }, { status: 503 });
     if (channelSecret && channelSecret.trim() !== "") {
       const isValid = verifyLineSignature(rawBody, signature, channelSecret);
       if (!isValid) {
@@ -329,170 +324,16 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // 2. บันทึกรูปภาพลงโฟลเดอร์ public/slips เพื่อให้เจ้าหน้าที่ดูได้ในระบบ
-          const slipsDir = path.join(process.cwd(), "public", "slips");
-          if (!fs.existsSync(slipsDir)) {
-            fs.mkdirSync(slipsDir, { recursive: true });
-          }
-          const slipFilename = `slip_${unpaid.roomNumber}_${Date.now()}.jpg`;
-          const slipFilePath = path.join(slipsDir, slipFilename);
-          fs.writeFileSync(slipFilePath, imageBuffer);
-          const slipUrl = `/slips/${slipFilename}`;
-
-          // สำรองข้อมูลรูปภาพสลิปเข้าตาราง payment_slips (ถ้ามีตารางและคอนฟิก)
           try {
-            await savePaymentSlip(activePropId, unpaid.invoiceNumber, imageBuffer, "line-" + message.id);
-          } catch (e) {
-            console.warn("[LINE-PAYMENT-SLIPS-TABLE-WARN]", e);
-          }
-
-          // 3. รัน Slip Verification Engine (AI ตรวจสลิปปลอม, สลิปซ้ำ, และยอดเงิน)
-          const verificationResult = SlipVerificationService.verifySlip({
-            imageBuffer,
-            invoice: unpaid,
-            allInvoices: invoices,
-            propertySettings: settings,
-          });
-
-          // ตรวจสอบว่าสาขานี้เปิดใช้งาน Slip2Go API หรือไม่
-          const slip2goKey = settings?.slip2goSecretKey || process.env.SLIP2GO_SECRET_KEY;
-
-          if (!slip2goKey) {
-            console.log(`[SLIP-CHECK] Slip2Go Key is not configured for branch ${branchName}. Using admin approval mode.`);
-          }
-
-          if (slip2goKey && verificationResult.success) {
-            console.log(`[SLIP2GO] Initiating Slip2Go verification for room ${unpaid.roomNumber}...`);
-            const qrCodeString = extractQrFromImage(imageBuffer);
-
-            const slip2goResult = await verifyWithSlip2Go(slip2goKey, {
-              qrCode: qrCodeString || undefined,
-              imageBuffer,
-              expectedAmount: unpaid.totalAmount,
-              receiverAccount: settings?.bankAccountNumber || settings?.promptpayNumber,
-            });
-
-            if (slip2goResult.success) {
-              const verifiedAmount = slip2goResult.amount || unpaid.totalAmount;
-              if (verifiedAmount >= unpaid.totalAmount) {
-                // ✅ Slip2Go ตรวจสอบผ่านธนาคาร 100%: ตัดบิลเป็น Paid และออกใบเสร็จอัตโนมัติทันที!
-                const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
-                await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verifiedAmount, {
-                  slipStatus: "passed",
-                  slipUrl,
-                  slipVerifiedAt: slip2goResult.date || new Date().toISOString(),
-                  slipVerifiedBy: "ai",
-                  slipTransRef: slip2goResult.transRef || verificationResult.transRef,
-                  slipBank: verificationResult.bankName,
-                  slipHash: verificationResult.slipHash,
-                });
-
-                const receiptFlex = buildReceiptFlexMessage(
-                  { ...unpaid, paidAmount: verifiedAmount, status: "paid" },
-                  receiptNo,
-                  verifiedAmount,
-                  branchName
-                );
-
-                await replyLineMessage(channelAccessToken, replyToken, [
-                  {
-                    type: "text",
-                    text: `✅ ตรวจสอบสลิปกับระบบธนาคารผ่าน Slip2Go สำเร็จเรียบร้อยแล้วครับ!\n🏦 ธนาคาร: ${verificationResult.bankName}\n🔢 รหัสอ้างอิง: ${slip2goResult.transRef || verificationResult.transRef}\n💰 ยอดชำระ: ฿${verifiedAmount.toLocaleString()} บาท\n\nระบบได้ออกใบเสร็จรับเงินให้อัตโนมัติเรียบร้อยครับ ขอบคุณที่ชำระตรงเวลาครับ 🙏✨`,
-                    quickReply: getDefaultQuickReply(),
-                  },
-                  receiptFlex,
-                ]);
-                continue;
-              } else {
-                // ⚠️ ยอดเงินไม่ครบตามบิล (เช่น โอนเงินขาด)
-                const diff = unpaid.totalAmount - verifiedAmount;
-                await DatabaseService.updateInvoiceStatus(unpaid.id, "unpaid", verifiedAmount, {
-                  slipStatus: "action_needed",
-                  slipUrl,
-                  slipVerifiedAt: new Date().toISOString(),
-                  slipVerifiedBy: "ai",
-                  slipRejectReason: `ยอดเงินโอนจริงจากธนาคารคือ ฿${verifiedAmount} ไม่ครบตามบิล (ขาด ฿${diff})`,
-                  slipHash: verificationResult.slipHash,
-                });
-
-                await replyLineMessage(channelAccessToken, replyToken, [
-                  {
-                    type: "text",
-                    text: `⚠️ ตรวจสอบพบยอดเงินไม่ครบตามบิล!\n💰 ยอดโอนจริงจากธนาคาร: ฿${verifiedAmount.toLocaleString()} บาท\n📌 ยอดบิลห้อง ${unpaid.roomNumber}: ฿${unpaid.totalAmount.toLocaleString()} บาท\n(ยังขาดอีก ฿${diff.toLocaleString()} บาท)\n\nกรุณาโอนส่วนที่เหลือ หรือติดต่อสำนักงาน โทร ${settings?.phone || "เบอร์สำนักงาน"} ครับ`,
-                    quickReply: getDefaultQuickReply(),
-                  },
-                ]);
-                continue;
-              }
-            } else {
-              // ❌ Slip2Go ปฏิเสธ (สลิปปลอม / ไม่พบในระบบธนาคาร / สลิปซ้ำ)
-              await DatabaseService.updateInvoiceStatus(unpaid.id, "unpaid", undefined, {
-                slipStatus: "action_needed",
-                slipUrl,
-                slipVerifiedAt: new Date().toISOString(),
-                slipVerifiedBy: "ai",
-                slipRejectReason: `Slip2Go: ${slip2goResult.error || "สลิปไม่ผ่านการตรวจสอบจากระบบธนาคาร"}`,
-                slipHash: verificationResult.slipHash,
-              });
-
-              await replyLineMessage(channelAccessToken, replyToken, [
-                {
-                  type: "text",
-                  text: `❌ สลิปไม่ผ่านการตรวจสอบจากระบบธนาคาร\n📌 สาเหตุ: ${slip2goResult.error || "ไม่พบข้อมูลธุรกรรม หรือข้อมูลไม่ถูกต้อง"}\n\nกรุณาตรวจสอบสลิป หรือติดต่อสำนักงานหอพัก โทร ${settings?.phone || "เบอร์สำนักงาน"} ครับ`,
-                  quickReply: getDefaultQuickReply(),
-                },
-              ]);
-              continue;
-            }
-          }
-
-          if (verificationResult.success) {
-            // ผ่านการตรวจสอบ 100%: มาร์กเป็น paid พร้อมบันทึกหลักฐาน
-            const verifiedAmount = verificationResult.amount || unpaid.totalAmount;
-            const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${unpaid.roomNumber}`;
-            const verifiedAt = verificationResult.verifiedAt || new Date().toLocaleString("th-TH");
-
-            await DatabaseService.updateInvoiceStatus(unpaid.id, "paid", verifiedAmount, {
-              slipStatus: "passed",
-              slipUrl,
-              slipVerifiedAt: verifiedAt,
-              slipVerifiedBy: "ai",
-              slipTransRef: verificationResult.transRef,
-              slipBank: verificationResult.bankName,
-              slipHash: verificationResult.slipHash,
-            });
-
-            const receiptFlex = buildReceiptFlexMessage(
-              { ...unpaid, paidAmount: verifiedAmount },
-              receiptNo,
-              verifiedAmount,
-              branchName
-            );
-
-            await replyLineMessage(channelAccessToken, replyToken, [
-              {
-                type: "text",
-                text: `✅ AI ตรวจสอบสลิปถูกต้อง 100%!\n🏦 ธนาคาร: ${verificationResult.bankName || "พร้อมเพย์"}\n🔢 รหัสอ้างอิง: ${verificationResult.transRef || "-"}\n💵 ยอดเงิน: ฿${verifiedAmount.toLocaleString()}\n\nระบบตัดยอดบิลห้อง ${unpaid.roomNumber} เรียบร้อยแล้ว พร้อมส่งใบเสร็จรับเงินให้อัตโนมัติครับ 🎉`,
-              },
-            ]);
-          } else {
-            // ไม่ผ่านการตรวจสอบ (สลิปปลอม, สลิปซ้ำ, หรือยอดไม่ครบ): ห้ามตัดบิล
-            const safeStatus = (unpaid.status === "paid" ? "unpaid" : unpaid.status) as any;
-            await DatabaseService.updateInvoiceStatus(unpaid.id, safeStatus, undefined, {
-              slipStatus: "action_needed",
-              slipUrl,
-              slipVerifiedAt: new Date().toLocaleString("th-TH"),
-              slipVerifiedBy: "ai",
-              slipRejectReason: verificationResult.message,
-              slipHash: verificationResult.slipHash,
-            });
-
-            await replyLineMessage(channelAccessToken, replyToken, [
-              {
-                type: "text",
-                text: `⚠️ ระบบ AI ตรวจพบข้อผิดพลาดของสลิป:\n\n${verificationResult.message}\n\n📌 สถานะบิลห้อง ${unpaid.roomNumber}: ยังคงเป็น "ค้างชำระ"\nหากท่านได้โอนเงินจริง กรุณาติดต่อสำนักงานหอพัก ${settings?.phone ? "โทร " + settings.phone : ""} เพื่อให้เจ้าหน้าที่ตรวจสอบครับ`,
-              },
-            ]);
+            const result = await verifyLinePayment(activePropId, unpaid, settings, imageBuffer, "line-" + message.id);
+            const replies: any[] = [{ type: "text", text: result.message }];
+            if (result.amount !== undefined) replies.push(buildReceiptFlexMessage(
+              { ...unpaid, paidAmount: result.amount, status: "paid" },
+              "REC-" + unpaid.invoiceNumber, result.amount, branchName));
+            await replyLineMessage(channelAccessToken, replyToken, replies);
+          } catch (error) {
+            await replyLineMessage(channelAccessToken, replyToken, [{ type: "text",
+              text: error instanceof SlipError ? error.message : "ยังยืนยันการชำระเงินไม่ได้ กรุณาติดต่อเจ้าหน้าที่" }]);
           }
           continue;
         }
