@@ -857,6 +857,36 @@ export function BranchSettingsView({
               />
             </div>
 
+            {/* Slip Verification Provider (Slip2Go) */}
+            <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 space-y-3 mt-4">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-xs text-indigo-800 dark:text-indigo-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>ระบบตรวจสลิปอัตโนมัติ 100% (Slip2Go API)</span>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  formData.slip2goSecretKey ? "bg-emerald-500 text-white" : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                }`}>
+                  {formData.slip2goSecretKey ? "เปิดใช้งาน Auto-Payment แล้ว" : "รอใส่ Secret Key (ทำงานโหมดแอดมินอนุมัติ)"}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--muted)]">
+                เชื่อมต่อระบบตรวจสลิปธนาคารกลางผ่าน <b>Slip2Go (slip2go.com)</b> เพื่อตรวจสลิปปลอม สลิปโอน 1 บาท และตัดบิลเป็น Paid พร้อมส่งใบเสร็จดิจิทัลให้ผู้เช่าอัตโนมัติทันที 24 ชม.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-[var(--muted)] mb-1">
+                  Slip2Go Secret Key (Bearer Token)
+                </label>
+                <input
+                  type="password"
+                  value={formData.slip2goSecretKey || ""}
+                  onChange={(e) => handleChange("slip2goSecretKey", e.target.value)}
+                  placeholder="กรอก Secret Key จาก slip2go.com เช่น s2g_live_..."
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs font-mono text-[var(--foreground)]"
+                />
+              </div>
+            </div>
+
             {/* Share LINE OA to Tenants Box */}
             <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3 mt-4">
               <div className="flex items-center justify-between">

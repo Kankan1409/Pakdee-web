@@ -7,6 +7,7 @@ const files = [
   'src/lib/mock-data.ts',
   'src/lib/validators.ts',
   'src/lib/slip-verification.ts',
+  'src/lib/promptpay.ts',
   'src/lib/popup-context.tsx',
   'src/lib/line/flex-templates.ts',
   'src/lib/line/line-client.ts',
@@ -18,6 +19,7 @@ const files = [
   'src/components/invoice/invoice-preview-modal.tsx',
   'src/components/dashboard/daily-checkout-modal.tsx',
   'src/components/dashboard/room-detail-modal.tsx',
+  'src/components/dashboard/room-matrix.tsx',
   'src/components/ui/app-popup-modal.tsx',
   'src/components/tenants/tenant-registration-view.tsx',
   'src/components/tenants/add-tenant-modal.tsx',
@@ -37,8 +39,9 @@ const files = [
   'src/components/invoices/receipts-list-view.tsx',
   'src/components/layout/sidebar.tsx',
   'src/app/page.tsx',
-  'next.config.ts',
-  'data/db_port3000.json'
+  'src/app/api/line/notify-slip/route.ts',
+  'docs/PAKDEE_LINE_BOT_AND_PAYMENT_SLIP_AUDIT_REPORT.md',
+  'next.config.ts'
 ];
 
 const srcBase = 'D:/DESKTOP/Pakdee';

@@ -937,3 +937,45 @@ export function buildBroadcastFlexMessage(
     },
   };
 }
+
+/**
+ * 6. Quick Reply Buttons ลอยด้านล่างห้องแชท ให้ผู้เช่ากดเลือกได้สะดวก
+ */
+export function getDefaultQuickReply() {
+  return {
+    items: [
+      {
+        type: "action",
+        action: {
+          type: "message",
+          label: "📄 ขอบิล / QR จ่าย",
+          text: "ขอบิล",
+        },
+      },
+      {
+        type: "action",
+        action: {
+          type: "message",
+          label: "🔧 แจ้งซ่อมด่วน",
+          text: "แจ้งซ่อม",
+        },
+      },
+      {
+        type: "action",
+        action: {
+          type: "message",
+          label: "🏢 ติดต่อสำนักงาน",
+          text: "ติดต่อ",
+        },
+      },
+      {
+        type: "action",
+        action: {
+          type: "message",
+          label: "📜 กฎระเบียบหอ",
+          text: "กฎระเบียบ",
+        },
+      },
+    ],
+  };
+}
