@@ -1,121 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-
-export const runtime = "nodejs";
-
-// Dedicated Project Database Storage Path (Port 3000)
-// Uses ./data/db_port3000.json directly within the workspace for maximum stability
-function getDbPaths(): { dataDir: string; dbFile: string } {
-  const localDir = path.join(process.cwd(), "data");
-  if (!fs.existsSync(localDir)) {
-    try {
-      fs.mkdirSync(localDir, { recursive: true });
-    } catch { }
-  }
-  return { dataDir: localDir, dbFile: path.join(localDir, "db_port3000.json") };
-}
+import { syncKeyToRelationalTable } from "@/lib/supabase-relational";
 
 function normalizeKey(k: string): string {
   return k.replace(/^pakdee_(dev|test)_/, "");
 }
 
-/**
- * PAKDEE PURE SUPABASE CLOUD API (/api/db)
- * All operations read and write directly to Supabase Cloud PostgreSQL (pakdee_store)
- * Zero local file dependency
- */
-
-// GET: Return entire database or single key directly from Supabase Cloud
-export async function GET(req: NextRequest) {
+// GET: Read current database state directly from Supabase Cloud (no local db_port3000.json file)
+export async function GET() {
   try {
-    const { searchParams } = new URL(req.url);
-    const key = searchParams.get("key");
-
-    if (key) {
-      const { data, error } = await supabase
-        .from("pakdee_store")
-        .select("key, value")
-        .eq("key", key)
-        .maybeSingle();
-
-      if (!error && data && data.value !== undefined) {
-        return NextResponse.json({ success: true, key, value: data.value, source: "supabase" });
-      }
-
-      // Try normalized key
-      const norm = normalizeKey(key);
-      const { data: normData, error: normErr } = await supabase
-        .from("pakdee_store")
-        .select("key, value")
-        .eq("key", norm)
-        .maybeSingle();
-
-      if (!normErr && normData && normData.value !== undefined) {
-        return NextResponse.json({ success: true, key, value: normData.value, source: "supabase" });
-      }
-
-      return NextResponse.json({ success: true, key, value: null, source: "supabase" });
-    }
-
-    // Return all keys
-    const { data, error } = await supabase
+    const { data: rows, error } = await supabase
       .from("pakdee_store")
       .select("key, value");
 
     if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
-
-    const cloudDb: Record<string, any> = {};
-    if (data) {
-      data.forEach((row: any) => {
-        cloudDb[row.key] = row.value;
+      return NextResponse.json({
+        success: false,
+        error: error.message,
+        data: {},
       });
     }
 
-    return NextResponse.json({ success: true, data: cloudDb, source: "supabase" });
+    const db: Record<string, any> = {};
+    if (rows && rows.length > 0) {
+      for (const row of rows) {
+        if (row.key && row.value !== undefined) {
+          const normKey = normalizeKey(row.key);
+          db[`pakdee_dev_${normKey}`] = row.value;
+          db[normKey] = row.value;
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      dbPath: "Supabase Cloud Only (db_port3000.json disabled)",
+      data: db,
+    });
   } catch (err: any) {
-    console.error("[PureSupabase API] GET error:", err);
-    return NextResponse.json({ success: false, error: err?.message || "Failed to read database" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err?.message || "Failed to read from Supabase" },
+      { status: 500 }
+    );
   }
 }
 
-// POST: Save key/value or batch update directly to Supabase Cloud pakdee_store
+// POST: Save key/value or batch data directly to Supabase Cloud (no local db_port3000.json file)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    if (body.key && body.value !== undefined) {
-      const { error } = await supabase
-        .from("pakdee_store")
-        .upsert({
-          key: body.key,
-          value: body.value,
-          updated_at: new Date().toISOString(),
+    if (body && typeof body === "object") {
+      const nowIso = new Date().toISOString();
+      const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [];
+
+      if (typeof body.key === "string" && body.value !== undefined) {
+        const normKey = normalizeKey(body.key);
+        const canonicalKey = `pakdee_dev_${normKey}`;
+        rowsToUpsert.push({ key: canonicalKey, value: body.value, updated_at: nowIso });
+        if (normKey !== canonicalKey) {
+          rowsToUpsert.push({ key: normKey, value: body.value, updated_at: nowIso });
+        }
+        syncKeyToRelationalTable(normKey, body.value, body.data || {}).catch(() => {});
+      } else if (body.data && typeof body.data === "object") {
+        Object.entries(body.data).forEach(([k, val]) => {
+          const normKey = normalizeKey(k);
+          const canonicalKey = `pakdee_dev_${normKey}`;
+          rowsToUpsert.push({ key: canonicalKey, value: val, updated_at: nowIso });
+          if (normKey !== canonicalKey) {
+            rowsToUpsert.push({ key: normKey, value: val, updated_at: nowIso });
+          }
+          syncKeyToRelationalTable(normKey, val, body.data || {}).catch(() => {});
         });
-
-      if (error) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
-    } else if (body.data && typeof body.data === "object") {
-      const rows = Object.entries(body.data).map(([k, v]) => ({
-        key: k,
-        value: v,
-        updated_at: new Date().toISOString(),
-      }));
 
-      const { error } = await supabase
-        .from("pakdee_store")
-        .upsert(rows);
-
-      if (error) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      if (rowsToUpsert.length > 0) {
+        await supabase
+          .from("pakdee_store")
+          .upsert(rowsToUpsert, { onConflict: "key" });
       }
     }
 
-    return NextResponse.json({ success: true, message: "Saved to Supabase Cloud successfully" });
+    return NextResponse.json({
+      success: true,
+      dbPath: "Supabase Cloud Only (db_port3000.json disabled)",
+    });
   } catch (err: any) {
-    console.error("[PureSupabase API] POST error:", err);
-    return NextResponse.json({ success: false, error: err?.message || "Failed to save to database" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err?.message || "Failed to write to Supabase" },
+      { status: 500 }
+    );
   }
 }

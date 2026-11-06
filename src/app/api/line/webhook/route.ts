@@ -36,13 +36,23 @@ export async function GET() {
  * POST: LINE Webhook Receiver (รับ Event จาก LINE Platform)
  */
 export async function POST(req: NextRequest) {
+  let rawBody = "";
   try {
-    await DatabaseService.init();
-    const rawBody = await req.text();
-    const signature = req.headers.get("x-line-signature") || "";
+    // อ่าน Request Body ทันทีเพื่อป้องกัน Connection Timeout / ECONNRESET จาก Reverse Proxy หรือ LINE Webhook
+    rawBody = await req.text();
+  } catch (readErr: any) {
+    if (readErr?.code === "ECONNRESET" || readErr?.name === "AbortError" || readErr?.message?.includes("aborted")) {
+      console.warn("[LINE-WEBHOOK] Client connection was reset/aborted before body was fully read:", readErr.message);
+      return NextResponse.json({ error: "Client aborted connection" }, { status: 400 });
+    }
+    console.error("[LINE-WEBHOOK-FATAL] Error reading request body:", readErr);
+    return NextResponse.json({ error: "Failed to read request body" }, { status: 400 });
+  }
 
-    // 0. ซิงค์ข้อมูลล่าสุดจาก Supabase Cloud โดยตรง
+  try {
+    // ซิงค์ข้อมูลล่าสุดจาก Supabase Cloud หลังจากอ่าน Body ครบถ้วนแล้ว
     await DatabaseService.init();
+    const signature = req.headers.get("x-line-signature") || "";
 
     // 1. ดึงการตั้งค่าของสาขาปัจจุบัน (รวม Token และ Secret)
     const activePropId = DatabaseService.getActivePropertyId() || "prop-1";
@@ -390,6 +400,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, processedEvents: events.length });
   } catch (error: any) {
+    if (error?.code === "ECONNRESET" || error?.name === "AbortError" || error?.message?.includes("aborted")) {
+      console.warn("[LINE-WEBHOOK] Request aborted or client disconnected:", error.message);
+      return NextResponse.json(
+        { error: "Connection aborted by client", details: error.message },
+        { status: 499 }
+      );
+    }
     console.error("[LINE-WEBHOOK-FATAL]", error);
     return NextResponse.json(
       { error: "Webhook processing error", details: error.message },

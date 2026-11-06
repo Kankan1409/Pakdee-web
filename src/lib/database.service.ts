@@ -61,42 +61,40 @@ const KEYS = {
 // In-Memory Supabase Cloud Synchronized Cache (data/db_port3000.json completely disabled)
 const memoryDb: Record<string, any> = {};
 let isServerSynced = false;
-let serverSyncPromise: Promise<boolean> | null = null;
 
-// Synchronize memory cache directly from Supabase Cloud (works in both Node.js & Browser)
-async function syncFromSupabaseCloud(): Promise<boolean> {
-  if (isServerSynced) return true;
-  if (serverSyncPromise) return serverSyncPromise;
-  serverSyncPromise = (async () => {
-    try {
-      const { data, error } = await supabase
-        .from("pakdee_store")
-        .select("key, value");
-      if (!error && data && data.length > 0) {
-        data.forEach((row: any) => {
-          memoryDb[row.key] = row.value;
-          const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
-          memoryDb[normKey] = row.value;
-          if (typeof window !== "undefined") {
-            try {
-              localStorage.setItem(row.key, JSON.stringify(row.value));
-            } catch { }
-          }
-        });
-        isServerSynced = true;
-        return true;
-      }
-    } catch (e: any) {
-      console.warn("[DatabaseService] syncFromSupabaseCloud error:", e?.message);
-    } finally {
-      serverSyncPromise = null;
-    }
-    return false;
-  })();
-  return serverSyncPromise;
+const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+function scheduleRelationalSync(normKey: string, value: any): void {
+  if (normKey === "activity_logs" || normKey === "active_property_id") return;
+  if (typeof window === "undefined") {
+    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+    return;
+  }
+  if (relationalSyncTimers[normKey]) {
+    clearTimeout(relationalSyncTimers[normKey]);
+  }
+  relationalSyncTimers[normKey] = setTimeout(() => {
+    delete relationalSyncTimers[normKey];
+    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+  }, 1200);
 }
 
-// Safe Local & Server-Synchronized Storage Helper
+// Safe Supabase-Synchronized Storage Helper
+function getCurrentSessionUser(): { id: string; phone?: string; email?: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("pakdee_auth_session_v1");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.id) return parsed;
+  } catch {}
+  return null;
+}
+
+function isCustomRegisteredUser(user: { id: string; phone?: string; email?: string } | null): boolean {
+  if (!user || !user.id) return false;
+  return user.id !== "usr-owner-01" && user.id !== "usr-mgr-01";
+}
+
 function getLocal<T>(key: string, fallback: T): T {
   // 1. In-memory cache synced from Supabase Cloud has highest priority
   if (memoryDb[key] !== undefined && memoryDb[key] !== null) {
@@ -107,7 +105,7 @@ function getLocal<T>(key: string, fallback: T): T {
     return memoryDb[normKey] as T;
   }
 
-  // 2. Client-side LocalStorage passive fallback
+  // 2. Client-side LocalStorage fallback
   if (typeof window === "undefined") return fallback;
   try {
     let raw = localStorage.getItem(key) || localStorage.getItem(normKey);
@@ -133,7 +131,7 @@ function setLocal<T>(key: string, value: T): void {
   const normKey = key.replace(/^pakdee_(dev|test)_/, "");
   memoryDb[normKey] = value;
 
-  // 2. Save to client LocalStorage as passive mirror (cache only)
+  // 2. Save to client LocalStorage (browser cache mirror)
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(key, JSON.stringify(value));
@@ -142,17 +140,25 @@ function setLocal<T>(key: string, value: T): void {
     }
   }
 
-  // 3. Authoritative Single Source of Truth: Direct Upsert to Supabase Cloud pakdee_store
+  // 3. Persist ONLY to Supabase Cloud (pakdee_store + debounced relational table mirror)
+  // data/db_port3000.json is completely disabled
   try {
+    const nowIso = new Date().toISOString();
+    const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [
+      { key, value, updated_at: nowIso },
+    ];
+    if (normKey !== key) {
+      rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
+    }
     supabase
       .from("pakdee_store")
       .upsert(rowsToUpsert, { onConflict: "key" })
       .then(({ error }: any) => {
-        if (error) console.warn(`[Supabase Cloud Direct] Upsert error [${key}]:`, error.message);
+        if (error) console.warn(`[Supabase] Upsert error [${key}]:`, error.message);
       });
     scheduleRelationalSync(normKey, value);
   } catch (err) {
-    console.warn(`[Supabase Cloud Direct] Upsert skipped [${key}]:`, err);
+    console.warn(`[Supabase] Upsert skipped [${key}]:`, err);
   }
 }
 
@@ -199,7 +205,7 @@ function setupRealtimeSync(): void {
             memoryDb[normKey] = value;
             try {
               localStorage.setItem(key, JSON.stringify(value));
-            } catch { }
+            } catch {}
             if (typeof window !== "undefined") {
               window.dispatchEvent(
                 new CustomEvent("pakdee_db_updated", { detail: { key, value } })
@@ -221,60 +227,70 @@ function setupRealtimeSync(): void {
 
 export const DatabaseService = {
   /**
-   * Initialize and synchronize directly with Supabase Cloud (Single Source of Truth)
-   * Ensures all devices (Web & LINE Bot) always operate on authoritative cloud data
+   * Initialize and synchronize directly with Supabase Cloud (qygelgekosmklwrgnaxq)
+   * Local file data/db_port3000.json is completely disabled.
    */
   async init(): Promise<boolean> {
-    if (typeof window !== "undefined") {
-      // 1. Activate live real-time subscription on Supabase Cloud (Browser only)
-      setupRealtimeSync();
+    if (activeInitPromise) {
+      return activeInitPromise;
     }
 
-    // 2. PRIMARY: Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
-    return syncFromSupabaseCloud();
-  },
+    activeInitPromise = (async () => {
+      try {
+        // 1. Activate live real-time subscription on Supabase Cloud (browser only)
+        if (typeof window !== "undefined") {
+          setupRealtimeSync();
+        }
 
-  async ensureInitialized(): Promise<void> {
-    if (!isServerSynced) {
-      await this.init();
-    }
+        // 2. Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
+        try {
+          const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+            setTimeout(() => resolve({ data: null, error: { message: "Supabase init query timeout (2.5s)" } }), 2500)
+          );
+          const queryPromise = supabase.from("pakdee_store").select("key, value, updated_at");
+          const { data: cloudStore, error } = await Promise.race([queryPromise as any, timeoutPromise]);
+
+          if (!error && cloudStore && cloudStore.length > 0) {
+            const sortedRows = [...cloudStore].sort((a: any, b: any) => {
+              const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+              const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+              if (timeA !== timeB) return timeA - timeB;
+              const aIsDev = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
+              const bIsDev = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
+              return aIsDev - bIsDev;
+            });
+
+            sortedRows.forEach((row: any) => {
+              memoryDb[row.key] = row.value;
+              const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
+              memoryDb[normKey] = row.value;
+              if (row.key === normKey) {
+                memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
+              }
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem(row.key, JSON.stringify(row.value));
+                } catch {}
+              }
+            });
+
+            isServerSynced = true;
+            console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
+            return true;
+          }
+        } catch {}
+
+        return false;
+      } finally {
+        activeInitPromise = null;
+      }
+    })();
+
+    return activeInitPromise;
   },
 
   isServerSynced(): boolean {
     return isServerSynced;
-  },
-
-  /**
-   * Persist a key/value directly to Supabase Cloud pakdee_store with memory sync
-   */
-  async persistCloud(key: string, value: any): Promise<boolean> {
-    memoryDb[key] = value;
-    const normKey = key.replace(/^pakdee_(dev|test)_/, "");
-    memoryDb[normKey] = value;
-
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch { }
-    }
-
-    try {
-      const { error } = await supabase
-        .from("pakdee_store")
-        .upsert({
-          key,
-          value,
-          updated_at: new Date().toISOString(),
-        });
-      if (error) {
-        console.warn(`[Supabase Cloud Direct] Persist error [${key}]:`, error.message);
-        return false;
-      }
-      return true;
-    } catch (err: any) {
-      console.warn(`[Supabase Cloud Direct] Persist exception [${key}]:`, err?.message);
-      return false;
-    }
   },
 
   /**
@@ -289,29 +305,28 @@ export const DatabaseService = {
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem(key, JSON.stringify(val));
-        } catch { }
+        } catch {}
       }
     });
 
     // 2. Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + debounced relational mirror
     try {
-      const rows = Object.entries(data).map(([k, v]) => ({
-        key: k,
-        value: v,
-        updated_at: new Date().toISOString(),
-      }));
-      const { error } = await supabase
-        .from("pakdee_store")
-        .upsert(rows);
-      if (error) {
-        console.warn("[Supabase Cloud Direct] Batch upsert warning:", error.message);
-        return false;
-      }
-      return true;
+      const nowIso = new Date().toISOString();
+      Object.entries(data).forEach(([k, v]) => {
+        const normKey = k.replace(/^pakdee_(dev|test)_/, "");
+        supabase
+          .from("pakdee_store")
+          .upsert({ key: k, value: v, updated_at: nowIso }, { onConflict: "key" })
+          .then(({ error }: any) => {
+            if (error) console.warn(`[Supabase Cloud Direct] Upsert warning [${k}]:`, error.message);
+          });
+        scheduleRelationalSync(normKey, v);
+      });
     } catch (e: any) {
       console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
-      return false;
     }
+
+    return true;
   },
 
   // -------------------------------------------------------------
@@ -593,7 +608,7 @@ export const DatabaseService = {
     if (typeof window !== "undefined") {
       try {
         localStorage.removeItem(this.getBranchSettingsKey(propertyId));
-      } catch { }
+      } catch {}
     }
 
     await this.logActivity("DELETE", "SETTINGS", `ลบสาขาหอพัก ID: ${propertyId}`, propertyId);
@@ -743,7 +758,21 @@ export const DatabaseService = {
       updatedRooms = [...allRooms, newRoom];
     }
 
-    await this.persistCloud(KEYS.ROOMS, updatedRooms);
+    setLocal(KEYS.ROOMS, updatedRooms);
+
+    // Guaranteed Host Machine Persistence: Explicitly await write to ensure file is written before any page refresh
+    if (typeof window !== "undefined") {
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: KEYS.ROOMS, value: updatedRooms }),
+          keepalive: true,
+        });
+      } catch (e) {
+        console.warn("[HostDB] Await sync room failed:", e);
+      }
+    }
 
     await this.logActivity("CREATE", "ROOM", `เพิ่มห้องพัก ${newRoom.roomNumber} (ชั้น ${newRoom.floor})`, propId);
     return newRoom;
@@ -795,8 +824,22 @@ export const DatabaseService = {
       createdRooms.push(newRoom);
     }
 
-    // 1. Atomically persist to Supabase Cloud and memory cache
-    await this.persistCloud(KEYS.ROOMS, currentAll);
+    // 1. Immediately update in-memory and localStorage
+    setLocal(KEYS.ROOMS, currentAll);
+
+    // 2. Guaranteed Host Machine Persistence: Explicitly await write in ONE single atomic POST
+    if (typeof window !== "undefined") {
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: KEYS.ROOMS, value: currentAll }),
+          keepalive: true,
+        });
+      } catch (err) {
+        console.warn("[HostDB] Batch sync rooms failed:", err);
+      }
+    }
 
     await this.logActivity(
       "CREATE",
@@ -838,8 +881,6 @@ export const DatabaseService = {
       setLocal(KEYS.TENANTS, updatedTenants);
     }
 
-    await this.persistCloud(KEYS.ROOMS, updated);
-
     // Data Coherence: When a room becomes vacant or cleaning, automatically terminate active contracts for that room
     if ((status === "vacant" || status === "cleaning") && targetRoom?.roomNumber) {
       await this.terminateRoomContracts(targetRoom.roomNumber, targetRoom.propertyId);
@@ -859,7 +900,17 @@ export const DatabaseService = {
     }
 
     const updated = allRooms.filter((r) => r.id !== roomId);
-    await this.persistCloud(KEYS.ROOMS, updated);
+    setLocal(KEYS.ROOMS, updated);
+
+    // Clean up any old invoices belonging to the deleted vacant room
+    const allInvoices = this.getAllRawInvoices();
+    const filteredInvoices = allInvoices.filter(
+      (inv) => !(inv.roomNumber === target.roomNumber && (!inv.propertyId || !target.propertyId || inv.propertyId === target.propertyId))
+    );
+    if (filteredInvoices.length !== allInvoices.length) {
+      setLocal(KEYS.INVOICES, filteredInvoices);
+    }
+
     await this.logActivity("DELETE", "ROOM", `ลบห้องพัก ${target?.roomNumber || roomId}`, target?.propertyId);
     return { success: true };
   },
@@ -874,7 +925,8 @@ export const DatabaseService = {
       }
     }
     const updated = allRooms.filter((r) => !roomIds.includes(r.id));
-    await this.persistCloud(KEYS.ROOMS, updated);
+    setLocal(KEYS.ROOMS, updated);
+
     await this.logActivity("DELETE", "ROOM", `ลบห้องพักจำนวน ${roomIds.length} ห้องพร้อมกัน`);
     return { success: true };
   },
@@ -886,7 +938,8 @@ export const DatabaseService = {
         ? { ...r, status: "cleaning" as RoomStatus, currentTenant: undefined, leaseEndDate: undefined }
         : r
     );
-    await this.persistCloud(KEYS.ROOMS, updated);
+    setLocal(KEYS.ROOMS, updated);
+
     await this.logActivity("UPDATE", "ROOM", `สรุปย้ายออกห้อง ID: ${roomId} และส่งต่อแผนกแม่บ้าน`);
     return true;
   },
@@ -976,80 +1029,14 @@ export const DatabaseService = {
     return newTenant;
   },
 
-  /**
- * เปรียบเทียบหมายเลขห้องพักอย่างยืดหยุ่นและชาญฉลาด (เช่น A101 <-> A1, A101 <-> 101, ห้อง 101 <-> 101)
- */
   isRoomNumberMatch(roomA?: string, roomB?: string): boolean {
     if (!roomA || !roomB) return false;
-    const a = roomA.trim().toLowerCase();
-    const b = roomB.trim().toLowerCase();
-    if (a === b) return true;
-
-    const aDigits = a.replace(/\D/g, "");
-    const bDigits = b.replace(/\D/g, "");
-    const aPrefix = (a.match(/^[a-zA-Z]+/)?.[0] || "");
-    const bPrefix = (b.match(/^[a-zA-Z]+/)?.[0] || "");
-
-    if (aPrefix === bPrefix || !aPrefix || !bPrefix) {
-      if (aDigits === bDigits && aDigits !== "") return true;
-
-      const aNum = parseInt(aDigits, 10);
-      const bNum = parseInt(bDigits, 10);
-      if (!isNaN(aNum) && !isNaN(bNum)) {
-        if ((aNum >= 100 && aNum % 100 === bNum) || (bNum >= 100 && bNum % 100 === aNum)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    const cleanA = roomA.replace(/\D/g, "");
+    const cleanB = roomB.replace(/\D/g, "");
+    if (cleanA && cleanB && cleanA === cleanB) return true;
+    return roomA.trim().toLowerCase() === roomB.trim().toLowerCase();
   },
 
-  /**
-   * ค้นหาห้องจาก ROOMS (Room Matrix) โดยตรงอย่างชาญฉลาด
-   */
-  findMatchingRoom(allRooms: Room[], requestedRoom: string, propertyId?: string): Room | null {
-    if (!requestedRoom || !allRooms || allRooms.length === 0) return null;
-
-    const cleanReq = requestedRoom.trim();
-    const lowerReq = cleanReq.toLowerCase();
-    const digitsOnlyReq = cleanReq.replace(/\D/g, "");
-    const letterPrefixReq = (cleanReq.match(/^[a-zA-Z]+/)?.[0] || "").toLowerCase();
-
-    const propFilter = (r: Room) => !propertyId || (r.propertyId || "prop-1") === (propertyId || "prop-1");
-    const filteredRooms = allRooms.filter(propFilter);
-    const roomsToSearch = filteredRooms.length > 0 ? filteredRooms : allRooms;
-
-    // 1. Exact match (case-insensitive)
-    let match = roomsToSearch.find((r) => r.roomNumber.trim().toLowerCase() === lowerReq);
-    if (match) return match;
-
-    // 2. Mapping A101 <-> A1 (Building letter prefix + floor/unit)
-    if (letterPrefixReq && digitsOnlyReq) {
-      const unitNumber = parseInt(digitsOnlyReq, 10);
-      const unitMod = unitNumber >= 100 ? String(unitNumber % 100) : String(unitNumber);
-      const shortForm = `${letterPrefixReq}${unitMod}`.toLowerCase();
-      const fullForm = `${letterPrefixReq}10${unitMod}`.toLowerCase();
-      const standardForm = `${letterPrefixReq}0${unitMod}`.toLowerCase();
-
-      match = roomsToSearch.find((r) => {
-        const rLower = r.roomNumber.trim().toLowerCase();
-        return rLower === shortForm || rLower === fullForm || rLower === standardForm;
-      });
-      if (match) return match;
-    }
-
-    // 3. Mapping A101 -> 101 (User types building letter prefix "A101", but room in DB is "101")
-    if (digitsOnlyReq) {
-      match = roomsToSearch.find((r) => {
-        const rDigits = r.roomNumber.trim().replace(/\D/g, "");
-        return rDigits === digitsOnlyReq && rDigits !== "";
-      });
-      if (match) return match;
-    }
-
-    return null;
-  },
   async bindTenantLineUser(
     propertyId: string,
     roomNumber: string,
@@ -1061,39 +1048,82 @@ export const DatabaseService = {
     const allRooms = this.getAllRawRooms();
     const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
 
-    // 1. ค้นหาห้องจาก ROOMS (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
-    const roomMatch = this.findMatchingRoom(allRooms, cleanRoom, propId);
+    // 1. ค้นหาห้องจากหน้าแผนผัง (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
+    const norm = (num: string) => {
+      const clean = (num || "").trim();
+      return /^\d+$/.test(clean) ? String(Number(clean)) : clean.toLowerCase();
+    };
+    const reqNorm = norm(cleanRoom);
+
+    const roomMatch = allRooms.find(
+      (r) =>
+        (r.propertyId || "prop-1") === (propId || "prop-1") &&
+        (r.roomNumber.trim().toLowerCase() === cleanRoom.toLowerCase() || norm(r.roomNumber) === reqNorm)
+    );
 
     if (!roomMatch) {
-      console.warn(`[DatabaseService] Room not found in ROOMS: requested="${cleanRoom}", propId="${propId}"`);
+      return null; // ไม่มีห้องนี้ในระบบ
+    }
+
+    // 2. หากห้องในหน้าแผนผังว่าง (vacant) หรือกำลังทำความสะอาด (cleaning) โดยไม่มีผู้เช่าลงทะเบียน
+    if ((roomMatch.status === "vacant" || roomMatch.status === "cleaning") && !roomMatch.currentTenant) {
+      // ปลดสิทธิ์ผู้เช่าคนเก่าทั้งหมดที่เคยผูกกับห้องนี้ เพื่อป้องกันไม่ให้ข้อมูลคนเก่ายังค้างในห้อง
+      const detached = allTenants.map((t) => {
+        if ((t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") && (t.roomNumber || "").trim() === cleanRoom) {
+          return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
+        }
+        return t;
+      });
+      setLocal(KEYS.TENANTS, detached);
       return null;
     }
 
-    const canonicalRoomNumber = roomMatch.roomNumber;
+    // 3. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง (currentTenant) และทะเบียนผู้เช่าเดิมเป็นหลัก (อัปเดตตัวเดิม ไม่สร้างซ้ำ)
+    const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${cleanRoom}`;
+    const existingTenantRecord = allTenants.find(
+      (t) =>
+        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+        ((roomMatch!.currentTenant?.id && t.id === roomMatch!.currentTenant.id) ||
+          (t.roomNumber || "").trim() === cleanRoom ||
+          t.roomId === roomMatch!.id ||
+          t.fullName.trim() === activeName.trim())
+    );
 
-    // 2. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง ROOMS (currentTenant) เป็นหลัก
-    const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${canonicalRoomNumber}`;
-    const activePhone = roomMatch.currentTenant?.phone || "-";
-    const activeIdCard = roomMatch.currentTenant?.idCard || "-";
-    const tenantId = roomMatch.currentTenant?.id || `t-${roomMatch.propertyId || propId}-${canonicalRoomNumber}`;
+    const activePhone =
+      (existingTenantRecord?.phone && existingTenantRecord.phone !== "-" ? existingTenantRecord.phone : undefined) ||
+      (roomMatch.currentTenant?.phone && roomMatch.currentTenant.phone !== "-" ? roomMatch.currentTenant.phone : undefined) ||
+      "-";
+    const activeIdCard =
+      (existingTenantRecord?.idCard && existingTenantRecord.idCard !== "-" ? existingTenantRecord.idCard : undefined) ||
+      (roomMatch.currentTenant?.idCard && roomMatch.currentTenant.idCard !== "-" ? roomMatch.currentTenant.idCard : undefined) ||
+      "-";
+    const tenantId =
+      existingTenantRecord?.id ||
+      roomMatch.currentTenant?.id ||
+      `t-${roomMatch.propertyId || "prop-1"}-${cleanRoom}`;
 
-    // 3. จัดการรายการ TENANTS: อัปเดตข้อมูลผู้เช่าให้ตรงกับ ROOMS
+    // 4. แทนสิทธิ์ (Replace Rights): ปลดสิทธิ์ผู้เช่าคนเดิมที่มีชื่อไม่ตรงกันออกจากห้องนี้
     const updatedTenants = allTenants.map((t) => {
       if (
-        (t.propertyId || "prop-1") === (roomMatch.propertyId || "prop-1") &&
-        (t.roomNumber || "").trim().toLowerCase() === canonicalRoomNumber.toLowerCase() &&
+        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+        (t.roomNumber || "").trim() === cleanRoom &&
         t.id !== tenantId &&
         t.fullName.trim() !== activeName.trim()
       ) {
+        // คนเก่าถูกปลดสิทธิ์ออกจากห้องนี้
         return { ...t, roomNumber: undefined, roomId: undefined, lineUserId: undefined };
       }
       return t;
     });
 
+    // 5. บันทึก / อัปเดตข้อมูลผู้เช่าคนปัจจุบันที่ผูกกับห้องนี้ (อัปเดตแถวเดิม ไม่สร้างแถวซ้ำ)
     const currentTenantIdx = updatedTenants.findIndex(
       (t) =>
-        (t.propertyId || "prop-1") === (roomMatch.propertyId || "prop-1") &&
-        (t.id === tenantId || (t.roomNumber || "").trim().toLowerCase() === canonicalRoomNumber.toLowerCase())
+        (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
+        (t.id === tenantId ||
+          (t.roomNumber || "").trim() === cleanRoom ||
+          t.roomId === roomMatch!.id ||
+          t.fullName.trim() === activeName.trim())
     );
 
     const targetTenant: Tenant = {
@@ -1102,7 +1132,7 @@ export const DatabaseService = {
       id: tenantId,
       propertyId: roomMatch.propertyId || propId,
       roomId: roomMatch.id,
-      roomNumber: canonicalRoomNumber,
+      roomNumber: cleanRoom,
       fullName: activeName,
       phone: activePhone,
       idCard: activeIdCard,
@@ -1131,9 +1161,9 @@ export const DatabaseService = {
     );
     setLocal(KEYS.TENANTS, dedupedTenants);
 
-    // 4. อัปเดตสถานะห้องใน ROOMS (Room Matrix) โดยตรงให้ผูกกับ LINE สำเร็จ
+    // 6. อัปเดตสถานะห้องในหน้าแผนผัง (Room Matrix) ให้มี currentTenant ที่ผูก LINE สำเร็จ
     const updatedRooms = allRooms.map((r) => {
-      if (r.id === roomMatch.id || r.roomNumber.trim().toLowerCase() === canonicalRoomNumber.toLowerCase()) {
+      if ((r.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") && r.roomNumber.trim() === cleanRoom) {
         return {
           ...r,
           status: (r.status === "cleaning" ? "cleaning" : "occupied") as RoomStatus,
@@ -1147,21 +1177,17 @@ export const DatabaseService = {
     });
     setLocal(KEYS.ROOMS, updatedRooms);
 
-    // 5. บันทึกข้อมูลแบบ Realtime Sync ไปยังฐานข้อมูลทันที
-    await this.persistBatch({
-      [KEYS.ROOMS]: updatedRooms,
-      [KEYS.TENANTS]: updatedTenants,
-    });
-
-    await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${canonicalRoomNumber} (${activeName})`, propId);
+    await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${activeName})`, propId);
     return targetTenant;
   },
 
   async getTenantByLineUser(lineUserId: string, propertyId?: string): Promise<Tenant | null> {
     if (!lineUserId) return null;
     const propId = propertyId || this.getActivePropertyId() || "prop-1";
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const directMatch = allTenants.find((t) => (t.propertyId || "prop-1") === propId && t.lineUserId === lineUserId);
+    if (directMatch) return directMatch;
 
-    // 1. ค้นหาจาก ROOMS (Room Matrix) เป็นความจริงหลัก (Single Source of Truth)
     const allRooms = this.getAllRawRooms();
     const roomMatch = allRooms.find(
       (r) => (r.propertyId || "prop-1") === propId && r.currentTenant?.lineUserId === lineUserId
@@ -1173,22 +1199,6 @@ export const DatabaseService = {
         roomNumber: roomMatch.roomNumber,
       };
     }
-
-    // 2. ค้นหาจากห้องข้าม Property (กรณีมีหลายสาขา)
-    const crossRoomMatch = allRooms.find((r) => r.currentTenant?.lineUserId === lineUserId);
-    if (crossRoomMatch && crossRoomMatch.currentTenant) {
-      return {
-        ...crossRoomMatch.currentTenant,
-        propertyId: crossRoomMatch.propertyId || propId,
-        roomNumber: crossRoomMatch.roomNumber,
-      };
-    }
-
-    // 3. Fallback: ค้นหาจากรายการผู้เช่า (TENANTS)
-    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const directMatch = allTenants.find((t) => t.lineUserId === lineUserId);
-    if (directMatch) return directMatch;
-
     return null;
   },
 
@@ -1230,14 +1240,14 @@ export const DatabaseService = {
     const updated = allRooms.map((r) =>
       r.id === roomId
         ? {
-          ...r,
-          status: "occupied" as RoomStatus,
-          currentTenant: enrichedTenant,
-          leaseEndDate: leaseEndDate || r.leaseEndDate || "2027-10-31",
-        }
+            ...r,
+            status: "occupied" as RoomStatus,
+            currentTenant: enrichedTenant,
+            leaseEndDate: leaseEndDate || r.leaseEndDate || "2027-10-31",
+          }
         : r
     );
-    await this.persistCloud(KEYS.ROOMS, updated);
+    setLocal(KEYS.ROOMS, updated);
     return true;
   },
 
@@ -1405,13 +1415,13 @@ export const DatabaseService = {
     const updated = allInvoices.map((inv) =>
       inv.id === invoiceId
         ? {
-          ...inv,
-          status: resolvedStatus,
-          paidAmount: actualPaid,
-          remainingAmount: remaining,
-          paidAt: actualPaid > 0 ? new Date().toLocaleString("th-TH") : inv.paidAt,
-          ...(extraData || {}),
-        }
+            ...inv,
+            status: resolvedStatus,
+            paidAmount: actualPaid,
+            remainingAmount: remaining,
+            paidAt: actualPaid > 0 ? new Date().toLocaleString("th-TH") : inv.paidAt,
+            ...(extraData || {}),
+          }
         : inv
     );
     setLocal(KEYS.INVOICES, updated);
@@ -1597,14 +1607,14 @@ export const DatabaseService = {
     const updated = all.map((c) =>
       c.id === id
         ? {
-          ...c,
-          signatureUrl,
-          status: "active" as ContractItem["status"],
-          signedAt: new Date().toLocaleString("th-TH"),
-        }
+            ...c,
+            signatureUrl,
+            status: "active" as ContractItem["status"],
+            signedAt: new Date().toLocaleString("th-TH"),
+          }
         : c
     );
-    await this.persistCloud(KEYS.CONTRACTS, updated);
+    setLocal(KEYS.CONTRACTS, updated);
     await this.logActivity("UPDATE", "CONTRACT", `ลงนามสัญญาเช่าอิเล็กทรอนิกส์ (E-Signature) เรียบร้อยแล้ว`);
     return true;
   },
@@ -1705,10 +1715,7 @@ export const DatabaseService = {
       }
       return r;
     });
-    await this.persistBatch({
-      [KEYS.DAILY_BOOKINGS]: updatedBookings,
-      [KEYS.ROOMS]: updatedRooms,
-    });
+    setLocal(KEYS.ROOMS, updatedRooms);
 
     await this.logActivity("CREATE", "ROOM", `บันทึกการจองรายวันห้อง ${booking.roomNumber} (${booking.guestName})`, propId);
     return item;
@@ -1732,9 +1739,6 @@ export const DatabaseService = {
       setLocal(KEYS.ROOMS, updatedRooms);
     }
 
-    const payload: Record<string, any> = { [KEYS.DAILY_BOOKINGS]: updated };
-    if (updatedRooms) payload[KEYS.ROOMS] = updatedRooms;
-    await this.persistBatch(payload);
     return true;
   },
 
@@ -1779,10 +1783,10 @@ export const DatabaseService = {
     const updated = all.map((r) =>
       r.id === id
         ? {
-          ...r,
-          status,
-          completedAt: status === "completed" ? new Date().toLocaleString("th-TH") : r.completedAt,
-        }
+            ...r,
+            status,
+            completedAt: status === "completed" ? new Date().toLocaleString("th-TH") : r.completedAt,
+          }
         : r
     );
     setLocal(KEYS.REPAIRS, updated);
@@ -1970,7 +1974,7 @@ export const DatabaseService = {
             water_rate: updated.waterRate,
           })
           .eq("name", updated.branchName || "วิภาวรรณ 1")
-          .then(() => { });
+          .then(() => {});
 
         supabase
           .from("properties")
@@ -2024,9 +2028,6 @@ export const DatabaseService = {
         console.warn("[Supabase Cloud] Relational sync skipped:", e?.message);
       }
     }
-
-    // Direct Cloud Persistence
-    await this.persistCloud(branchSettingsKey, updated);
 
     await this.logActivity(
       "UPDATE",
@@ -2097,7 +2098,7 @@ export const DatabaseService = {
         .from(table)
         .delete()
         .neq("id", "00000000-0000-0000-0000-000000000000")
-        .then(() => { });
+        .then(() => {});
     }
 
     return true;
