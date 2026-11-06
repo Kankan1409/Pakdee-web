@@ -385,7 +385,43 @@ export function InvoicesBillingView({
               </button>
             </div>
 
-            {/* Bank Slip Card */}
+            {/* Real Slip Image or Card */}
+            {selectedSlipInvoice.slipUrl && selectedSlipInvoice.slipUrl.startsWith("/slips/") ? (
+              <div className="bg-slate-950/90 rounded-2xl p-3 border border-slate-800 flex flex-col justify-between text-white space-y-2 mb-3">
+                <div className="w-full flex items-center justify-between text-[11px] pb-1.5 border-b border-white/10">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+                    <span>ไฟล์สลิปจริงที่แนบมา</span>
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                    selectedSlipInvoice.slipStatus === "action_needed"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  }`}>
+                    {selectedSlipInvoice.slipStatus === "action_needed" ? "ตรวจไม่ผ่าน" : "ยืนยันผ่าน 100%"}
+                  </span>
+                </div>
+                <div className="relative w-full flex items-center justify-center py-1 max-h-[380px] overflow-hidden rounded-xl bg-black/40">
+                  <img
+                    src={selectedSlipInvoice.slipUrl}
+                    alt="รูปภาพสลิปจริง"
+                    className="max-h-[360px] w-auto object-contain rounded-lg shadow-md hover:scale-105 transition-transform cursor-pointer"
+                    onClick={() => window.open(selectedSlipInvoice.slipUrl, "_blank")}
+                    title="คลิกเพื่อเปิดดูรูปขนาดเต็ม"
+                  />
+                </div>
+                <div className="w-full space-y-1 text-[11px] bg-white/5 p-2.5 rounded-xl border border-white/10">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">ธนาคาร:</span>
+                    <span className="font-bold text-emerald-400">{selectedSlipInvoice.slipBank || "ธนาคารพาณิชย์"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">รหัสธุรกรรม (Ref):</span>
+                    <span className="font-mono text-amber-300 font-bold">{selectedSlipInvoice.slipTransRef || "-"}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="bg-gradient-to-b from-emerald-600 via-teal-700 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3 font-sans relative overflow-hidden">
               <div className="flex items-center justify-between border-b border-white/20 pb-2">
                 <div className="flex items-center gap-1.5">
@@ -432,6 +468,7 @@ export function InvoicesBillingView({
                 <span>AI ตรวจสอบความถูกต้องและจับคู่ยอดเงินบิลสำเร็จ 100%</span>
               </div>
             </div>
+            )}
 
             <div className="flex items-center justify-end gap-2.5 mt-4 pt-3 border-t border-[var(--border)]">
               <button

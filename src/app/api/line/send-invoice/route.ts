@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { invoiceId, propertyId, mode } = body;
 
+    await DatabaseService.init();
     const activePropId = propertyId || DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);

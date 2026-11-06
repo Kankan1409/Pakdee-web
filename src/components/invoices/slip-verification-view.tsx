@@ -61,10 +61,10 @@ function SlipImagePreview({ url }: { url?: string }) {
 
 export function SlipVerificationView({
   invoices = [],
-  onVerifySlip = () => {},
-  onRejectSlip = () => {},
+  onVerifySlip = () => { },
+  onRejectSlip = () => { },
   onOpenInvoiceModal,
-  onShowToast = () => {},
+  onShowToast = () => { },
 }: SlipVerificationViewProps) {
   const [activeTab, setActiveTab] = useState<"all" | "pending" | "verified">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -333,22 +333,20 @@ export function SlipVerificationView({
             <button
               type="button"
               onClick={() => setActiveTab("all")}
-              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                activeTab === "all"
+              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer ${activeTab === "all"
                   ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xs"
                   : "text-[var(--muted)] hover:text-[var(--foreground)]"
-              }`}
+                }`}
             >
               ทั้งหมด ({invoices.length})
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("pending")}
-              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
-                activeTab === "pending"
+              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${activeTab === "pending"
                   ? "bg-amber-500 text-white shadow-2xs"
                   : "text-[var(--muted)] hover:text-[var(--foreground)]"
-              }`}
+                }`}
             >
               <span>รอตรวจสอบ</span>
               <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">
@@ -358,11 +356,10 @@ export function SlipVerificationView({
             <button
               type="button"
               onClick={() => setActiveTab("verified")}
-              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
-                activeTab === "verified"
+              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${activeTab === "verified"
                   ? "bg-emerald-600 text-white shadow-2xs"
                   : "text-[var(--muted)] hover:text-[var(--foreground)]"
-              }`}
+                }`}
             >
               <span>ตรวจผ่านแล้ว</span>
               <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">
@@ -436,11 +433,10 @@ export function SlipVerificationView({
                           <button
                             type="button"
                             onClick={() => setSelectedSlipInvoice(inv)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition cursor-pointer font-bold text-[11px] ${
-                              inv.slipStatus === "action_needed"
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition cursor-pointer font-bold text-[11px] ${inv.slipStatus === "action_needed"
                                 ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30"
                                 : "bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/25"
-                            }`}
+                              }`}
                             title="คลิกเพื่อดูสลิปหลักฐานฉบับเต็ม"
                           >
                             <ImageIcon className={`w-3.5 h-3.5 ${inv.slipStatus === "action_needed" ? "text-rose-500" : "text-blue-500"}`} />
@@ -591,8 +587,91 @@ export function SlipVerificationView({
 
             {/* Content: Side-by-Side (Slip on Left, Invoice on Right) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              {/* Left: Realistic Simulated Bank Slip */}
-              <SlipImagePreview url={selectedSlipInvoice.slipUrl} />
+              {/* Left: Real Bank Slip Image or Decoded Card */}
+              {selectedSlipInvoice.slipUrl && selectedSlipInvoice.slipUrl.startsWith("/slips/") ? (
+                <div className="bg-slate-950/90 rounded-2xl p-3 border border-slate-800 flex flex-col justify-between text-white space-y-2 relative overflow-hidden">
+                  <div className="w-full flex items-center justify-between text-[11px] pb-1.5 border-b border-white/10">
+                    <span className="font-bold text-slate-300 flex items-center gap-1">
+                      <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+                      <span>ไฟล์สลิปจริงที่แนบมา</span>
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${selectedSlipInvoice.slipStatus === "action_needed"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                        : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      }`}>
+                      {selectedSlipInvoice.slipStatus === "action_needed" ? "ตรวจไม่ผ่าน" : "ยืนยันผ่าน 100%"}
+                    </span>
+                  </div>
+
+                  <div className="relative w-full flex items-center justify-center py-1 max-h-[360px] overflow-hidden rounded-xl bg-black/40">
+                    <img
+                      src={selectedSlipInvoice.slipUrl}
+                      alt="รูปภาพสลิปจริง"
+                      className="max-h-[350px] w-auto object-contain rounded-lg shadow-md hover:scale-105 transition-transform cursor-pointer"
+                      onClick={() => window.open(selectedSlipInvoice.slipUrl, "_blank")}
+                      title="คลิกเพื่อเปิดดูรูปขนาดเต็ม"
+                    />
+                  </div>
+
+                  <div className="w-full space-y-1 text-[11px] bg-white/5 p-2.5 rounded-xl border border-white/10">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">ธนาคาร:</span>
+                      <span className="font-bold text-emerald-400">{selectedSlipInvoice.slipBank || "ธนาคารพาณิชย์"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">รหัสธุรกรรม (Ref):</span>
+                      <span className="font-mono text-amber-300 font-bold">{selectedSlipInvoice.slipTransRef || "-"}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gradient-to-b from-emerald-600 via-teal-700 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3 font-sans relative overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-white/20 pb-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-6 h-6 rounded-full bg-white text-emerald-700 font-bold flex items-center justify-center text-xs">
+                        K
+                      </div>
+                      <span className="font-bold text-xs tracking-tight">K PLUS • ธ.กสิกรไทย</span>
+                    </div>
+                    <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
+                      โอนเงินสำเร็จ
+                    </span>
+                  </div>
+
+                  <div className="text-center py-2">
+                    <div className="text-[11px] text-emerald-100">จำนวนเงินโอน</div>
+                    <div className="text-2xl font-black font-mono tracking-tight mt-0.5">
+                      ฿{(selectedSlipInvoice.paidAmount || selectedSlipInvoice.totalAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs bg-black/20 p-3 rounded-xl border border-white/10">
+                    <div className="flex justify-between">
+                      <span className="text-emerald-100 text-[10px]">ผู้โอน:</span>
+                      <span className="font-bold">{selectedSlipInvoice.tenantName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-emerald-100 text-[10px]">ผู้รับโอน:</span>
+                      <span className="font-bold">หอพัก พักดี แมนชั่น (PromptPay)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>
+                      <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "26 ต.ค. 2026 09:38 น."}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-emerald-100 text-[10px]">รหัสอ้างอิง:</span>
+                      <span className="font-mono text-[10px] text-amber-200">
+                        {selectedSlipInvoice.slipTransRef || `014310${selectedSlipInvoice.roomNumber}882`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-center text-white/70 flex items-center justify-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>สแกนตรวจสอบลายเซ็นดิจิทัล BScanC ผ่าน 100%</span>
+                  </div>
+                </div>
+              )}
 
               {/* Right: Invoice Items Comparison */}
               <div className="bg-[var(--subtle)] p-4 rounded-2xl border border-[var(--border)] flex flex-col justify-between space-y-3">
@@ -758,11 +837,10 @@ export function SlipVerificationView({
                       if (match) setUploadedAmount(match.totalAmount);
                       setUploadedRef(`014310${Date.now().toString().slice(-8)}`);
                     }}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
-                      testMode === "valid"
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${testMode === "valid"
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs"
                         : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
-                    }`}
+                      }`}
                   >
                     ✓ สลิปปกติ
                   </button>
@@ -774,11 +852,10 @@ export function SlipVerificationView({
                         setUploadedRef(invoicesWithRef[0].slipTransRef || "0143105829104829");
                       }
                     }}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
-                      testMode === "duplicate"
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${testMode === "duplicate"
                         ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500 shadow-xs"
                         : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
-                    }`}
+                      }`}
                   >
                     ⚠️ ทดสอบสลิปซ้ำ
                   </button>
@@ -788,11 +865,10 @@ export function SlipVerificationView({
                       setTestMode("fake");
                       setUploadedAmount(500);
                     }}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
-                      testMode === "fake"
+                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${testMode === "fake"
                         ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs"
                         : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
-                    }`}
+                      }`}
                   >
                     ❌ ทดสอบสลิปปลอม
                   </button>

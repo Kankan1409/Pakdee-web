@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("x-line-signature") || "";
 
+    // 0. ซิงค์ข้อมูลล่าสุดจาก Supabase Cloud โดยตรง
+    await DatabaseService.init();
+
     // 1. ดึงการตั้งค่าของสาขาปัจจุบัน (รวม Token และ Secret)
     const activePropId = DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
@@ -93,13 +96,16 @@ export async function POST(req: NextRequest) {
         if (message.type === "text") {
           const userText = (message.text || "").trim();
 
-          // 1. ตรวจสอบการผูกห้องพัก (เช่น "101", "ห้อง 101", "ผูก 101", "ผูกห้อง 101", "room 101")
+          // 1. ตรวจสอบการผูกห้องพัก (เช่น "A101", "101", "A1", "ห้อง A101", "ผูก A101", "room A101")
           const cleanBindingText = userText.replace(/^ผูก(?:ห้อง|บัญชี)?\s*/i, "").trim();
-          const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?\s*([a-zA-Z0-9_-]+)$/i);
+          const roomMatch = cleanBindingText.match(/^(?:ห้องพัก|ห้อง|room)?\s*([a-zA-Z0-9_-]{1,6})$/i);
           const isExplicitBind = userText.startsWith("ผูก") || userText.startsWith("ห้อง") || /^[rR]oom/i.test(userText);
+          const isAlphanumericRoom =
+            /^[a-zA-Z0-9_-]{1,6}$/i.test(cleanBindingText) &&
+            !/^(ขอบิล|เช็คยอด|แจ้งซ่อม|ติดต่อ|กฎ|ช่วย|เมนู|แอร์|น้ำ|ไฟ)$/i.test(cleanBindingText);
 
-          // Accept bare room codes such as 101, A1 and A-101 as well as explicit commands.
-          if (roomMatch && (isExplicitBind || /^(?=.*\d)[a-zA-Z0-9_-]+$/.test(cleanBindingText))) {
+          // รับทั้งชื่อห้องตรงๆ เช่น "A101", "101", "A1" หรือมีคำว่าห้อง/ผูก
+          if (roomMatch && (isExplicitBind || isAlphanumericRoom)) {
             const requestedRoom = roomMatch[1];
             console.log(`[LINE-WEBHOOK] Attempting room binding: room=${requestedRoom} user=${userId}`);
 
@@ -113,7 +119,11 @@ export async function POST(req: NextRequest) {
             if (boundTenant) {
               const invoices = await DatabaseService.getInvoices(activePropId);
               const unpaidForRoom = invoices.filter(
-                (i) => i.roomNumber === boundTenant.roomNumber && i.status !== "paid"
+                (i) =>
+                  (i.roomNumber === boundTenant.roomNumber ||
+                    DatabaseService.isRoomNumberMatch(i.roomNumber, boundTenant.roomNumber) ||
+                    DatabaseService.isRoomNumberMatch(i.roomNumber, requestedRoom)) &&
+                  i.status !== "paid"
               );
 
               const replyTexts: any[] = [
@@ -165,14 +175,17 @@ export async function POST(req: NextRequest) {
 
             const invoices = await DatabaseService.getInvoices(activePropId);
             const unpaid = invoices.find(
-              (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+              (i) =>
+                (i.roomNumber === tenant.roomNumber ||
+                  DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
+                i.status !== "paid"
             );
 
             if (unpaid) {
               let qrUrl = "";
               try {
                 qrUrl = generatePromptPayQRCodeUrl(promptpayNumber, unpaid.totalAmount);
-              } catch (e) {}
+              } catch (e) { }
 
               const invFlex = buildInvoiceFlexMessage(unpaid, property, settings, qrUrl);
               await replyLineMessage(channelAccessToken, replyToken, [invFlex]);
@@ -262,10 +275,13 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // ค้นหาบิลค้างชำระของห้องนี้
+          // ค้นหาบิลค้างชำระของห้องนี้ (ยึด ROOMS เป็นหลัก และเทียบเบอร์ห้องอย่างยืดหยุ่น)
           const invoices = await DatabaseService.getInvoices(activePropId);
           const unpaid = invoices.find(
-            (i) => i.roomNumber === tenant.roomNumber && i.status !== "paid"
+            (i) =>
+              (i.roomNumber === tenant.roomNumber ||
+                DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
+              i.status !== "paid"
           );
 
           if (!unpaid) {

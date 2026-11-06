@@ -26,13 +26,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!["all", "floor", "room"].includes(targetType) ||
-        (targetType !== "all" && !String(targetValue || "").trim())) {
-      return NextResponse.json({ error: "กรุณาเลือกกลุ่มผู้รับให้ถูกต้อง" }, { status: 400 });
-    }
-    if (!(await DatabaseService.init())) {
-      return NextResponse.json({ error: "โหลดข้อมูลผู้เช่าปัจจุบันไม่สำเร็จ กรุณาลองใหม่" }, { status: 503 });
-    }
+    await DatabaseService.init();
     const activePropId = propertyId || DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
