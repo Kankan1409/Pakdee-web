@@ -54,6 +54,8 @@ QA Openhands/
 db_live_backup.json
 *backup*.json
 data/*_snapshot*.json
+/data/
+*.json.bak
 
 # Excel files in root
 /*.xlsx
