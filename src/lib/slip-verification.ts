@@ -261,6 +261,29 @@ export class SlipVerificationService {
   }
 }
 
+/**
+ * สแกนหรือดึงรหัส QR Code (EMVCo / BScanC) จากข้อมูล Buffer ของภาพสลิป
+ * หากพบข้อมูล payload จะคืนค่าสตริงออกมา หากไม่พบจะคืนค่า null เพื่อให้ระบบตรวจสอบผ่านรูปภาพแทน
+ */
+export function extractQrFromImage(buffer: Buffer): string | null {
+  if (!buffer || buffer.length === 0) return null;
+  try {
+    const rawString = buffer.toString("latin1");
+    // ค้นหารูปแบบ EMVCo QR Code Payload มาตรฐานธนาคารไทย (000201...)
+    const emvMatch = rawString.match(/000201\d{20,}/);
+    if (emvMatch) return emvMatch[0];
+
+    // ค้นหารหัส Mini QR / BScanC URL หรือ Payload
+    const bscancMatch = rawString.match(/https?:\/\/[^\s"'<>]+(?:bscanc|promptpay|qr)[^\s"'<>]+/i);
+    if (bscancMatch) return bscancMatch[0];
+
+    return null;
+  } catch (err) {
+    console.warn("[SLIP-VERIFY] extractQrFromImage warning:", err);
+    return null;
+  }
+}
+
 export interface Slip2GoVerifyResult {
   success: boolean;
   transRef?: string;
