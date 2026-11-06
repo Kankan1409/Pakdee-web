@@ -84,8 +84,15 @@ export function TenantsListView({
         matchingBooking?.roomNumber ||
         (noteRoomMatch ? noteRoomMatch[1] : "");
 
+      const matchingContract = contracts.find(
+        (c) =>
+          (c.tenantName && c.tenantName.trim().toLowerCase() === t.fullName.trim().toLowerCase()) ||
+          (t.phone && c.tenantPhone && c.tenantPhone.replace(/\D/g, "") === t.phone.replace(/\D/g, "")) ||
+          (t.roomNumber && c.roomNumber === t.roomNumber)
+      );
+
       const finalIdCard = t.idCard || matchingBooking?.idCard || "";
-      const finalPlate = t.vehiclePlate || matchingBooking?.vehiclePlate || "";
+      const finalPlate = t.vehiclePlate || matchingBooking?.vehiclePlate || (matchingContract as any)?.vehiclePlate || "";
 
       combined.push({
         id: t.id,
@@ -254,7 +261,7 @@ export function TenantsListView({
               <th className="py-3 px-3">ข้อมูลสัญญา / การเข้าพัก</th>
               <th className="py-3 px-3">เลขบัตรประชาชน</th>
               <th className="py-3 px-3">มัดจำ</th>
-              <th className="py-3 px-3">LINE / ทะเบียนรถ</th>
+              <th className="py-3 px-3">ทะเบียนรถ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
@@ -291,9 +298,7 @@ export function TenantsListView({
                     {t.depositAmount ? formatCurrency(t.depositAmount) : "-"}
                   </td>
                   <td className="py-3 px-3 text-[var(--muted)] text-[11px]">
-                    {t.lineId ? `LINE: ${t.lineId}` : ""}
-                    {t.vehiclePlate ? ` • รถ: ${t.vehiclePlate}` : ""}
-                    {!t.lineId && !t.vehiclePlate ? "-" : ""}
+                    {t.vehiclePlate || "-"}
                   </td>
                 </tr>
               ))
