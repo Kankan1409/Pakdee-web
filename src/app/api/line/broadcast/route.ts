@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    await DatabaseService.init();
     const activePropId = propertyId || DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);

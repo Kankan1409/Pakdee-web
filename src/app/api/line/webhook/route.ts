@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("x-line-signature") || "";
 
+    // 0. ซิงค์ข้อมูลล่าสุดจาก Supabase Cloud โดยตรง
+    await DatabaseService.init();
+
     // 1. ดึงการตั้งค่าของสาขาปัจจุบัน (รวม Token และ Secret)
     const activePropId = DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
