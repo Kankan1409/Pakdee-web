@@ -59,6 +59,23 @@ test('base64 endpoint sends identical amount, recipient and duplicate conditions
   assert.equal(request.body.payload.checkCondition.checkReceiver[0].accountNumber,'0812345678');
   assert.match(request.body.payload.imageBase64,/^data:image\/jpeg;base64,/);
 });
+test('13-digit PromptPay National ID includes Slip2Go accountType 02003 in checkReceiver', async () => {
+  let request;
+  const api = load('src/lib/slip2go.ts', { fetch: async (url, init) => {
+    request = { url, body: JSON.parse(init.body) };
+    return { ok: true, status: 200, json: async () => valid };
+  }});
+  const res = await api.verifyWithSlip2Go('test', {
+    qrCode: 'qr-test',
+    expectedAmount: 200,
+    receiverAccount: '1104000063453',
+    receiverAccounts: ['1104000063453', '012-3-45678-9'],
+  });
+  assert.equal(res.success, true);
+  const receivers = request.body.payload.checkCondition.checkReceiver;
+  assert.ok(receivers.some(r => r.accountType === '02003' && r.accountNumber === '1104000063453'));
+  assert.ok(receivers.some(r => r.accountNumber === '0123456789'));
+});
 test('network failure cannot approve', async () => {
   const api=load('src/lib/slip2go.ts',{fetch:async()=>{throw Error('timeout');}});
   assert.equal((await api.verifyWithSlip2Go('test',options)).success,false);
