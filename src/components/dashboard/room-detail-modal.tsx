@@ -602,23 +602,52 @@ export function RoomDetailModal({
                     <span>ยืนยันห้องสะอาดแล้ว</span>
                   </button>
                 ) : isDaily ? (
-                  // สำหรับห้องพักรายวัน: เปิด DailyCheckoutModal (รูปที่ 2) เสมอ! ห้ามไปหน้าระบบสรุปย้ายออก
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const bookingId = activeDailyBooking?.id || `b-${room.roomNumber}-${Date.now()}`;
-                      const keyDep = activeDailyBooking?.keyDeposit ?? activeDailyBooking?.roomDeposit ?? 500;
-                      if (onDailyCheckOut) {
-                        onDailyCheckOut(bookingId, room.roomNumber, Number(keyDep));
-                      }
-                      onClose();
-                    }}
-                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-sm shadow-emerald-600/20"
-                    title="เช็คเอาท์ & บันทึกรับเงินห้องพักรายวัน (เปิดหน้าต่างรับเงินรายวัน)"
-                  >
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>เช็คเอาท์ & รับเงินรายวัน</span>
-                  </button>
+                  // สำหรับห้องพักรายวัน: ต้องเป็นปุ่ม Check-in ก่อน เมื่อเช็คอินแล้วจึงเป็น Check-out ไปตาม Step!
+                  (() => {
+                    const isCheckedIn =
+                      activeDailyBooking?.status === "checked_in" ||
+                      room.notes?.includes("เช็คอินแล้ว") ||
+                      room.notes?.includes("เข้าพักแล้ว");
+
+                    if (!isCheckedIn) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const bookingId = activeDailyBooking?.id || `b-${room.roomNumber}-${Date.now()}`;
+                            if (onDailyCheckIn) {
+                              onDailyCheckIn(bookingId, room.roomNumber);
+                            }
+                            onClose();
+                          }}
+                          className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition cursor-pointer shadow-sm shadow-blue-600/20"
+                          title="เช็คอินเข้าพักห้องรายวัน"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>เช็คอินเข้าพัก (Check-in)</span>
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const bookingId = activeDailyBooking?.id || `b-${room.roomNumber}-${Date.now()}`;
+                          const keyDep = activeDailyBooking?.keyDeposit ?? activeDailyBooking?.roomDeposit ?? 500;
+                          if (onDailyCheckOut) {
+                            onDailyCheckOut(bookingId, room.roomNumber, Number(keyDep));
+                          }
+                          onClose();
+                        }}
+                        className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition cursor-pointer shadow-sm shadow-rose-600/20"
+                        title="เช็คเอาท์ & คืนเงินมัดจำห้องพักรายวัน"
+                      >
+                        <DoorOpen className="w-3.5 h-3.5" />
+                        <span>เช็คเอาท์ & คืนเงินมัดจำ</span>
+                      </button>
+                    );
+                  })()
                 ) : isOccupiedMonthly ? (
                   // สำหรับห้องพักรายเดือน: ไปหน้าระบบสรุปย้ายออก & คืนเงินประกัน
                   <button

@@ -1090,7 +1090,7 @@ export async function loadFromRelationalTables(
       const roomNumber =
         existingInv?.roomNumber ||
         (iRow.room_id ? uuidToRoomNumber.get(String(iRow.room_id).toLowerCase()) : "") ||
-        String(iRow.invoice_number || "").split("-").pop() ||
+        (() => { const p = String(iRow.invoice_number || "").split("-"); return (p.length >= 4 && p[1] === "D") ? p[3] : p.length >= 3 ? p[2] : p.pop() || ""; })() ||
         "";
 
       return {
