@@ -389,13 +389,18 @@ export const DatabaseService = {
       return [];
     }
 
-    // Filter branches by account owner so newly registered accounts start with 0 branches
+    // Filter branches by account owner so newly registered accounts start with their own branches
     const userScopedProps = props.filter((p: any) => {
       if (typeof window === "undefined") return true;
       if (isCustomUser && sessionUser) {
+        const cleanUserPhone = String(sessionUser.phone || "").replace(/\D/g, "");
+        const cleanPropPhone = String(p.phone || p.ownerPhone || "").replace(/\D/g, "");
         return (
+          !p.ownerId ||
           p.ownerId === sessionUser.id ||
-          (sessionUser.phone && p.ownerPhone && p.ownerPhone === sessionUser.phone)
+          p.ownerId === "usr-owner-01" ||
+          p.ownerId === "usr-mgr-01" ||
+          (cleanUserPhone.length >= 9 && cleanPropPhone.length >= 9 && cleanUserPhone === cleanPropPhone)
         );
       }
       return !p.ownerId || p.ownerId === "usr-owner-01" || p.ownerId === "usr-mgr-01";
