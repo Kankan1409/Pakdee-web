@@ -26,19 +26,29 @@ export function TenantsListView({
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const { combinedList, filteredList, monthlyCount, dailyCount } = useMemo(() => {
-    // Map room numbers to tenants (Multi-source: rooms, contracts, invoices)
+    // Map room numbers and room statuses to tenants (Multi-source: rooms, contracts, invoices)
     const tenantRoomMap = new Map<string, string>();
+    const roomStatusMap = new Map<string, string>();
+
     rooms.forEach((r) => {
+      if (r.roomNumber) {
+        roomStatusMap.set(r.roomNumber, r.status);
+      }
+      if (r.id) {
+        roomStatusMap.set(r.id, r.status);
+      }
       if (r.currentTenant) {
-        tenantRoomMap.set(r.currentTenant.id, r.roomNumber);
-        tenantRoomMap.set(r.currentTenant.fullName, r.roomNumber);
+        if (r.currentTenant.id) tenantRoomMap.set(r.currentTenant.id, r.roomNumber);
+        if (r.currentTenant.fullName) tenantRoomMap.set(r.currentTenant.fullName, r.roomNumber);
       }
     });
+
     contracts.forEach((c) => {
       if (c.tenantName && c.roomNumber) {
         if (!tenantRoomMap.has(c.tenantName)) tenantRoomMap.set(c.tenantName, c.roomNumber);
       }
     });
+
     invoices.forEach((inv) => {
       if (inv.tenantName && inv.roomNumber) {
         if (!tenantRoomMap.has(inv.tenantName)) tenantRoomMap.set(inv.tenantName, inv.roomNumber);
@@ -47,10 +57,23 @@ export function TenantsListView({
 
     // Fast lookup for daily bookings
     const dailyBookingMap = new Map<string, DailyBooking>();
+    const dailyBookingByRoom = new Map<string, DailyBooking>();
+
     dailyBookings.forEach((b) => {
-      dailyBookingMap.set(b.guestName, b);
-      if (b.guestPhone) dailyBookingMap.set(b.guestPhone, b);
-      dailyBookingMap.set(`${b.guestName}_${b.guestPhone}`, b);
+      const normalizedGuest = b.guestName ? b.guestName.trim().toLowerCase() : "";
+      if (normalizedGuest) {
+        dailyBookingMap.set(normalizedGuest, b);
+      }
+      const cleanPhone = b.guestPhone ? b.guestPhone.replace(/\D/g, "") : "";
+      if (cleanPhone) {
+        dailyBookingMap.set(cleanPhone, b);
+        if (normalizedGuest) {
+          dailyBookingMap.set(`${normalizedGuest}_${cleanPhone}`, b);
+        }
+      }
+      if (b.roomNumber) {
+        dailyBookingByRoom.set(b.roomNumber, b);
+      }
     });
 
     // Combined list of monthly and daily tenants
@@ -71,34 +94,62 @@ export function TenantsListView({
     }> = [];
 
     tenants.forEach((t) => {
-      const isDaily = t.notes?.includes("รายวัน");
-      const matchingBooking =
-        dailyBookingMap.get(`${t.fullName}_${t.phone}`) ||
-        dailyBookingMap.get(t.fullName) ||
-        (t.phone ? dailyBookingMap.get(t.phone) : undefined);
+      const cleanPhone = t.phone ? t.phone.replace(/\D/g, "") : "";
+      const normalizedName = t.fullName ? t.fullName.trim().toLowerCase() : "";
 
       const noteRoomMatch = t.notes?.match(/ห้อง\s*([A-Za-z0-9_-]+)/);
       const room =
         t.roomNumber ||
         tenantRoomMap.get(t.id) ||
         tenantRoomMap.get(t.fullName) ||
-        matchingBooking?.roomNumber ||
         (noteRoomMatch ? noteRoomMatch[1] : "");
+
+      const matchingBooking =
+        (normalizedName && cleanPhone ? dailyBookingMap.get(`${normalizedName}_${cleanPhone}`) : undefined) ||
+        (normalizedName ? dailyBookingMap.get(normalizedName) : undefined) ||
+        (cleanPhone ? dailyBookingMap.get(cleanPhone) : undefined) ||
+        (room ? dailyBookingByRoom.get(room) : undefined);
+
+      const targetRoomNumber = room || matchingBooking?.roomNumber || "";
+      const roomStatus = targetRoomNumber ? roomStatusMap.get(targetRoomNumber) : undefined;
+
+      const isDaily =
+        Boolean(t.notes?.includes("รายวัน")) ||
+        Boolean(matchingBooking) ||
+        roomStatus === "daily";
 
       const matchingContract = contracts.find(
         (c) =>
-          (c.tenantName && c.tenantName.trim().toLowerCase() === t.fullName.trim().toLowerCase()) ||
-          (t.phone && c.tenantPhone && c.tenantPhone.replace(/\D/g, "") === t.phone.replace(/\D/g, "")) ||
-          (t.roomNumber && c.roomNumber === t.roomNumber)
+          (c.tenantName && c.tenantName.trim().toLowerCase() === normalizedName) ||
+          (cleanPhone && c.tenantPhone && c.tenantPhone.replace(/\D/g, "") === cleanPhone) ||
+          (targetRoomNumber && c.roomNumber === targetRoomNumber)
       );
 
       const finalIdCard = t.idCard || matchingBooking?.idCard || "";
       const finalPlate = t.vehiclePlate || matchingBooking?.vehiclePlate || (matchingContract as any)?.vehiclePlate || "";
 
+      const stayInfoText = isDaily
+        ? matchingBooking
+          ? `เข้าพัก ${matchingBooking.checkInDate} ถึง ${matchingBooking.checkOutDate}${matchingBooking.nights ? ` (${matchingBooking.nights} คืน)` : ""}`
+          : t.notes?.includes("รายวัน")
+          ? t.notes
+          : targetRoomNumber
+          ? `ผู้เข้าพักรายวัน (ห้อง ${targetRoomNumber})`
+          : "ผู้เข้าพักรายวัน"
+        : targetRoomNumber
+        ? `สัญญาเช่าห้อง ${targetRoomNumber}`
+        : "ผู้เช่าในระบบ";
+
+      const statusBadgeText = isDaily
+        ? matchingBooking?.status === "checked_in"
+          ? "กำลังเข้าพัก (รายวัน)"
+          : "ผู้เข้าพักรายวัน"
+        : "ผู้เช่ารายเดือน";
+
       combined.push({
         id: t.id,
         type: isDaily ? "daily" : "monthly",
-        roomNumber: room,
+        roomNumber: targetRoomNumber,
         fullName: t.fullName,
         phone: t.phone,
         idCard: finalIdCard,
@@ -107,27 +158,32 @@ export function TenantsListView({
         vehiclePlate: finalPlate,
         emergencyContact: t.emergencyContact,
         depositAmount:
-          t.depositAmount ||
-          (matchingBooking
+          (matchingBooking && ((matchingBooking.keyDeposit || 0) + (matchingBooking.roomDeposit || 0) > 0))
             ? (matchingBooking.keyDeposit || 0) + (matchingBooking.roomDeposit || 0)
-            : undefined),
-        stayInfo: isDaily
-          ? t.notes ||
-            (matchingBooking
-              ? `เข้าพัก ${matchingBooking.checkInDate} ถึง ${matchingBooking.checkOutDate}`
-              : "ผู้เข้าพักรายวัน")
-          : room
-          ? `สัญญาเช่าห้อง ${room}`
-          : "ผู้เช่าในระบบ",
-        statusText: isDaily ? "ผู้เข้าพักรายวัน" : "ผู้เช่ารายเดือน",
+            : t.depositAmount,
+        stayInfo: stayInfoText,
+        statusText: statusBadgeText,
       });
     });
 
     dailyBookings.forEach((b) => {
-      const existingItem = combined.find(
-        (item) => item.fullName === b.guestName || (b.guestPhone && item.phone === b.guestPhone)
-      );
+      const cleanGuestPhone = b.guestPhone ? b.guestPhone.replace(/\D/g, "") : "";
+      const normalizedGuest = b.guestName ? b.guestName.trim().toLowerCase() : "";
+
+      const existingItem = combined.find((item) => {
+        const itemCleanPhone = item.phone ? item.phone.replace(/\D/g, "") : "";
+        const itemNormalizedName = item.fullName ? item.fullName.trim().toLowerCase() : "";
+
+        return (
+          itemNormalizedName === normalizedGuest ||
+          (cleanGuestPhone && itemCleanPhone === cleanGuestPhone) ||
+          (b.roomNumber && item.roomNumber === b.roomNumber && (item.type === "daily" || itemNormalizedName === normalizedGuest))
+        );
+      });
+
       if (existingItem) {
+        // Enforce daily classification and booking stay info
+        existingItem.type = "daily";
         if (!existingItem.roomNumber && b.roomNumber) {
           existingItem.roomNumber = b.roomNumber;
         }
@@ -137,6 +193,11 @@ export function TenantsListView({
         if (!existingItem.vehiclePlate && b.vehiclePlate) {
           existingItem.vehiclePlate = b.vehiclePlate;
         }
+        if ((!existingItem.depositAmount || existingItem.depositAmount === 0) && (b.keyDeposit || b.roomDeposit)) {
+          existingItem.depositAmount = (b.keyDeposit || 0) + (b.roomDeposit || 0);
+        }
+        existingItem.stayInfo = `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights || 1} คืน)`;
+        existingItem.statusText = b.status === "checked_in" ? "กำลังเข้าพัก (รายวัน)" : "ยืนยันการจองแล้ว";
       } else {
         combined.push({
           id: b.id,
@@ -147,8 +208,8 @@ export function TenantsListView({
           idCard: b.idCard || "",
           vehiclePlate: b.vehiclePlate || "",
           depositAmount: (b.keyDeposit || 0) + (b.roomDeposit || 0),
-          stayInfo: `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights} คืน)`,
-          statusText: b.status === "checked_in" ? "กำลังเข้าพัก" : "ยืนยันการจองแล้ว",
+          stayInfo: `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights || 1} คืน)`,
+          statusText: b.status === "checked_in" ? "กำลังเข้าพัก (รายวัน)" : "ยืนยันการจองแล้ว",
         });
       }
     });
