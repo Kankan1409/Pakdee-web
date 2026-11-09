@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Room } from "@/types/dormitory";
+import { Room, DailyBooking } from "@/types/dormitory";
 import {
   Zap,
   Droplets,
@@ -45,6 +45,7 @@ export interface MeterReadingRecord {
 
 interface MeterSpreadsheetViewProps {
   rooms: Room[];
+  dailyBookings?: DailyBooking[];
   electricRate: number;
   waterRate: number;
   onSaveMeters: (
@@ -61,6 +62,7 @@ interface MeterSpreadsheetViewProps {
 
 export function MeterSpreadsheetView({
   rooms,
+  dailyBookings = [],
   electricRate,
   waterRate,
   onSaveMeters,
@@ -71,6 +73,7 @@ export function MeterSpreadsheetView({
       roomId: string;
       roomNumber: string;
       tenantName: string;
+      isDaily?: boolean;
       electricPrev: number;
       electricCurr: number | "";
       waterPrev: number;
@@ -88,19 +91,29 @@ export function MeterSpreadsheetView({
   useEffect(() => {
     setRows(
       rooms.map((r) => {
-        const hasTenant = Boolean(r.currentTenant);
+        const daily = dailyBookings?.find(
+          (b) => b.roomNumber === r.roomNumber && (b.status === "confirmed" || b.status === "checked_in")
+        );
+        const isDaily = r.status === "daily" || Boolean(daily);
+        const hasTenant = Boolean(r.currentTenant) || Boolean(daily);
+        const tenantDisplayName = daily
+          ? `${daily.guestName} (ผู้เช่ารายวัน)`
+          : r.currentTenant
+          ? r.currentTenant.fullName
+          : "(ห้องว่าง)";
         return {
           roomId: r.id,
           roomNumber: r.roomNumber,
-          tenantName: hasTenant ? r.currentTenant!.fullName : "(ห้องว่าง)",
+          tenantName: tenantDisplayName,
+          isDaily,
           electricPrev: r.currentElectricMeter,
-          electricCurr: r.currentElectricMeter + (hasTenant ? 25 : 0),
+          electricCurr: isDaily ? r.currentElectricMeter : r.currentElectricMeter + (hasTenant ? 25 : 0),
           waterPrev: r.currentWaterMeter,
-          waterCurr: r.currentWaterMeter + (hasTenant ? 4 : 0),
+          waterCurr: isDaily ? r.currentWaterMeter : r.currentWaterMeter + (hasTenant ? 4 : 0),
         };
       })
     );
-  }, [rooms]);
+  }, [rooms, dailyBookings]);
 
   // Load and seed history records if empty
   const loadHistory = async () => {
@@ -611,13 +624,13 @@ export function MeterSpreadsheetView({
                 <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
                   {filteredRows.length > 0 ? (
                     filteredRows.map((row) => {
-                      const elecVal = row.electricCurr === "" ? row.electricPrev : Number(row.electricCurr);
-                      const waterVal = row.waterCurr === "" ? row.waterPrev : Number(row.waterCurr);
-                      const isElecDecreased = row.electricCurr !== "" && Number(row.electricCurr) < row.electricPrev;
-                      const isWaterDecreased = row.waterCurr !== "" && Number(row.waterCurr) < row.waterPrev;
-                      const elecDiff = Math.max(0, elecVal - row.electricPrev);
-                      const waterDiff = Math.max(0, waterVal - row.waterPrev);
-                      const cost = elecDiff * electricRate + waterDiff * waterRate;
+                      const elecVal = row.isDaily ? row.electricPrev : (row.electricCurr === "" ? row.electricPrev : Number(row.electricCurr));
+                      const waterVal = row.isDaily ? row.waterPrev : (row.waterCurr === "" ? row.waterPrev : Number(row.waterCurr));
+                      const isElecDecreased = !row.isDaily && row.electricCurr !== "" && Number(row.electricCurr) < row.electricPrev;
+                      const isWaterDecreased = !row.isDaily && row.waterCurr !== "" && Number(row.waterCurr) < row.waterPrev;
+                      const elecDiff = row.isDaily ? 0 : Math.max(0, elecVal - row.electricPrev);
+                      const waterDiff = row.isDaily ? 0 : Math.max(0, waterVal - row.waterPrev);
+                      const cost = row.isDaily ? 0 : elecDiff * electricRate + waterDiff * waterRate;
 
                       return (
                         <tr key={row.roomId} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
@@ -651,24 +664,40 @@ export function MeterSpreadsheetView({
                           {/* ELECTRIC CURRENT INPUT WITH RECHECK WARNING */}
                           <td className="p-2 text-center bg-amber-500/5 border-r border-amber-200/50">
                             <div className="flex flex-col items-center justify-center">
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  value={row.electricCurr}
-                                  placeholder={String(row.electricPrev)}
-                                  onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
-                                  className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
-                                    isElecDecreased
-                                      ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-amber-950 dark:text-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
-                                      : "bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 shadow-2xs"
-                                  }`}
-                                />
-                                {isElecDecreased && (
-                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
-                                    ลดลง
+                              {row.isDaily ? (
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    disabled
+                                    value={row.electricPrev}
+                                    readOnly
+                                    className="w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-75"
+                                    title="ห้องพักรายวัน: ล็อกมิเตอร์ ไม่คิดค่าไฟรายหน่วย"
+                                  />
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-slate-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    🔒 ล็อก (รายวัน)
                                   </span>
-                                )}
-                              </div>
+                                </div>
+                              ) : (
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={row.electricCurr}
+                                    placeholder={String(row.electricPrev)}
+                                    onChange={(e) => handleElectricChange(row.roomId, e.target.value)}
+                                    className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
+                                      isElecDecreased
+                                        ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-amber-950 dark:text-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
+                                        : "bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 shadow-2xs"
+                                    }`}
+                                  />
+                                  {isElecDecreased && (
+                                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                      ลดลง
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </td>
 
@@ -697,24 +726,40 @@ export function MeterSpreadsheetView({
                           {/* WATER CURRENT INPUT WITH RECHECK WARNING */}
                           <td className="p-2 text-center bg-sky-500/5 border-r border-sky-200/50">
                             <div className="flex flex-col items-center justify-center">
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  value={row.waterCurr}
-                                  placeholder={String(row.waterPrev)}
-                                  onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
-                                  className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
-                                    isWaterDecreased
-                                      ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-sky-950 dark:text-sky-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
-                                      : "bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-sky-950 dark:text-sky-100 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 shadow-2xs"
-                                  }`}
-                                />
-                                {isWaterDecreased && (
-                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
-                                    ลดลง
+                              {row.isDaily ? (
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    disabled
+                                    value={row.waterPrev}
+                                    readOnly
+                                    className="w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-75"
+                                    title="ห้องพักรายวัน: ล็อกมิเตอร์ ไม่คิดค่าน้ำรายหน่วย"
+                                  />
+                                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-slate-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                    🔒 ล็อก (รายวัน)
                                   </span>
-                                )}
-                              </div>
+                                </div>
+                              ) : (
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={row.waterCurr}
+                                    placeholder={String(row.waterPrev)}
+                                    onChange={(e) => handleWaterChange(row.roomId, e.target.value)}
+                                    className={`w-28 px-3 py-1.5 rounded-xl text-center font-mono font-bold text-sm transition-all ${
+                                      isWaterDecreased
+                                        ? "bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 text-sky-950 dark:text-sky-100 focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xs"
+                                        : "bg-white dark:bg-slate-900 border-2 border-sky-400 dark:border-sky-600 text-sky-950 dark:text-sky-100 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/20 shadow-2xs"
+                                    }`}
+                                  />
+                                  {isWaterDecreased && (
+                                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-amber-600 text-white text-[9px] font-bold whitespace-nowrap shadow-xs">
+                                      ลดลง
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </td>
 
@@ -728,8 +773,12 @@ export function MeterSpreadsheetView({
                             )}
                           </td>
 
-                          <td className="p-3 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
-                            {formatCurrency(cost)}
+                          <td className="p-3 text-right font-bold font-mono">
+                            {row.isDaily ? (
+                              <span className="text-slate-400 text-xs font-normal">(รวมในค่าห้อง)</span>
+                            ) : (
+                              <span className="text-emerald-600 dark:text-emerald-400 text-sm">{formatCurrency(cost)}</span>
+                            )}
                           </td>
                         </tr>
                       );

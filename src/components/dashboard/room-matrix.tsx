@@ -186,7 +186,7 @@ export function RoomMatrix({
       dotClass: "bg-indigo-500",
     },
     daily: {
-      label: "รายวัน (มัดจำแล้ว)",
+      label: "รายวัน (จอง/เข้าพัก)",
       badgeBg: "border-blue-500/30 hover:border-blue-400 bg-blue-500/5",
       textClass: "text-blue-600 dark:text-blue-400",
       dotClass: "bg-blue-500",
@@ -477,6 +477,8 @@ export function RoomMatrix({
                         ? "border-rose-500 ring-2 ring-rose-500/30 bg-rose-50/15 dark:bg-rose-950/20"
                         : isOverdue
                         ? "border-rose-500/50 hover:border-rose-500 ring-1 ring-rose-500/25 bg-rose-500/5"
+                        : (room.status === "daily" && dailyBookings.some((b) => b.roomNumber === room.roomNumber && b.status === "checked_in"))
+                        ? "border-emerald-500/40 hover:border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-500/5"
                         : cfg.badgeBg
                     )}
                   >
@@ -516,7 +518,7 @@ export function RoomMatrix({
                         <span
                           className={cn(
                             "w-2.5 h-2.5 rounded-full ring-4 ring-black/5 dark:ring-white/5",
-                            isOverdue ? "bg-rose-500" : cfg.dotClass
+                            isOverdue ? "bg-rose-500" : (room.status === "daily" && dailyBookings.some((b) => b.roomNumber === room.roomNumber && b.status === "checked_in")) ? "bg-emerald-500" : cfg.dotClass
                           )}
                           title={isOverdue ? `ค้างชำระ (${totalOverdueAmount.toLocaleString()} ฿)` : cfg.label}
                         />
@@ -600,6 +602,7 @@ export function RoomMatrix({
                             b.roomNumber === room.roomNumber &&
                             (b.status === "confirmed" || b.status === "checked_in")
                         );
+                        const isCheckedIn = guest?.status === "checked_in";
                         const guestName =
                           guest?.guestName ||
                           room.currentTenant?.fullName ||
@@ -609,17 +612,27 @@ export function RoomMatrix({
                           : room.notes || "จองรายวัน";
                         return (
                           <div>
-                            <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 truncate flex items-center gap-1">
+                            <div className={cn(
+                              "text-xs font-semibold truncate flex items-center gap-1",
+                              isCheckedIn ? "text-emerald-700 dark:text-emerald-400" : "text-blue-600 dark:text-blue-400"
+                            )}>
                               <Calendar className="w-3 h-3" />
                               <span>{guestName}</span>
                             </div>
                             <div className="text-[10px] text-[var(--muted)] mt-0.5 truncate">
                               {dates}
                             </div>
-                            <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5 flex items-center gap-1">
-                              <ShieldCheck className="w-2.5 h-2.5" />
-                              <span>มัดจำแล้ว ✓ {guest ? `(${formatCurrency(guest.keyDeposit)})` : ""}</span>
-                            </div>
+                            {isCheckedIn ? (
+                              <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5 flex items-center gap-1">
+                                <Check className="w-2.5 h-2.5" />
+                                <span>เช็คอินเข้าพักแล้ว ✓</span>
+                              </div>
+                            ) : (
+                              <div className="text-[9px] text-blue-600 dark:text-blue-400 font-semibold mt-0.5 flex items-center gap-1">
+                                <ShieldCheck className="w-2.5 h-2.5" />
+                                <span>มัดจำแล้ว ✓ {guest ? `(${formatCurrency(guest.keyDeposit)})` : ""}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -693,11 +706,19 @@ export function RoomMatrix({
                         <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-0.5">
                           <Check className="w-3 h-3" /> จ่ายแล้ว
                         </span>
-                      ) : room.status === "daily" ? (
-                        <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                          มัดจำแล้ว
-                        </span>
-                      ) : room.status === "cleaning" ? (
+                      ) : room.status === "daily" ? (() => {
+                        const guest = dailyBookings.find((b) => b.roomNumber === room.roomNumber && b.status !== "checked_out" && b.status !== "cancelled");
+                        const isCheckedIn = guest?.status === "checked_in";
+                        return isCheckedIn ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-0.5">
+                            <Check className="w-3 h-3" /> เช็คอินแล้ว
+                          </span>
+                        ) : (
+                          <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                            มัดจำแล้ว
+                          </span>
+                        );
+                      })() : room.status === "cleaning" ? (
                         <button
                           type="button"
                           onClick={(e) => {

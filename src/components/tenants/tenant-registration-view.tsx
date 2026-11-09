@@ -902,34 +902,7 @@ export function TenantRegistrationView({
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  เลขประจำตัวผู้เสียภาษี (Tax ID)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={13}
-                  value={taxId}
-                  onChange={(e) => setTaxId(e.target.value.replace(/\D/g, "").slice(0, 13))}
-                  placeholder="ระบุเฉพาะกรณีนิติบุคคล/หัก ณ ที่จ่าย"
-                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500 font-mono"
-                />
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  ภาษาใบแจ้งหนี้ (Invoice Language)
-                </label>
-                <select
-                  value={invoiceLang}
-                  onChange={(e) => setInvoiceLang(e.target.value as any)}
-                  className="w-full text-xs bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-2 focus:outline-emerald-500"
-                >
-                  <option value="TH">ภาษาไทย (TH - ค่าเริ่มต้น)</option>
-                  <option value="EN">English (EN)</option>
-                </select>
-              </div>
 
               <div className="sm:col-span-3">
                 <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">

@@ -2853,6 +2853,7 @@ export default function HomePage() {
           {currentTab === "meter" && (
             <MeterSpreadsheetView
               rooms={rooms}
+              dailyBookings={dailyBookings}
               electricRate={property.electricRate}
               waterRate={property.waterRate}
               onSaveMeters={handleSaveMetersBatch}

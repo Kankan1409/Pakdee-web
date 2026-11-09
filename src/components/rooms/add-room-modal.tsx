@@ -31,10 +31,10 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
   const defaultTypeObj = activeRoomTypes.find((r) => r.isDefault) || activeRoomTypes[0];
   const [mode, setMode] = useState<"single" | "batch">("single");
   const [roomNumber, setRoomNumber] = useState<string>("");
-  const [floor, setFloor] = useState<number>(1);
+  const [floor, setFloor] = useState<number | "">(1);
   const [type, setType] = useState<string>("ห้องแอร์");
-  const [monthlyRate, setMonthlyRate] = useState<number>(4000);
-  const [dailyRate, setDailyRate] = useState<number>(650);
+  const [monthlyRate, setMonthlyRate] = useState<number | "">(4000);
+  const [dailyRate, setDailyRate] = useState<number | "">(650);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Sync with default type when modal opens or roomTypes changes
@@ -60,8 +60,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
 
   // Batch Mode
   const [batchPrefix, setBatchPrefix] = useState<string>("");
-  const [batchStart, setBatchStart] = useState<number>(1);
-  const [batchEnd, setBatchEnd] = useState<number>(6);
+  const [batchStart, setBatchStart] = useState<number | "">(1);
+  const [batchEnd, setBatchEnd] = useState<number | "">(6);
 
   if (!isOpen) return null;
 
@@ -75,10 +75,10 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
       try {
         await onAddRoom({
           roomNumber: roomNumber.trim(),
-          floor,
+          floor: Number(floor) || 1,
           type,
-          monthlyRate,
-          dailyRate,
+          monthlyRate: Number(monthlyRate) || 0,
+          dailyRate: Number(dailyRate) || 0,
           status: "vacant",
         });
         onClose();
@@ -95,14 +95,19 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
         status: RoomStatus;
       }[] = [];
 
-      for (let i = batchStart; i <= batchEnd; i++) {
+      const start = Number(batchStart) || 1;
+      const end = Number(batchEnd) || start;
+      const safeFloor = Number(floor) || 1;
+      const safeMonthly = Number(monthlyRate) || 0;
+      const safeDaily = Number(dailyRate) || 0;
+      for (let i = start; i <= end; i++) {
         const num = `${batchPrefix}${i < 10 ? i : i}`;
         batchList.push({
           roomNumber: num,
-          floor,
+          floor: safeFloor,
           type,
-          monthlyRate,
-          dailyRate,
+          monthlyRate: safeMonthly,
+          dailyRate: safeDaily,
           status: "vacant" as RoomStatus,
         });
       }
@@ -191,7 +196,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                   max="20"
                   required
                   value={floor}
-                  onChange={(e) => setFloor(Number(e.target.value))}
+                  placeholder="เช่น 1"
+                  onChange={(e) => setFloor(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
                 />
               </div>
@@ -205,8 +211,9 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                   min="1"
                   max="20"
                   value={floor}
+                  placeholder="เช่น 1"
                   onChange={(e) => {
-                    setFloor(Number(e.target.value));
+                    setFloor(e.target.value === "" ? "" : Number(e.target.value));
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
                 />
@@ -229,7 +236,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                   <input
                     type="number"
                     value={batchStart}
-                    onChange={(e) => setBatchStart(Number(e.target.value))}
+                    placeholder="เช่น 1"
+                    onChange={(e) => setBatchStart(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
                   />
                 </div>
@@ -238,7 +246,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                   <input
                     type="number"
                     value={batchEnd}
-                    onChange={(e) => setBatchEnd(Number(e.target.value))}
+                    placeholder="เช่น 6"
+                    onChange={(e) => setBatchEnd(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
                   />
                 </div>
@@ -269,7 +278,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                 min="0"
                 required
                 value={monthlyRate}
-                onChange={(e) => setMonthlyRate(Number(e.target.value))}
+                placeholder="0"
+                onChange={(e) => setMonthlyRate(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-bold text-emerald-600 dark:text-emerald-400"
               />
             </div>
@@ -280,7 +290,8 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
                 type="number"
                 min="0"
                 value={dailyRate}
-                onChange={(e) => setDailyRate(Number(e.target.value))}
+                placeholder="0"
+                onChange={(e) => setDailyRate(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)]"
               />
             </div>
@@ -302,7 +313,7 @@ export function AddRoomModal({ isOpen, onClose, onAddRoom, onAddBatchRooms, room
               {isSubmitting
                 ? "กำลังบันทึก..."
                 : mode === "batch"
-                ? `บันทึกห้องพัก ${Math.max(0, batchEnd - batchStart + 1)} ห้อง`
+                ? `บันทึกห้องพัก ${Math.max(0, (Number(batchEnd) || 0) - (Number(batchStart) || 0) + 1)} ห้อง`
                 : "บันทึกห้องพัก"}
             </button>
           </div>

@@ -1046,17 +1046,7 @@ export function ContractManagementView({
                           </span>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSigningContract(previewContract);
-                            setHasSignatureDrawn(false);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 text-xs font-semibold transition cursor-pointer print:hidden"
-                        >
-                          <PenTool className="w-3.5 h-3.5" />
-                          <span>คลิกเพื่อลงลายเซ็นออนไลน์</span>
-                        </button>
+                        <div className="h-8" />
                       )}
                     </div>
                     <div>ลงชื่อ.................................................... ผู้เช่า</div>
@@ -1069,19 +1059,7 @@ export function ContractManagementView({
 
               {/* Modal Footer Buttons (Hidden when printing) */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-slate-200 shrink-0 print:hidden">
-                <div>
-                  {!previewContract.signatureUrl && (
-                    <button
-                      onClick={() => {
-                        setSigningContract(previewContract);
-                        setHasSignatureDrawn(false);
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold text-xs border border-purple-200 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <PenTool className="w-3.5 h-3.5" /> ลงลายเซ็นอิเล็กทรอนิกส์
-                    </button>
-                  )}
-                </div>
+                <div />
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
