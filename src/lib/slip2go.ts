@@ -12,7 +12,7 @@ const slipFailureMessages: Record<string, string> = {
   "200000": "⚠️ พบข้อมูลสลิป แต่ยังไม่มีผลยืนยันว่าผ่านเงื่อนไขการรับชำระ",
 };
 
-function buildCheckReceiver(primary?: string, extras?: string[]): Array<{ accountType?: string; accountNumber: string }> {
+function buildCheckReceiver(primary?: string, extras?: string[], explicitType?: "02001" | "02003" | "02004"): Array<{ accountType?: string; accountNumber: string }> {
   const rawList = [primary, ...(extras || [])].filter(Boolean) as string[];
   const list: Array<{ accountType?: string; accountNumber: string }> = [];
   const seen = new Set<string>();
@@ -20,7 +20,11 @@ function buildCheckReceiver(primary?: string, extras?: string[]): Array<{ accoun
     const acc = raw.replace(/[^0-9]/g, "");
     if (acc.length < 10 || seen.has(acc)) continue;
     seen.add(acc);
-    list.push({ accountNumber: acc });
+    if (explicitType && raw === primary) {
+      list.push({ accountNumber: acc, accountType: explicitType });
+    } else {
+      list.push({ accountNumber: acc });
+    }
     if (acc.length === 13) {
       list.push({ accountType: "02003", accountNumber: acc });
       list.push({ accountType: "02002", accountNumber: acc });
@@ -37,12 +41,12 @@ function buildCheckReceiver(primary?: string, extras?: string[]): Array<{ accoun
 // https://slip2go.com/guide/response : 200200 = all requested checks passed.
 export async function verifyWithSlip2Go(secretKey: string, options: {
   qrCode?: string; imageBuffer?: Buffer; expectedAmount?: number;
-  receiverAccount?: string; receiverBankCode?: string;
+  receiverAccount?: string; receiverAccounts?: string[]; receiverBankCode?: string;
   receiverAccountType?: "02001" | "02003" | "02004";
 }): Promise<Slip2GoVerifyResult> {
   const key = secretKey?.trim();
   const baseUrl = (process.env.SLIP2GO_API_URL?.trim() || "https://connect.slip2go.com").replace(/\/+$/, "");
-  const checkReceiver = buildCheckReceiver(options.receiverAccount, options.receiverAccounts);
+  const checkReceiver = buildCheckReceiver(options.receiverAccount, options.receiverAccounts, options.receiverAccountType);
   if (!key) return { success: false, error: "ยังไม่ได้ตั้งค่า Slip2Go จึงยังยืนยันการชำระเงินไม่ได้" };
   if (!baseUrl) return { success: false, error: "ยังไม่ได้ตั้งค่า API URL ของ Slip2Go กรุณาติดต่อเจ้าหน้าที่" };
   try {
@@ -54,8 +58,7 @@ export async function verifyWithSlip2Go(secretKey: string, options: {
     return { success: false, error: "ข้อมูลบัญชีผู้รับหรือยอดบิลไม่ครบ กรุณาติดต่อเจ้าหน้าที่" };
   }
   const checkCondition = { checkDuplicate: true, checkAmount: { type: "eq", amount: options.expectedAmount },
-    checkReceiver: [{ accountNumber: account,
-      ...(options.receiverAccountType ? { accountType: options.receiverAccountType } : {}) }] };
+    checkReceiver };
   let endpoint: string;
   let payload: Record<string, unknown>;
   // Prefer the actual image, not a guessed QR string from compressed file bytes.
