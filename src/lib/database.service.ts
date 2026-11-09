@@ -29,6 +29,7 @@ import {
   syncKeyToRelationalTable,
   syncAllToRelationalTables,
   loadFromRelationalTables,
+  toUuid,
 } from "@/lib/supabase-relational";
 
 /**
@@ -578,6 +579,14 @@ export const DatabaseService = {
 
     await this.persistBatch(batchPayload);
 
+    // Permanently delete from Supabase PostgreSQL table 'properties'
+    try {
+      const propUuid = toUuid(propertyId);
+      await supabase.from("properties").delete().or(`id.eq.${propUuid},id.eq.${propertyId}`);
+    } catch (err: any) {
+      console.warn("[Supabase Relational] Delete property warning:", err?.message);
+    }
+
     // Remove branch-specific settings from local cache
     if (typeof window !== "undefined") {
       try {
@@ -585,7 +594,7 @@ export const DatabaseService = {
       } catch {}
     }
 
-    await this.logActivity("DELETE", "SETTINGS", `ลบสาขาหอพัก ID: ${propertyId}`, propertyId);
+    await this.logActivity("DELETE", "SETTINGS", `ลบข้อมูลสาขา ID: ${propertyId}`);
     return true;
   },
 
@@ -885,21 +894,65 @@ export const DatabaseService = {
       setLocal(KEYS.INVOICES, filteredInvoices);
     }
 
+    // 1. Permanently delete from Supabase PostgreSQL table 'rooms'
+    try {
+      const propId = target.propertyId || "prop-1";
+      const roomUuid = toUuid(target.id, `room-${propId}-${target.roomNumber}`);
+      const bldgId = target.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`);
+      const bldgUuid = toUuid(bldgId);
+
+      // Match either exact UUID or target.id, or building_id + room_number
+      const { error: delErr, count } = await supabase
+        .from("rooms")
+        .delete({ count: "exact" })
+        .or(`id.eq.${roomUuid},id.eq.${target.id},and(building_id.eq.${bldgUuid},room_number.eq.${target.roomNumber})`);
+
+      if (delErr) {
+        console.warn(`[Supabase Relational] Delete room ${target.roomNumber} warning:`, delErr.message);
+      } else {
+        console.log(`[Supabase Relational] Successfully deleted room ${target.roomNumber} from Supabase Cloud (rows affected: ${count})`);
+      }
+    } catch (err: any) {
+      console.warn(`[Supabase Relational] Delete room ${target.roomNumber} error:`, err?.message);
+    }
+
     await this.logActivity("DELETE", "ROOM", `ลบห้องพัก ${target?.roomNumber || roomId}`, target?.propertyId);
     return { success: true };
   },
 
   async deleteRooms(roomIds: string[]): Promise<{ success: boolean; error?: string }> {
     const allRooms = this.getAllRawRooms();
-    // Safety check for all rooms
-    for (const rid of roomIds) {
-      const room = allRooms.find((r) => r.id === rid);
+    const targets = allRooms.filter((r) => roomIds.includes(r.id));
+    for (const room of targets) {
       if (room && (room.status === "occupied" || room.currentTenant)) {
         return { success: false, error: `ไม่สามารถลบห้อง ${room.roomNumber} ได้เนื่องจากมีผู้เช่าอยู่` };
       }
     }
     const updated = allRooms.filter((r) => !roomIds.includes(r.id));
     setLocal(KEYS.ROOMS, updated);
+
+    // Permanently delete batch from Supabase PostgreSQL table 'rooms'
+    try {
+      const idsToDelete: string[] = [];
+      targets.forEach((t) => {
+        const propId = t.propertyId || "prop-1";
+        idsToDelete.push(toUuid(t.id, `room-${propId}-${t.roomNumber}`));
+        if (t.id) idsToDelete.push(t.id);
+      });
+      if (idsToDelete.length > 0) {
+        const { error: delErr, count } = await supabase
+          .from("rooms")
+          .delete({ count: "exact" })
+          .in("id", idsToDelete);
+        if (delErr) {
+          console.warn("[Supabase Relational] Batch delete rooms warning:", delErr.message);
+        } else {
+          console.log(`[Supabase Relational] Successfully deleted ${count} rooms from Supabase Cloud`);
+        }
+      }
+    } catch (err: any) {
+      console.warn("[Supabase Relational] Batch delete rooms error:", err?.message);
+    }
 
     await this.logActivity("DELETE", "ROOM", `ลบห้องพักจำนวน ${roomIds.length} ห้องพร้อมกัน`);
     return { success: true };
@@ -1797,6 +1850,15 @@ export const DatabaseService = {
     const target = all.find((e) => e.id === id);
     const updated = all.filter((e) => e.id !== id);
     setLocal(KEYS.EXPENSES, updated);
+
+    // Permanently delete from Supabase PostgreSQL table 'expenses'
+    try {
+      const expUuid = toUuid(id);
+      await supabase.from("expenses").delete().or(`id.eq.${expUuid},id.eq.${id}`);
+    } catch (err: any) {
+      console.warn("[Supabase Relational] Delete expense warning:", err?.message);
+    }
+
     if (target) {
       await this.logActivity("DELETE", "SETTINGS", `ลบรายการรายจ่าย: ${target.title} (฿${target.amount.toLocaleString()})`, propId);
     }
