@@ -901,6 +901,12 @@ export const DatabaseService = {
       const bldgId = target.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`);
       const bldgUuid = toUuid(bldgId);
 
+      // Unlink any invoices referencing this room to prevent FK restrict violations
+      await supabase
+        .from("invoices")
+        .update({ room_id: null })
+        .or(`room_id.eq.${roomUuid},room_id.eq.${target.id}`);
+
       // Match either exact UUID or target.id, or building_id + room_number
       const { error: delErr, count } = await supabase
         .from("rooms")
@@ -940,6 +946,11 @@ export const DatabaseService = {
         if (t.id) idsToDelete.push(t.id);
       });
       if (idsToDelete.length > 0) {
+        // Unlink any invoices referencing these rooms to prevent FK restrict violations
+        await supabase
+          .from("invoices")
+          .update({ room_id: null })
+          .in("room_id", idsToDelete);
         const { error: delErr, count } = await supabase
           .from("rooms")
           .delete({ count: "exact" })
@@ -2116,25 +2127,33 @@ export const DatabaseService = {
 
     await this.persistBatch(batchPayload);
 
-    // Also clear all rows in separate Supabase relational tables in FK order
-    const relationalTablesToClear = [
-      "invoice_items",
-      "invoices",
-      "contracts",
-      "meter_readings",
-      "repairs",
-      "expenses",
-      "daily_bookings",
-      "rooms",
-      "tenants",
-      "activity_logs",
-    ];
-    for (const table of relationalTablesToClear) {
-      supabase
-        .from(table)
-        .delete()
-        .neq("id", "00000000-0000-0000-0000-000000000000")
-        .then(() => {});
+    // Also clear all rows in separate Supabase relational tables in safe FK order
+    try {
+      // Unlink room_id on invoices first so rooms can be deleted without FK conflict
+      await supabase
+        .from("invoices")
+        .update({ room_id: null })
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+
+      const relationalTablesToClear = [
+        "invoice_items",
+        "meter_readings",
+        "repairs",
+        "expenses",
+        "daily_bookings",
+        "contracts",
+        "rooms",
+        "tenants",
+        "activity_logs",
+      ];
+      for (const table of relationalTablesToClear) {
+        await supabase
+          .from(table)
+          .delete()
+          .neq("id", "00000000-0000-0000-0000-000000000000");
+      }
+    } catch (e: any) {
+      console.warn("[Supabase Relational] Clear all tables warning:", e?.message);
     }
 
     return true;
