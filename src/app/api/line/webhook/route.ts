@@ -5,6 +5,7 @@ import {
   verifyLineSignature,
   replyLineMessage,
   getLineMessageContent,
+  getLineUserProfile,
 } from "@/lib/line/line-client";
 import { verifyLinePayment } from "@/lib/line/verify-payment";
 import {

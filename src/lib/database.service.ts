@@ -1181,6 +1181,8 @@ export const DatabaseService = {
       lineId: lineUserId,
       lineUserId,
       lineDisplayName: lineDisplayName || activeName,
+      Line_Acc: lineDisplayName || activeName,
+      lineAcc: lineDisplayName || activeName,
       lineLinkedAt: new Date().toISOString(),
     };
 

@@ -230,3 +230,25 @@ export async function getLineMessageContent(
     return null;
   }
 }
+
+/**
+ * 7. ดึงข้อมูลโปรไฟล์ผู้ใช้ LINE (Display Name, Picture URL, Status Message)
+ */
+export async function getLineUserProfile(
+  channelAccessToken: string,
+  userId: string
+): Promise<{ displayName?: string; pictureUrl?: string; statusMessage?: string } | null> {
+  if (!channelAccessToken || !userId) return null;
+  try {
+    const res = await fetch(`${LINE_API_BASE}/profile/${userId}`, {
+      headers: {
+        Authorization: `Bearer ${channelAccessToken.trim()}`,
+      },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn("[LINE-CLIENT] Failed to get user profile:", err);
+    return null;
+  }
+}

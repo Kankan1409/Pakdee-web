@@ -478,7 +478,7 @@ export function RoomMatrix({
                         : isOverdue
                         ? "border-rose-500/50 hover:border-rose-500 ring-1 ring-rose-500/25 bg-rose-500/5"
                         : (room.status === "daily" && dailyBookings.some((b) => b.roomNumber === room.roomNumber && b.status === "checked_in"))
-                        ? "border-emerald-500/40 hover:border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-500/5"
+                        ? "border-blue-500/60 hover:border-blue-500 ring-2 ring-blue-500/30 bg-blue-500/10 dark:bg-blue-950/30"
                         : cfg.badgeBg
                     )}
                   >
@@ -518,7 +518,7 @@ export function RoomMatrix({
                         <span
                           className={cn(
                             "w-2.5 h-2.5 rounded-full ring-4 ring-black/5 dark:ring-white/5",
-                            isOverdue ? "bg-rose-500" : (room.status === "daily" && dailyBookings.some((b) => b.roomNumber === room.roomNumber && b.status === "checked_in")) ? "bg-emerald-500" : cfg.dotClass
+                            isOverdue ? "bg-rose-500" : (room.status === "daily" && dailyBookings.some((b) => b.roomNumber === room.roomNumber && b.status === "checked_in")) ? "bg-blue-600 dark:bg-blue-400" : cfg.dotClass
                           )}
                           title={isOverdue ? `ค้างชำระ (${totalOverdueAmount.toLocaleString()} ฿)` : cfg.label}
                         />
@@ -614,7 +614,7 @@ export function RoomMatrix({
                           <div>
                             <div className={cn(
                               "text-xs font-semibold truncate flex items-center gap-1",
-                              isCheckedIn ? "text-emerald-700 dark:text-emerald-400" : "text-blue-600 dark:text-blue-400"
+                              isCheckedIn ? "text-blue-700 dark:text-blue-300 font-bold" : "text-sky-600 dark:text-sky-400"
                             )}>
                               <Calendar className="w-3 h-3" />
                               <span>{guestName}</span>
@@ -623,7 +623,7 @@ export function RoomMatrix({
                               {dates}
                             </div>
                             {isCheckedIn ? (
-                              <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5 flex items-center gap-1">
+                              <div className="text-[9px] text-blue-700 dark:text-blue-300 font-bold mt-0.5 flex items-center gap-1.5">
                                 <Check className="w-2.5 h-2.5" />
                                 <span>เช็คอินเข้าพักแล้ว ✓</span>
                               </div>
@@ -710,7 +710,7 @@ export function RoomMatrix({
                         const guest = dailyBookings.find((b) => b.roomNumber === room.roomNumber && b.status !== "checked_out" && b.status !== "cancelled");
                         const isCheckedIn = guest?.status === "checked_in";
                         return isCheckedIn ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-0.5">
+                          <span className="text-blue-700 dark:text-blue-300 font-bold flex items-center gap-1">
                             <Check className="w-3 h-3" /> เช็คอินแล้ว
                           </span>
                         ) : (
