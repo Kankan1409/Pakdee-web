@@ -34,16 +34,17 @@ export async function authorizeSlipRequest(request: Request, propertyId: string)
   if (!user?.is_active || !expected || actualBytes.length !== expectedBytes.length ||
       !timingSafeEqual(actualBytes, expectedBytes)) throw new SlipError("บัญชีหรือรหัสผ่านไม่ถูกต้อง", 401);
 
-  const { data: rows, error: propertyError } = await db.from("pakdee_store")
-    .select("key,value,updated_at").in("key", ["pakdee_dev_properties", "properties"])
-    .order("updated_at", { ascending: false });
+  const { data: rows, error: propertyError } = await db.from("properties").select("*");
   if (propertyError) throw new SlipError("ตรวจสอบสิทธิ์สาขาไม่สำเร็จ", 503);
-  const properties = Array.isArray(rows?.[0]?.value) ? rows![0].value : [];
-  const property = properties.find((p: { id: string }) => p.id === propertyId);
+  let properties: any[] = [];
+  if (Array.isArray(rows)) {
+    properties = rows[0]?.value && Array.isArray(rows[0].value) ? rows[0].value : rows;
+  }
+  const property = properties.find((p: { id: string }) => p.id === propertyId || p.id === toUuid(propertyId));
   const normalizePhone = (v: string) => String(v || "").replace(/\D/g, "");
   const owned = property && user.role === "owner" && (
     property.ownerId === user.id ||
-    (normalizePhone(user.phone).length >= 9 && normalizePhone(property.ownerPhone) === normalizePhone(user.phone))
+    (normalizePhone(user.phone).length >= 9 && normalizePhone(property.phone || property.ownerPhone) === normalizePhone(user.phone))
   );
   const assigned = property && user.role === "manager" &&
     (tags.includes(propertyId) || tags.includes(toUuid(propertyId)));
@@ -72,24 +73,16 @@ export async function savePaymentSlip(propertyId: string, invoiceNumber: string,
   if (error) throw new SlipError("โหลดข้อมูลบิลจากฐานข้อมูลไม่สำเร็จ", 503);
   let invoice: { id: string } | null = linkedInvoice;
   if (!invoice) {
-    // Older relational rows may lack building links. Resolve only an exact
-    // invoice ID and explicit branch from the persisted application records.
-    const { data: stored, error: storedError } = await db.from("pakdee_store")
-      .select("value").eq("key", "pakdee_dev_invoices").maybeSingle();
-    if (storedError) throw new SlipError("โหลดข้อมูลสาขาของบิลไม่สำเร็จ", 503);
-    const records = Array.isArray(stored?.value) ? stored.value : [];
-    const matches = records.filter((row: { id?: string; propertyId?: string; invoiceNumber?: string }) =>
-      row.id && row.propertyId && toUuid(row.propertyId) === propertyUuid && row.invoiceNumber === invoiceNumber);
-    if (matches.length === 1) {
-      const { data: legacy, error: legacyError } = await db.from("invoices")
-        .select("id,rooms(buildings(property_id))")
-        .eq("id", toUuid(matches[0].id)).eq("invoice_number", invoiceNumber).maybeSingle();
-      if (legacyError) throw new SlipError("โหลดข้อมูลบิลจากฐานข้อมูลไม่สำเร็จ", 503);
-      // A conflicting relational branch must never be overridden by old records.
-      const room = Array.isArray(legacy?.rooms) ? legacy.rooms[0] : legacy?.rooms;
+    // Older relational rows may lack building links. Resolve directly from invoices table.
+    const { data: directInvoice, error: directError } = await db.from("invoices")
+      .select("id,room_id,rooms(buildings(property_id))")
+      .eq("invoice_number", invoiceNumber).maybeSingle();
+    if (directError) throw new SlipError("โหลดข้อมูลสาขาของบิลไม่สำเร็จ", 503);
+    if (directInvoice) {
+      const room = Array.isArray(directInvoice?.rooms) ? directInvoice.rooms[0] : directInvoice?.rooms;
       const building = Array.isArray(room?.buildings) ? room.buildings[0] : room?.buildings;
-      if (legacy && (!building?.property_id || building.property_id === propertyUuid)) {
-        invoice = { id: legacy.id };
+      if (!building?.property_id || building.property_id === propertyUuid) {
+        invoice = { id: directInvoice.id };
       }
     }
   }

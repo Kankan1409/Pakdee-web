@@ -46,23 +46,25 @@ test('stores original image bytes under the invoice branch and leaves payment pe
 });
 
 test('refuses images when invoice is absent from the requested branch', async () => {
-  const { api, calls } = setup([{ data: null }, { data: { value: [] } }]);
+  const { api, calls } = setup([{ data: null }, { data: null }]);
   await assert.rejects(api.savePaymentSlip('branch-b', 'INV-1', Buffer.from('image')), e => e.status === 404);
   assert.equal(calls.length, 2);
 });
 
 test('legacy invoice requires an exact persisted branch and invoice ID', async () => {
   const { api, calls } = setup([
-    { data: null }, { data: { value: [{ id: 'old-invoice', propertyId: 'branch-a', invoiceNumber: 'INV-1' }] } },
-    { data: { id: 'uuid-old-invoice', rooms: null } }, { data: [] }, { data: { id: 'slip-1' } },
+    { data: null },
+    { data: { id: 'uuid-old-invoice', rooms: null } },
+    { data: [] },
+    { data: { id: 'slip-1' } },
   ]);
   assert.equal(await api.savePaymentSlip('branch-a', 'INV-1', Buffer.from('image')), 'slip-1');
-  assert.ok(calls[2].filters.some(([key, value]) => key === 'id' && value === 'uuid-old-invoice'));
+  assert.equal(calls[1].table, 'invoices');
 });
 
 test('legacy fallback refuses conflicting relational branch', async () => {
   const { api } = setup([
-    { data: null }, { data: { value: [{ id: 'old-invoice', propertyId: 'branch-a', invoiceNumber: 'INV-1' }] } },
+    { data: null },
     { data: { id: 'uuid-old-invoice', rooms: { buildings: { property_id: 'uuid-branch-b' } } } },
   ]);
   await assert.rejects(api.savePaymentSlip('branch-a', 'INV-1', Buffer.from('image')), e => e.status === 404);

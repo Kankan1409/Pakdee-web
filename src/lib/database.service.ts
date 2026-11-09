@@ -28,6 +28,7 @@ import { supabase } from "@/lib/supabase";
 import {
   syncKeyToRelationalTable,
   syncAllToRelationalTables,
+  loadFromRelationalTables,
 } from "@/lib/supabase-relational";
 
 /**
@@ -135,30 +136,19 @@ function setLocal<T>(key: string, value: T): void {
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(key, JSON.stringify(value));
+      if (normKey !== key) {
+        localStorage.setItem(normKey, JSON.stringify(value));
+      }
     } catch (e) {
       console.warn(`Failed to save to localStorage [${key}]:`, e);
     }
   }
 
-  // 3. Persist ONLY to Supabase Cloud (pakdee_store + debounced relational table mirror)
-  // data/db_port3000.json is completely disabled
+  // 3. Persist directly to Supabase Relational Tables (pakdee_store removed)
   try {
-    const nowIso = new Date().toISOString();
-    const rowsToUpsert: { key: string; value: any; updated_at: string }[] = [
-      { key, value, updated_at: nowIso },
-    ];
-    if (normKey !== key) {
-      rowsToUpsert.push({ key: normKey, value, updated_at: nowIso });
-    }
-    supabase
-      .from("pakdee_store")
-      .upsert(rowsToUpsert, { onConflict: "key" })
-      .then(({ error }: any) => {
-        if (error) console.warn(`[Supabase] Upsert error [${key}]:`, error.message);
-      });
     scheduleRelationalSync(normKey, value);
   } catch (err) {
-    console.warn(`[Supabase] Upsert skipped [${key}]:`, err);
+    console.warn(`[Supabase Relational] Sync error [${normKey}]:`, err);
   }
 }
 
@@ -179,7 +169,7 @@ function setupRealtimeSync(): void {
     // 2. Check if a channel with this topic is already active in Supabase client cache
     const existing = supabase
       .getChannels()
-      .find((c: any) => c.topic === "realtime:pakdee_store_changes" || c.topic === "pakdee_store_changes");
+      .find((c: any) => c.topic === "realtime:pakdee_relational_changes" || c.topic === "pakdee_relational_changes");
 
     if (existing) {
       realtimeChannel = existing;
@@ -187,35 +177,25 @@ function setupRealtimeSync(): void {
       return;
     }
 
-    // 3. Create fresh channel only if no active channel exists
+    // 3. Create fresh channel subscribing to public PostgreSQL relational changes
     const channel = supabase
-      .channel("pakdee_store_changes")
+      .channel("pakdee_relational_changes")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "pakdee_store",
         },
         (payload: any) => {
-          if (payload?.new && payload.new.key) {
-            const { key, value } = payload.new;
-            memoryDb[key] = value;
-            const normKey = key.replace(/^pakdee_(dev|test)_/, "");
-            memoryDb[normKey] = value;
-            try {
-              localStorage.setItem(key, JSON.stringify(value));
-            } catch {}
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("pakdee_db_updated", { detail: { key, value } })
-              );
-            }
+          if (payload?.table && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("pakdee_db_updated", { detail: { table: payload.table, payload } })
+            );
           }
         }
       )
       .subscribe((status: string) => {
-        console.log("[Supabase Realtime] pakdee_store subscription status:", status);
+        console.log("[Supabase Realtime] Relational subscription status:", status);
       });
 
     realtimeChannel = channel;
@@ -242,43 +222,36 @@ export const DatabaseService = {
           setupRealtimeSync();
         }
 
-        // 2. Query authoritative data DIRECTLY from Supabase Cloud (qygelgekosmklwrgnaxq)
+        // 2. Query authoritative data DIRECTLY from Supabase Relational Tables
         try {
-          const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-            setTimeout(() => resolve({ data: null, error: { message: "Supabase init query timeout (2.5s)" } }), 2500)
+          const timeoutPromise = new Promise<{ hasRelationalData: boolean; data: Record<string, any> }>((resolve) =>
+            setTimeout(() => resolve({ hasRelationalData: false, data: {} }), 3500)
           );
-          const queryPromise = supabase.from("pakdee_store").select("key, value, updated_at");
-          const { data: cloudStore, error } = await Promise.race([queryPromise as any, timeoutPromise]);
+          const { hasRelationalData, data: relationalData } = await Promise.race([
+            loadFromRelationalTables(memoryDb),
+            timeoutPromise,
+          ]);
 
-          if (!error && cloudStore && cloudStore.length > 0) {
-            const sortedRows = [...cloudStore].sort((a: any, b: any) => {
-              const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-              const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-              if (timeA !== timeB) return timeA - timeB;
-              const aIsDev = String(a.key).startsWith("pakdee_dev_") ? 1 : 0;
-              const bIsDev = String(b.key).startsWith("pakdee_dev_") ? 1 : 0;
-              return aIsDev - bIsDev;
-            });
-
-            sortedRows.forEach((row: any) => {
-              memoryDb[row.key] = row.value;
-              const normKey = row.key.replace(/^pakdee_(dev|test)_/, "");
-              memoryDb[normKey] = row.value;
-              if (row.key === normKey) {
-                memoryDb[`pakdee_dev_${normKey}`] = memoryDb[`pakdee_dev_${normKey}`] ?? row.value;
-              }
+          if (hasRelationalData && relationalData) {
+            Object.entries(relationalData).forEach(([key, value]) => {
+              memoryDb[key] = value;
+              const canonicalKey = `pakdee_dev_${key}`;
+              memoryDb[canonicalKey] = value;
               if (typeof window !== "undefined") {
                 try {
-                  localStorage.setItem(row.key, JSON.stringify(row.value));
+                  localStorage.setItem(canonicalKey, JSON.stringify(value));
+                  localStorage.setItem(key, JSON.stringify(value));
                 } catch {}
               }
             });
 
             isServerSynced = true;
-            console.log(`[Supabase Cloud Direct] Loaded ${cloudStore.length} keys directly from Supabase Cloud`);
+            console.log(`[Supabase Relational Direct] Successfully loaded ${Object.keys(relationalData).length} entities directly from Supabase Relational Tables`);
             return true;
           }
-        } catch {}
+        } catch (err: any) {
+          console.warn("[Supabase Relational Direct] Load warning:", err?.message);
+        }
 
         return false;
       } finally {
@@ -305,25 +278,21 @@ export const DatabaseService = {
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem(key, JSON.stringify(val));
+          if (normKey !== key) {
+            localStorage.setItem(normKey, JSON.stringify(val));
+          }
         } catch {}
       }
     });
 
-    // 2. Persist directly to Supabase Cloud pakdee_store (qygelgekosmklwrgnaxq) + debounced relational mirror
+    // 2. Persist directly to Supabase Relational Tables (pakdee_store removed)
     try {
-      const nowIso = new Date().toISOString();
       Object.entries(data).forEach(([k, v]) => {
         const normKey = k.replace(/^pakdee_(dev|test)_/, "");
-        supabase
-          .from("pakdee_store")
-          .upsert({ key: k, value: v, updated_at: nowIso }, { onConflict: "key" })
-          .then(({ error }: any) => {
-            if (error) console.warn(`[Supabase Cloud Direct] Upsert warning [${k}]:`, error.message);
-          });
         scheduleRelationalSync(normKey, v);
       });
     } catch (e: any) {
-      console.warn("[Supabase Cloud Direct] Batch persist error:", e?.message);
+      console.warn("[Supabase Relational Direct] Batch persist error:", e?.message);
     }
 
     return true;
