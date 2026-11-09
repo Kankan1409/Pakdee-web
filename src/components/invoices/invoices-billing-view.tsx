@@ -338,9 +338,11 @@ export function InvoicesBillingView({
                       <button
                         type="button"
                         onClick={() => onMarkAsPaid(inv.id)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                        title="รับชำระเงินสดต่อหน้า หรือยืนยันการรับชำระทันที"
                       >
-                        ทำเครื่องหมายว่าชำระแล้ว
+                        <Check className="w-3.5 h-3.5" />
+                        <span>ทำเครื่องหมายว่าชำระแล้ว</span>
                       </button>
                     </>
                   )}

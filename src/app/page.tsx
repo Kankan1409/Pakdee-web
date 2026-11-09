@@ -1448,8 +1448,75 @@ export default function HomePage() {
   };
 
   // Handler: Mark invoice as paid (เชื่อมต่อระบบ AI Slip Verification)
-  const handleMarkAsPaid = async (invoiceId: string) => {
-    await handleVerifySlip(invoiceId);
+  const handleMarkAsPaid = async (
+    invoiceId: string,
+    paymentMethod: "cash" | "promptpay" | "transfer" = "cash"
+  ) => {
+    try {
+      const targetInv = invoices.find((i) => i.id === invoiceId);
+      if (!targetInv) return;
+      const totalAmount = Number(targetInv.totalAmount) || 0;
+      const nowFormatted = new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) + " น.";
+      const nowIso = new Date().toISOString();
+
+      // 1. บันทึกสถานะชำระแล้วลงในฐานข้อมูล
+      await DatabaseService.updateInvoiceStatus(invoiceId, "paid", totalAmount, {
+        slipStatus: "passed",
+        slipVerifiedBy: "manual",
+        slipVerifiedAt: nowIso,
+      });
+
+      // 2. อัปเดต Local State ของ Invoices ทันที
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId
+            ? {
+                ...inv,
+                status: "paid",
+                paidAmount: totalAmount,
+                remainingAmount: 0,
+                paidAt: nowFormatted,
+                slipStatus: "passed",
+                slipVerifiedBy: "manual",
+                slipVerifiedAt: nowIso,
+              }
+            : inv
+        )
+      );
+
+      // 3. ปลดสถานะค้างชำระ (overdue) ของห้องพัก หากไม่มีบิลค้างชำระอื่น
+      const room = rooms.find((r) => r.roomNumber === targetInv.roomNumber);
+      if (room && room.status === "overdue") {
+        const remainingUnpaid = invoices.some(
+          (i) => i.roomNumber === targetInv.roomNumber && i.id !== invoiceId && i.status !== "paid"
+        );
+        if (!remainingUnpaid) {
+          await DatabaseService.updateRoomStatus(room.id, "occupied");
+          setRooms((prev) =>
+            prev.map((r) => (r.id === room.id ? { ...r, status: "occupied" } : r))
+          );
+        }
+      }
+
+      // 4. อัปเดต Active Modal ถ้ากำลังเปิดดูบิลนี้อยู่
+      if (activeInvoice && activeInvoice.id === invoiceId) {
+        setActiveInvoice({
+          ...activeInvoice,
+          status: "paid",
+          paidAmount: totalAmount,
+          remainingAmount: 0,
+          paidAt: nowFormatted,
+        });
+      }
+
+      showToast(
+        `✓ รับชำระเงิน${paymentMethod === "cash" ? "สด" : ""} ห้อง ${targetInv.roomNumber} (฿${totalAmount.toLocaleString()}) เรียบร้อยแล้ว`,
+        "success"
+      );
+    } catch (err: any) {
+      console.error("handleMarkAsPaid error:", err);
+      showToast("เกิดข้อผิดพลาดในการบันทึกรับชำระเงิน: " + (err?.message || "ไม่ทราบสาเหตุ"), "error");
+    }
   };
 
   // Handler: Add Tenant (with optional Room Assignment)
@@ -1710,7 +1777,6 @@ export default function HomePage() {
     booking,
     extraCharges,
     extraNote,
-    paymentMethod,
     electricPrev,
     electricCurr,
     waterPrev,

@@ -1472,7 +1472,7 @@ export const DatabaseService = {
         roomNumber: target.roomNumber,
         tenantName: target.tenantName,
         amount: actualPaid,
-        paymentMethod: "promptpay",
+        paymentMethod: (extraData as any)?.paymentMethod || "cash",
       });
     }
 
