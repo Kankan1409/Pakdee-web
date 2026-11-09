@@ -471,6 +471,7 @@ export const DatabaseService = {
     if (updates.name) settingsUpdates.branchName = updates.name;
     if (updates.address) settingsUpdates.address = updates.address;
     if (updates.phone) settingsUpdates.phone = updates.phone;
+    if (updates.ownerName !== undefined) settingsUpdates.ownerName = updates.ownerName;
     if (updates.promptpayNumber) settingsUpdates.promptpayNumber = updates.promptpayNumber;
     if (updates.promptpayName) settingsUpdates.promptpayName = updates.promptpayName;
     if (updates.imageUrl !== undefined) settingsUpdates.imageUrl = updates.imageUrl;
@@ -485,6 +486,7 @@ export const DatabaseService = {
     name: string;
     address: string;
     phone: string;
+    ownerName?: string;
     promptpayNumber: string;
     promptpayName: string;
     electricRate: number;
@@ -499,6 +501,7 @@ export const DatabaseService = {
       name: branchData.name,
       address: branchData.address,
       phone: branchData.phone,
+      ownerName: branchData.ownerName,
       promptpayNumber: branchData.promptpayNumber,
       promptpayName: branchData.promptpayName,
       electricRate: branchData.electricRate,
@@ -521,6 +524,7 @@ export const DatabaseService = {
       branchName: branchData.name,
       address: branchData.address,
       phone: branchData.phone,
+      ownerName: branchData.ownerName || "",
       promptpayNumber: branchData.promptpayNumber,
       promptpayName: branchData.promptpayName,
       electricRate: Number(branchData.electricRate),

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, Info, AlertTriangle, AlertCircle, X } from "lucide-react";
 
@@ -24,13 +24,16 @@ export function FloatingAlert({
   onClose: () => void;
   duration?: number;
 }) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (duration <= 0) return;
     const timer = setTimeout(() => {
-      onClose();
+      onCloseRef.current();
     }, duration);
     return () => clearTimeout(timer);
-  }, [onClose, duration]);
+  }, [duration]);
 
   if (typeof document === "undefined") return null;
   const { Icon, style, icon, title: defaultTitle } = variants[type];

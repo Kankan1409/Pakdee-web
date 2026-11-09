@@ -2534,6 +2534,9 @@ export default function HomePage() {
           if (updates.name) {
             setSettingsForm((prev) => ({ ...prev, name: updates.name || prev.name }));
           }
+          if (updates.ownerName !== undefined) {
+            setSettingsForm((prev) => ({ ...prev, ownerName: updates.ownerName || "" }));
+          }
         }
         showToast("บันทึกการแก้ไขข้อมูลสาขาเรียบร้อยแล้ว ✓", "success");
         return true;
@@ -2552,6 +2555,7 @@ export default function HomePage() {
     name: string;
     address: string;
     phone: string;
+    ownerName?: string;
     promptpayNumber: string;
     promptpayName: string;
     electricRate: number;

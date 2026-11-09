@@ -17,6 +17,7 @@ export interface Property {
   name: string;
   address: string;
   phone: string;
+  ownerName?: string; // ชื่อเจ้าของ / ผู้จัดการ
   promptpayNumber: string;
   promptpayName: string;
   plan: PlanType;
@@ -48,6 +49,8 @@ export interface Tenant {
   fullName: string;
   phone: string;
   idCard: string;
+  Line_Acc?: string;
+  lineAcc?: string;
   emergencyContact?: string;
   lineId?: string;
   lineUserId?: string;

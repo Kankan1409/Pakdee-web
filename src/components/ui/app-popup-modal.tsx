@@ -73,6 +73,16 @@ export function AppPopupModal({
   const finalConfirmText = confirmText || config.defaultConfirmText;
   const IconComponent = config.Icon;
 
+  // Auto-dismiss for info popup modal after 4 seconds
+  useEffect(() => {
+    if (!isOpen || level !== "info") return;
+    const timer = setTimeout(() => {
+      if (onConfirm) onConfirm();
+      onClose();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [isOpen, level, onClose, onConfirm]);
+
   // Handle Keyboard shortcuts (Esc = close, Enter = confirm)
   useEffect(() => {
     if (!isOpen || (isCancelHidden && !onConfirm && !onCancel)) return;

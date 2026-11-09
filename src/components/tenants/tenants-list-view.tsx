@@ -61,6 +61,7 @@ export function TenantsListView({
       fullName: string;
       phone: string;
       idCard?: string;
+      lineAcc?: string;
       lineId?: string;
       vehiclePlate?: string;
       emergencyContact?: string;
@@ -101,6 +102,7 @@ export function TenantsListView({
         fullName: t.fullName,
         phone: t.phone,
         idCard: finalIdCard,
+        lineAcc: t.Line_Acc || t.lineAcc || t.lineDisplayName || t.lineId || "",
         lineId: t.lineId,
         vehiclePlate: finalPlate,
         emergencyContact: t.emergencyContact,
@@ -158,6 +160,7 @@ export function TenantsListView({
         !q ||
         item.fullName.toLowerCase().includes(q) ||
         item.phone.toLowerCase().includes(q) ||
+        (item.lineAcc && item.lineAcc.toLowerCase().includes(q)) ||
         (item.idCard && item.idCard.toLowerCase().includes(q)) ||
         (item.roomNumber && item.roomNumber.toLowerCase().includes(q));
       return matchType && matchSearch;
@@ -259,6 +262,7 @@ export function TenantsListView({
               <th className="py-3 px-3">ชื่อ-นามสกุล</th>
               <th className="py-3 px-3">เบอร์โทรศัพท์</th>
               <th className="py-3 px-3">ข้อมูลสัญญา / การเข้าพัก</th>
+              <th className="py-3 px-3">Line_acc</th>
               <th className="py-3 px-3">เลขบัตรประชาชน</th>
               <th className="py-3 px-3">มัดจำ</th>
               <th className="py-3 px-3">ทะเบียนรถ</th>
@@ -267,7 +271,7 @@ export function TenantsListView({
           <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
             {filteredList.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-[var(--muted)]">
+                <td colSpan={9} className="py-8 text-center text-[var(--muted)]">
                   ไม่พบข้อมูลผู้เช่าตามตัวกรองที่เลือก
                 </td>
               </tr>
@@ -292,6 +296,16 @@ export function TenantsListView({
                   <td className="py-3 px-3 font-mono">{t.phone}</td>
                   <td className="py-3 px-3 text-[var(--muted)] text-[11px] max-w-xs truncate">
                     {t.stayInfo || "-"}
+                  </td>
+                  <td className="py-3 px-3">
+                    {t.lineAcc ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#06C755]/10 text-[#06C755] font-semibold text-[11px] border border-[#06C755]/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#06C755]" />
+                        {t.lineAcc}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--muted)] text-[11px]">-</span>
+                    )}
                   </td>
                   <td className="py-3 px-3 font-mono text-[11px]">{t.idCard || "-"}</td>
                   <td className="py-3 px-3 font-medium">

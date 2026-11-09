@@ -49,6 +49,7 @@ interface BranchSelectorViewProps {
     name: string;
     address: string;
     phone: string;
+    ownerName?: string;
     promptpayNumber: string;
     promptpayName: string;
     electricRate: number;
@@ -87,6 +88,7 @@ export function BranchSelectorView({
 
   const [form, setForm] = useState({
     name: "",
+    ownerName: "",
     address: "",
     phone: "",
     promptpayNumber: "",
@@ -99,6 +101,7 @@ export function BranchSelectorView({
 
   const [editForm, setEditForm] = useState({
     name: "",
+    ownerName: "",
     address: "",
     phone: "",
     promptpayNumber: "",
@@ -142,6 +145,7 @@ export function BranchSelectorView({
     setEditingBranch(branch);
     setEditForm({
       name: branch.name,
+      ownerName: branch.ownerName || "",
       address: branch.address || "",
       phone: branch.phone || "",
       promptpayNumber: branch.promptpayNumber || "",
@@ -165,6 +169,7 @@ export function BranchSelectorView({
       if (onUpdateBranch) {
         const ok = await onUpdateBranch(editingBranch.id, {
           name: editForm.name.trim(),
+          ownerName: editForm.ownerName.trim(),
           address: editForm.address,
           phone: editForm.phone,
           promptpayNumber: editForm.promptpayNumber,
@@ -250,6 +255,7 @@ export function BranchSelectorView({
         setIsModalOpen(false);
         setForm({
           name: "",
+          ownerName: "",
           address: "",
           phone: "",
           promptpayNumber: "",
@@ -646,6 +652,19 @@ export function BranchSelectorView({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  ชื่อเจ้าของ / ผู้จัดการ
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น คุณสมชาย พักดี"
+                  value={form.ownerName}
+                  onChange={(e) => setForm({ ...form, ownerName: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   ที่อยู่ / ทำเลที่ตั้ง
                 </label>
                 <input
@@ -879,6 +898,19 @@ export function BranchSelectorView({
                   placeholder="เช่น พักดี แมนชั่น (สาขา 1)"
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  ชื่อเจ้าของ / ผู้จัดการ
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น คุณสมชาย พักดี"
+                  value={editForm.ownerName}
+                  onChange={(e) => setEditForm({ ...editForm, ownerName: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white font-medium"
                 />
               </div>
