@@ -1041,14 +1041,10 @@ export const DatabaseService = {
 
   async getLatestMeterReading(roomId: string, billingMonth?: string): Promise<any | null> {
     const history = getLocal<any[]>(KEYS.METER_READINGS, []);
-    const targetMonth = billingMonth || new Date().toISOString().slice(0, 7);
-    // ค้นหาเฉพาะบันทึกมิเตอร์ของรอบเดือนที่ระบุเท่านั้น ห้าม fallback ไปดึงของเดือนก่อนหน้ามาคำนวณเด็ดขาด
-    const found = history.find(
-      (m) =>
-        (m.room_id === roomId || (m.room_number && this.isRoomNumberMatch(m.room_number, roomId))) &&
-        (m.billing_month === targetMonth || m.reading_month === targetMonth)
-    );
-    return found || null;
+    const month = billingMonth || new Date().toISOString().slice(0, 7);
+    const found = history.find((m) => m.room_id === roomId && m.billing_month === month);
+    if (found) return found;
+    return history.find((m) => m.room_id === roomId) || null;
   },
 
   // -------------------------------------------------------------

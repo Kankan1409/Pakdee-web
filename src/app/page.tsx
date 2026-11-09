@@ -1253,7 +1253,7 @@ export default function HomePage() {
   };
 
   // Handler: Generate Monthly Invoices (Auto-Billing)
-  const handleGenerateMonthlyInvoices = async (targetMonth?: string) => {
+  const handleGenerateMonthlyInvoices = async () => {
     const activeRooms = rooms.filter(
       (r) => r.status === "occupied" || r.status === "overdue"
     );
@@ -1264,23 +1264,7 @@ export default function HomePage() {
     }
 
     // ถ้าระบุตัวกรองเดือนอยู่ ให้ออกบิลของรอบเดือนนั้น หากไม่ได้เลือกให้ใช้เดือนปัจจุบัน
-    const currentMonth = (targetMonth && targetMonth !== "all")
-      ? targetMonth
-      : (invoiceMonthFilter !== "all" ? invoiceMonthFilter : new Date().toISOString().slice(0, 7));
-
-    // ตรวจสอบว่าในรอบเดือน currentMonth มีการบันทึก/คำนวณมิเตอร์ในหน้า /meter แล้วหรือยัง
-    const allMeterReadings = await DatabaseService.getMeterReadings(property.id);
-    const hasRecordedMetersThisMonth = allMeterReadings.some(
-      (m) => (m.billing_month === currentMonth || m.reading_month === currentMonth)
-    );
-
-    if (!hasRecordedMetersThisMonth) {
-      showToast(
-        `รอบเดือน ${currentMonth} ยังไม่ได้บันทึกหรือคำนวณมิเตอร์ในหน้า /meter ระบบจะออกบิลโดยคิดค่าน้ำ-ไฟเป็น 0 หน่วย (หากต้องการคิดค่าน้ำ-ไฟตามจริง กรุณาไปกดบันทึกมิเตอร์ที่หน้า /meter ก่อน)`,
-        "warning"
-      );
-    }
-
+    const currentMonth = invoiceMonthFilter !== "all" ? invoiceMonthFilter : new Date().toISOString().slice(0, 7);
     let successCount = 0;
 
     for (const room of activeRooms) {
