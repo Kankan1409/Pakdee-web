@@ -471,20 +471,7 @@ export default function HomePage() {
         }
 
         setRooms(finalRooms);
-        if (!checkoutRoomId && finalRooms.length > 0) {
-          const occ = finalRooms.find((r) => (r.status === "occupied" || r.status === "overdue") && !r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]"));
-          if (occ) {
-            setCheckoutRoomId(occ.id);
-            // ดึงเลขมิเตอร์จริงของห้องพักตั้งต้น ไม่บวกตัวเลขจำลอง
-            setCheckoutElecPrev(occ.currentElectricMeter);
-            setCheckoutElecCurr(occ.currentElectricMeter);
-            setCheckoutWaterPrev(occ.currentWaterMeter);
-            setCheckoutWaterCurr(occ.currentWaterMeter);
-            const activeCt = (contractsData || []).find((c) => c.roomNumber === occ.roomNumber && c.status === "active");
-            const dep = activeCt?.depositAmount || (occ as any).depositAmount || occ.currentTenant?.depositAmount || (occ.monthlyRate * 2) || 8000;
-            setCheckoutDepositAmount(dep);
-          }
-        }
+        // ให้หน้า Checkout เริ่มต้นที่ "-- กรุณาเลือกห้องพักที่ต้องการย้ายออก --" เพื่อให้ผู้ใช้เลือกเองเสมอ
       }
 
       if (invsData) {
@@ -2323,6 +2310,7 @@ export default function HomePage() {
                 : c
             )
           );
+          setCheckoutRoomId("");
           showToast(`สรุปย้ายออกห้อง ${targetRoom.roomNumber} และบันทึกใบเสร็จหักเงินประกันเข้าสู่ระบบบัญชีเรียบร้อยแล้ว ✓`, "success");
         } else {
           showToast("เกิดข้อผิดพลาดในการทำเรื่องย้ายออก", "error");

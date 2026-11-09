@@ -52,11 +52,11 @@ export function CheckoutManagementView({
   const [waterCurr, setWaterCurr] = useState<number | "">(0);
   const [cleaningFee, setCleaningFee] = useState<number | "">(500);
   const [damageFee, setDamageFee] = useState<number | "">(0);
-  const [depositAmount, setDepositAmount] = useState<number | "">(8000);
+  const [depositAmount, setDepositAmount] = useState<number | "">(0);
 
   // Sync external selectedRoomId prop if changed
   useEffect(() => {
-    if (selectedRoomId && selectedRoomId !== roomId) {
+    if (selectedRoomId !== roomId) {
       handleSelectRoom(selectedRoomId);
     }
   }, [selectedRoomId]);
@@ -66,6 +66,14 @@ export function CheckoutManagementView({
     if (onSelectRoomId) {
       onSelectRoomId(selId);
     }
+    if (!selId) {
+      setElecPrev(0);
+      setElecCurr(0);
+      setWaterPrev(0);
+      setWaterCurr(0);
+      setDepositAmount(0);
+      return;
+    }
     const r = rooms.find((rm) => rm.id === selId);
     if (r) {
       setElecPrev(r.currentElectricMeter);
@@ -74,11 +82,10 @@ export function CheckoutManagementView({
       setWaterCurr(r.currentWaterMeter);
       const act = contracts.find((c) => c.roomNumber === r.roomNumber && c.status === "active");
       const dep =
-        act?.depositAmount ||
-        (r as any).depositAmount ||
-        r.currentTenant?.depositAmount ||
-        r.monthlyRate * 2 ||
-        8000;
+        act?.depositAmount ??
+        (r as any).depositAmount ??
+        r.currentTenant?.depositAmount ??
+        (r.monthlyRate ? r.monthlyRate * 2 : 0);
       setDepositAmount(dep);
     }
   };
@@ -173,6 +180,18 @@ export function CheckoutManagementView({
             ))}
         </select>
       </div>
+
+      {!selectedRoom && (
+        <div className="p-8 text-center border border-dashed border-[var(--border)] rounded-2xl bg-[var(--subtle)]/40 space-y-2 animate-in fade-in duration-150">
+          <DoorOpen className="w-10 h-10 mx-auto text-[var(--muted)] opacity-50" />
+          <div className="text-sm font-semibold text-[var(--foreground)]">
+            กรุณาเลือกห้องพักด้านบนเพื่อเริ่มทำเรื่องย้ายออก
+          </div>
+          <p className="text-xs text-[var(--muted)] max-w-md mx-auto">
+            ระบบจะดึงข้อมูลสัญญาเช่า, ยอดเงินประกัน, เลขมิเตอร์น้ำ-ไฟล่าสุด และยอดบิลค้างชำระของห้องที่เลือกมาคำนวณเงินประกันคืนโดยอัตโนมัติ
+          </p>
+        </div>
+      )}
 
       {selectedRoom && (
         <div className="space-y-5 text-xs">
