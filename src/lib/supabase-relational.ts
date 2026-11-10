@@ -934,21 +934,20 @@ export async function loadFromRelationalTables(
     }
 
 
-    // Map properties (preserving original IDs if matched in existingMemoryDb)
+    // Map properties (use authoritative 5-character IDs directly from Supabase)
     const existingProps: Property[] = Array.isArray(existingMemoryDb["properties"])
       ? existingMemoryDb["properties"]
       : [];
+    const defaultPropId = propRows[0]?.id ? String(propRows[0].id) : "P0001";
     const uuidToPropId = new Map<string, string>();
     for (const ep of existingProps) {
       uuidToPropId.set(toUuid(ep.id).toLowerCase(), ep.id);
     }
 
-    result["properties"] = propRows.map((row: any, idx: number) => {
-      const origId = uuidToPropId.get(String(row.id).toLowerCase()) ||
-        existingProps.find((p) => p.name === row.name)?.id ||
-        (idx === 0 ? "prop-1" : String(row.id));
-      uuidToPropId.set(String(row.id).toLowerCase(), origId);
-      const existingMatch = existingProps.find((p) => p.id === origId);
+    result["properties"] = propRows.map((row: any) => {
+      const origId = String(row.id);
+      uuidToPropId.set(origId.toLowerCase(), origId);
+      const existingMatch = existingProps.find((p) => p.id === origId || p.name === row.name);
       return {
         ...(existingMatch || {}),
         id: origId,
@@ -966,11 +965,11 @@ export async function loadFromRelationalTables(
     // Map branch_settings
     if (settingsRes.data && settingsRes.data.length > 0) {
       for (const sRow of settingsRes.data) {
-        const propId = uuidToPropId.get(String(sRow.property_id || "").toLowerCase()) || "prop-1";
+        const propId = uuidToPropId.get(String(sRow.property_id || "").toLowerCase()) || String(sRow.property_id || defaultPropId);
         const existingSetting = existingMemoryDb[`branch_settings_${propId}`] || {};
         result[`branch_settings_${propId}`] = {
           ...existingSetting,
-          id: sRow.id,
+          id: String(sRow.id),
           branchName: sRow.branch_name || existingSetting.branchName || "",
           address: sRow.address ?? existingSetting.address ?? "",
           phone: sRow.phone ?? existingSetting.phone ?? "",
@@ -1017,8 +1016,8 @@ export async function loadFromRelationalTables(
       );
       const mapped: Tenant = {
         ...(existingMatch || {}),
-        id: existingMatch?.id || String(tRow.id),
-        propertyId: existingMatch?.propertyId || "prop-1",
+        id: String(tRow.id),
+        propertyId: existingMatch?.propertyId && /^[A-Z]\d{4}$/i.test(existingMatch.propertyId) ? existingMatch.propertyId : defaultPropId,
         fullName: tRow.full_name || "ไม่ระบุชื่อ",
         phone: tRow.phone || "-",
         idCard: tRow.id_card || existingMatch?.idCard || "",
@@ -1048,11 +1047,11 @@ export async function loadFromRelationalTables(
     const uuidToRoomNumber = new Map<string, string>();
     result["rooms"] = roomRows.map((rRow: any) => {
       const rowUuid = String(rRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || "prop-1";
+      const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
       const existingRoom = existingRooms.find(
         (er) =>
           toUuid(er.id).toLowerCase() === rowUuid ||
-          ((er.propertyId || "prop-1") === propId && er.roomNumber === rRow.room_number)
+          ((er.propertyId || defaultPropId) === propId && er.roomNumber === rRow.room_number)
       );
       uuidToRoomNumber.set(rowUuid, rRow.room_number);
       const linkedTenant = rRow.current_tenant_id
@@ -1060,12 +1059,15 @@ export async function loadFromRelationalTables(
         : rRow.status === "occupied" || rRow.status === "overdue"
           ? existingRoom?.currentTenant
           : undefined;
+      if (linkedTenant) {
+        linkedTenant.propertyId = propId;
+      }
 
       return {
         ...(existingRoom || {}),
-        id: existingRoom?.id || String(rRow.id),
+        id: String(rRow.id),
         propertyId: propId,
-        buildingId: existingRoom?.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`),
+        buildingId: rRow.building_id ? String(rRow.building_id) : "B0001",
         roomNumber: String(rRow.room_number),
         floor: Number(rRow.floor || 1),
         type: rRow.type || existingRoom?.type || "Standard",
@@ -1085,7 +1087,7 @@ export async function loadFromRelationalTables(
       : [];
     result["contracts"] = contractRows.map((cRow: any) => {
       const rowUuid = String(cRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || "prop-1";
+      const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || String(cRow.property_id || defaultPropId);
       const existingContract = existingContracts.find(
         (ec) => toUuid(ec.id).toLowerCase() === rowUuid || ec.contractNumber === cRow.contract_number
       );
@@ -1097,7 +1099,7 @@ export async function loadFromRelationalTables(
       }
       return {
         ...(existingContract || {}),
-        id: existingContract?.id || String(cRow.id),
+        id: String(cRow.id),
         propertyId: propId,
         contractNumber: cRow.contract_number,
         roomNumber: String(cRow.room_number),
@@ -1123,7 +1125,7 @@ export async function loadFromRelationalTables(
     const itemRows = invoiceItemsRes.data || [];
     result["invoices"] = invRows.map((iRow: any) => {
       const rowUuid = String(iRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || "prop-1";
+      const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || String(iRow.property_id || defaultPropId);
       const existingInv = existingInvoices.find(
         (ei) => toUuid(ei.id).toLowerCase() === rowUuid || ei.invoiceNumber === iRow.invoice_number
       );
@@ -1149,7 +1151,7 @@ export async function loadFromRelationalTables(
 
       return {
         ...(existingInv || {}),
-        id: existingInv?.id || String(iRow.id),
+        id: String(iRow.id),
         propertyId: propId,
         invoiceNumber: iRow.invoice_number,
         roomNumber,
@@ -1169,7 +1171,7 @@ export async function loadFromRelationalTables(
     if (metersRes.data) {
       result["meter_readings"] = metersRes.data.map((mRow: any) => ({
         id: String(mRow.id),
-        property_id: "prop-1",
+        property_id: defaultPropId,
         room_id: String(mRow.room_id),
         room_number: uuidToRoomNumber.get(String(mRow.room_id).toLowerCase()) || "",
         billing_month: mRow.billing_month ?? mRow.reading_month,
@@ -1190,11 +1192,11 @@ export async function loadFromRelationalTables(
         : [];
       result["repairs"] = repairsRes.data.map((rRow: any) => {
         const rowUuid = String(rRow.id).toLowerCase();
-        const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || "prop-1";
+        const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
         const existingRep = existingRepairs.find((er) => toUuid(er.id).toLowerCase() === rowUuid);
         return {
           ...(existingRep || {}),
-          id: existingRep?.id || String(rRow.id),
+          id: String(rRow.id),
           propertyId: propId,
           roomNumber: String(rRow.room_number),
           category: (rRow.category || "other") as RepairItem["category"],
@@ -1217,11 +1219,11 @@ export async function loadFromRelationalTables(
         : [];
       result["expenses"] = expensesRes.data.map((eRow: any) => {
         const rowUuid = String(eRow.id).toLowerCase();
-        const propId = uuidToPropId.get(String(eRow.property_id || "").toLowerCase()) || "prop-1";
+        const propId = uuidToPropId.get(String(eRow.property_id || "").toLowerCase()) || String(eRow.property_id || defaultPropId);
         const existingExp = existingExpenses.find((ee) => toUuid(ee.id).toLowerCase() === rowUuid);
         return {
           ...(existingExp || {}),
-          id: existingExp?.id || String(eRow.id),
+          id: String(eRow.id),
           propertyId: propId,
           category: (eRow.category || "other") as ExpenseItem["category"],
           title: eRow.title,
@@ -1243,8 +1245,8 @@ export async function loadFromRelationalTables(
         const existingDb = existingDaily.find((ed) => toUuid(ed.id).toLowerCase() === rowUuid);
         return {
           ...(existingDb || {}),
-          id: existingDb?.id || String(dRow.id),
-          propertyId: existingDb?.propertyId || "prop-1",
+          id: String(dRow.id),
+          propertyId: existingDb?.propertyId && /^[A-Z]\d{4}$/i.test(existingDb.propertyId) ? existingDb.propertyId : defaultPropId,
           roomNumber: String(dRow.room_number),
           guestName: dRow.guest_name,
           guestPhone: dRow.guest_phone,

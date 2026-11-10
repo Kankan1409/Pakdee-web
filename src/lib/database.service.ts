@@ -261,6 +261,25 @@ export const DatabaseService = {
               }
             });
 
+            // Auto-heal activePropertyId if browser localStorage had a pre-migration ID
+            const loadedProps: any[] = Array.isArray(relationalData["properties"]) ? relationalData["properties"] : [];
+            const loadedRooms: any[] = Array.isArray(relationalData["rooms"]) ? relationalData["rooms"] : [];
+            if (loadedProps.length > 0) {
+              const currentActive = getLocal<string | null>(KEYS.ACTIVE_PROPERTY_ID, null);
+              if (!currentActive || !loadedProps.some((p) => p.id === currentActive)) {
+                const propWithRooms = loadedProps.find((p) => loadedRooms.some((r) => r.propertyId === p.id));
+                const bestPropId = propWithRooms?.id || loadedProps[0].id;
+                memoryDb[KEYS.ACTIVE_PROPERTY_ID] = bestPropId;
+                memoryDb["active_property_id"] = bestPropId;
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem(KEYS.ACTIVE_PROPERTY_ID, JSON.stringify(bestPropId));
+                    localStorage.setItem("active_property_id", JSON.stringify(bestPropId));
+                  } catch {}
+                }
+              }
+            }
+
             isServerSynced = true;
             console.log(`[Supabase Relational Direct] Successfully loaded ${Object.keys(relationalData).length} entities directly from Supabase Relational Tables`);
             return true;
@@ -319,10 +338,10 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   getActivePropertyId(): string {
     const id = getLocal<string | null>(KEYS.ACTIVE_PROPERTY_ID, null);
-    if (id) return id;
     const props = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
+    if (id && (props.length === 0 || props.some((p) => p.id === id))) return id;
     if (props.length > 0 && props[0].id) return props[0].id;
-    return "prop-1";
+    return "P0001";
   },
 
   setActivePropertyId(id: string): void {
