@@ -1088,6 +1088,7 @@ export const DatabaseService = {
 
     // 3. ยึดข้อมูลผู้เช่าจากหน้าแผนผัง (currentTenant) และทะเบียนผู้เช่าเดิมเป็นหลัก (อัปเดตตัวเดิม ไม่สร้างซ้ำ)
     const activeName = roomMatch.currentTenant?.fullName || lineDisplayName || `ผู้เช่าห้อง ${cleanRoom}`;
+    const isPlaceholderLineName = (v?: string) => !v || /^ผู้เช่าห้อง\s/.test(v.trim());
     const existingTenantRecord = allTenants.find(
       (t) =>
         (t.propertyId || "prop-1") === (roomMatch!.propertyId || "prop-1") &&
@@ -1134,9 +1135,17 @@ export const DatabaseService = {
           t.fullName.trim() === activeName.trim())
     );
 
+    const previousRecord = currentTenantIdx !== -1 ? updatedTenants[currentTenantIdx] : undefined;
+    // Line_Acc = the tenant's LINE display name. If the LINE profile could not be fetched,
+    // keep the previously stored real name instead of writing a placeholder.
+    const previousLineName = [previousRecord?.Line_Acc, previousRecord?.lineDisplayName].find(
+      (v) => !isPlaceholderLineName(v)
+    );
+    const lineAccName = (!isPlaceholderLineName(lineDisplayName) ? lineDisplayName : undefined) || previousLineName;
+
     const targetTenant: Tenant = {
       ...(roomMatch.currentTenant || {}),
-      ...(currentTenantIdx !== -1 ? updatedTenants[currentTenantIdx] : {}),
+      ...(previousRecord || {}),
       id: tenantId,
       propertyId: roomMatch.propertyId || propId,
       roomId: roomMatch.id,
@@ -1146,9 +1155,9 @@ export const DatabaseService = {
       idCard: activeIdCard,
       lineId: lineUserId,
       lineUserId,
-      lineDisplayName: lineDisplayName || activeName,
-      Line_Acc: lineDisplayName || activeName,
-      lineAcc: lineDisplayName || activeName,
+      lineDisplayName: lineAccName,
+      Line_Acc: lineAccName,
+      lineAcc: lineAccName,
       lineLinkedAt: new Date().toISOString(),
     };
 

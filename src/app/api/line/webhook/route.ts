@@ -121,11 +121,13 @@ export async function POST(req: NextRequest) {
             const requestedRoom = roomMatch[1];
             console.log(`[LINE-WEBHOOK] Attempting room binding: room=${requestedRoom} user=${userId}`);
 
+            // Store the tenant's real LINE display name (e.g. in tenants.Line_Acc)
+            const lineProfile = await getLineUserProfile(channelAccessToken, userId);
             const boundTenant = await DatabaseService.bindTenantLineUser(
               activePropId,
               requestedRoom,
               userId,
-              "ผู้เช่าห้อง " + requestedRoom
+              lineProfile?.displayName?.trim() || undefined
             );
 
             if (boundTenant) {

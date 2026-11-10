@@ -55,26 +55,22 @@ export function TenantsListView({
       }
     });
 
-    // Fast lookup for daily bookings
-    const dailyBookingMap = new Map<string, DailyBooking>();
-    const dailyBookingByRoom = new Map<string, DailyBooking>();
-
-    dailyBookings.forEach((b) => {
-      const normalizedGuest = b.guestName ? b.guestName.trim().toLowerCase() : "";
-      if (normalizedGuest) {
-        dailyBookingMap.set(normalizedGuest, b);
+    // A daily booking belongs to a tenant only when it is in the same room and the
+    // name or phone also matches. Phone alone is not enough: several people (family
+    // members, or one booker for many rooms) can share the same phone number.
+    const normalize = (v?: string) => (v ? v.trim().toLowerCase() : "");
+    const digits = (v?: string) => (v ? v.replace(/\D/g, "") : "");
+    const bookingMatches = (b: DailyBooking, name: string, phone: string, room: string) => {
+      const guestName = normalize(b.guestName);
+      const guestPhone = digits(b.guestPhone);
+      const sameName = Boolean(name) && guestName === name;
+      const samePhone = Boolean(phone) && guestPhone === phone;
+      if (room && b.roomNumber) {
+        return b.roomNumber === room && (sameName || samePhone);
       }
-      const cleanPhone = b.guestPhone ? b.guestPhone.replace(/\D/g, "") : "";
-      if (cleanPhone) {
-        dailyBookingMap.set(cleanPhone, b);
-        if (normalizedGuest) {
-          dailyBookingMap.set(`${normalizedGuest}_${cleanPhone}`, b);
-        }
-      }
-      if (b.roomNumber) {
-        dailyBookingByRoom.set(b.roomNumber, b);
-      }
-    });
+      // No room on one side: require the name to match (and the phone, when both have one).
+      return sameName && (!phone || !guestPhone || samePhone);
+    };
 
     // Combined list of monthly and daily tenants
     const combined: Array<{
@@ -104,11 +100,7 @@ export function TenantsListView({
         tenantRoomMap.get(t.fullName) ||
         (noteRoomMatch ? noteRoomMatch[1] : "");
 
-      const matchingBooking =
-        (normalizedName && cleanPhone ? dailyBookingMap.get(`${normalizedName}_${cleanPhone}`) : undefined) ||
-        (normalizedName ? dailyBookingMap.get(normalizedName) : undefined) ||
-        (cleanPhone ? dailyBookingMap.get(cleanPhone) : undefined) ||
-        (room ? dailyBookingByRoom.get(room) : undefined);
+      const matchingBooking = dailyBookings.find((b) => bookingMatches(b, normalizedName, cleanPhone, room));
 
       const targetRoomNumber = room || matchingBooking?.roomNumber || "";
       const roomStatus = targetRoomNumber ? roomStatusMap.get(targetRoomNumber) : undefined;
@@ -167,19 +159,9 @@ export function TenantsListView({
     });
 
     dailyBookings.forEach((b) => {
-      const cleanGuestPhone = b.guestPhone ? b.guestPhone.replace(/\D/g, "") : "";
-      const normalizedGuest = b.guestName ? b.guestName.trim().toLowerCase() : "";
-
-      const existingItem = combined.find((item) => {
-        const itemCleanPhone = item.phone ? item.phone.replace(/\D/g, "") : "";
-        const itemNormalizedName = item.fullName ? item.fullName.trim().toLowerCase() : "";
-
-        return (
-          itemNormalizedName === normalizedGuest ||
-          (cleanGuestPhone && itemCleanPhone === cleanGuestPhone) ||
-          (b.roomNumber && item.roomNumber === b.roomNumber && (item.type === "daily" || itemNormalizedName === normalizedGuest))
-        );
-      });
+      const existingItem = combined.find((item) =>
+        bookingMatches(b, normalize(item.fullName), digits(item.phone), item.roomNumber)
+      );
 
       if (existingItem) {
         // Enforce daily classification and booking stay info
