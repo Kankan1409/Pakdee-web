@@ -94,7 +94,22 @@ function getCurrentSessionUser(): { id: string; phone?: string; email?: string }
 
 function isCustomRegisteredUser(user: { id: string; phone?: string; email?: string } | null): boolean {
   if (!user || !user.id) return false;
-  return user.id !== "usr-owner-01" && user.id !== "usr-mgr-01";
+  return user.id !== "usr-owner-01" && user.id !== "usr-mgr-01" && user.id !== "U0001" && user.id !== "U0002";
+}
+
+function nextShortId(prefix: string, existingIds: (string | undefined)[]): string {
+  const p = prefix.toUpperCase().slice(0, 1);
+  let maxNum = 0;
+  for (const id of existingIds) {
+    if (!id) continue;
+    const m = id.match(new RegExp(`^${p}(\\d+)$`, "i"));
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum && n < 9999) maxNum = n;
+    }
+  }
+  const next = maxNum > 0 ? maxNum + 1 : existingIds.length + 1;
+  return `${p}${String(Math.min(next, 9999)).padStart(4, "0")}`;
 }
 
 function getLocal<T>(key: string, fallback: T): T {
@@ -494,7 +509,8 @@ export const DatabaseService = {
     initialRoomCount: number;
     imageUrl?: string;
   }): Promise<BranchItem | null> {
-    const newId = `prop-${Date.now()}`;
+    const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
+    const newId = nextShortId("P", rawProps.map((p) => p.id));
     const sessionUser = getCurrentSessionUser();
     const newBranch: BranchItem & { ownerId?: string; ownerPhone?: string } = {
       id: newId,
@@ -510,17 +526,16 @@ export const DatabaseService = {
       totalRooms: 0,
       buildingName: "อาคาร 1",
       imageUrl: branchData.imageUrl || undefined,
-      ownerId: sessionUser?.id || "usr-owner-01",
+      ownerId: sessionUser?.id || "U0001",
       ownerPhone: sessionUser?.phone,
     };
 
-    const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
     const updatedProps = [...rawProps, newBranch];
 
     // Seed branch-specific settings for isolation
     const newSettings: BranchSettingsDetail = {
       ...initialBranchSettings,
-      id: `settings-${newId}`,
+      id: `S${newId.slice(1)}`,
       branchName: branchData.name,
       address: branchData.address,
       phone: branchData.phone,
@@ -725,9 +740,9 @@ export const DatabaseService = {
     );
 
     const newRoom: Room = {
-      id: existingIdx >= 0 ? allRooms[existingIdx].id : `room-${propId}-${roomData.roomNumber}-${Date.now()}`,
+      id: existingIdx >= 0 ? allRooms[existingIdx].id : nextShortId("R", allRooms.map((r) => r.id)),
       propertyId: propId,
-      buildingId: roomData.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`),
+      buildingId: roomData.buildingId || (propId === "prop-1" || propId === "P0001" ? "B0001" : `B${propId.replace(/^[A-Za-z-]+/, "").padStart(4, "0").slice(-4)}`),
       roomNumber: roomData.roomNumber,
       floor: roomData.floor,
       type: roomData.type,
@@ -790,9 +805,9 @@ export const DatabaseService = {
       );
 
       const newRoom: Room = {
-        id: existingIdx >= 0 ? currentAll[existingIdx].id : `room-${propId}-${rData.roomNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: existingIdx >= 0 ? currentAll[existingIdx].id : nextShortId("R", currentAll.map((r) => r.id)),
         propertyId: propId,
-        buildingId: rData.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`),
+        buildingId: rData.buildingId || (propId === "prop-1" || propId === "P0001" ? "B0001" : `B${propId.replace(/^[A-Za-z-]+/, "").padStart(4, "0").slice(-4)}`),
         roomNumber: rData.roomNumber,
         floor: rData.floor,
         type: rData.type,
@@ -1009,7 +1024,7 @@ export const DatabaseService = {
 
     const history = getLocal<any[]>(KEYS.METER_READINGS, []);
     const newRecord = {
-      id: `mtr-${Date.now()}-${roomId}`,
+      id: nextShortId("W", history.map((m) => m.id)),
       property_id: targetPropId,
       room_id: roomId,
       room_number: targetRoom?.roomNumber || "",
@@ -1060,12 +1075,12 @@ export const DatabaseService = {
 
   async createTenant(tenantData: Omit<Tenant, "id"> & { propertyId?: string }): Promise<Tenant | null> {
     const propId = tenantData.propertyId || this.getActivePropertyId();
+    const current = await this.getTenants();
     const newTenant: Tenant = {
-      id: `t-${Date.now()}`,
+      id: nextShortId("T", current.map((t) => t.id)),
       propertyId: propId,
       ...tenantData,
     };
-    const current = await this.getTenants();
     setLocal(KEYS.TENANTS, [newTenant, ...current]);
     await this.logActivity("CREATE", "TENANT", `ลงทะเบียนผู้เช่าใหม่: ${newTenant.fullName} (${newTenant.phone})`, propId);
     return newTenant;
@@ -1394,7 +1409,7 @@ export const DatabaseService = {
     const targetStatus = invoiceData.status || "unpaid";
 
     const newInvoice: Invoice = {
-      id: isOverwrite ? allInvoices[existingIdx].id : `inv-${propId}-${Date.now()}-${invoiceData.roomNumber}`,
+      id: isOverwrite ? allInvoices[existingIdx].id : nextShortId("I", allInvoices.map((i) => i.id)),
       propertyId: propId,
       invoiceNumber: finalInvoiceNumber,
       roomNumber: invoiceData.roomNumber,
@@ -1576,7 +1591,7 @@ export const DatabaseService = {
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
     const newContract: ContractItem = {
       ...item,
-      id: "cnt-" + Date.now(),
+      id: nextShortId("C", all.map((c) => c.id)),
       propertyId: propId,
       contractNumber: `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
       createdAt: new Date().toISOString().slice(0, 10),
@@ -1602,7 +1617,7 @@ export const DatabaseService = {
           leaseEndDate: item.endDate,
           currentTenant: {
             ...(baseTenant || {}),
-            id: baseTenant?.id || `t-${Date.now()}`,
+            id: baseTenant?.id || nextShortId("T", allTenants.map((t) => t.id)),
             propertyId: propId,
             roomId: r.id,
             roomNumber: r.roomNumber,
@@ -1713,7 +1728,7 @@ export const DatabaseService = {
         const todayStr = new Date().toISOString().slice(0, 10);
         const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
         const syntheticBooking: DailyBooking = {
-          id: `b-auto-${r.roomNumber}-${Date.now()}`,
+          id: nextShortId("D", [...all, ...missingBookings].map((b) => b.id)),
           propertyId: targetPropId,
           roomNumber: r.roomNumber,
           guestName: r.currentTenant?.fullName || "ผู้เข้าพักรายวัน",
@@ -1813,7 +1828,7 @@ export const DatabaseService = {
     const all = getLocal<RepairItem[]>(KEYS.REPAIRS, []);
     const newRepair: RepairItem = {
       ...item,
-      id: "rep-" + Date.now(),
+      id: nextShortId("F", all.map((r) => r.id)),
       propertyId: propId,
       reportedAt: new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) + " น.",
     };
@@ -1853,7 +1868,7 @@ export const DatabaseService = {
     const all = getLocal<ExpenseItem[]>(KEYS.EXPENSES, []);
     const newExpense: ExpenseItem = {
       ...item,
-      id: "exp-" + Date.now(),
+      id: nextShortId("E", all.map((e) => e.id)),
       propertyId: propId,
     };
     setLocal(KEYS.EXPENSES, [newExpense, ...all]);
@@ -1926,7 +1941,7 @@ export const DatabaseService = {
     const propId = propertyId || this.getActivePropertyId();
     const all = getLocal<ActivityLogItem[]>(KEYS.ACTIVITY_LOGS, initialActivityLogs);
     const newLog: ActivityLogItem = {
-      id: "log-" + Date.now(),
+      id: nextShortId("L", all.map((l) => l.id)),
       propertyId: propId,
       userName: "คุณพักดี มีสุข (เจ้าของหอพัก)",
       action,

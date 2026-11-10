@@ -14,39 +14,93 @@ import {
   PlanType,
 } from "@/types/dormitory";
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SHORT_ID_REGEX = /^[A-Z]\d{4}$/i;
+
+const shortIdRegistry: Record<string, Map<string, string>> = {};
+const shortIdCounters: Record<string, number> = {};
+
+function detectPrefix(rawId: string, fallbackSeed: string): string {
+  const combined = `${rawId} ${fallbackSeed}`.toLowerCase();
+  if (combined.includes("-item-") || combined.startsWith("item-") || combined.startsWith("m")) return "M";
+  if (combined.startsWith("settings-") || combined.includes("settings-")) return "S";
+  if (combined.startsWith("bldg-") || combined.includes("bldg-")) return "B";
+  if (combined.startsWith("prop-") || combined.includes("prop-")) return "P";
+  if (combined.startsWith("tenant-") || combined.startsWith("t-") || combined.includes("tenant-")) return "T";
+  if (combined.startsWith("room-") || combined.startsWith("r-") || combined.includes("room-")) return "R";
+  if (combined.startsWith("contract-") || combined.startsWith("cnt-") || combined.includes("contract-")) return "C";
+  if (combined.startsWith("inv-") || combined.includes("inv-")) return "I";
+  if (combined.startsWith("mtr-") || combined.includes("mtr-")) return "W";
+  if (combined.startsWith("repair-") || combined.startsWith("rep-") || combined.includes("repair-")) return "F";
+  if (combined.startsWith("exp-") || combined.includes("exp-")) return "E";
+  if (combined.startsWith("daily-") || combined.startsWith("b-auto-") || combined.includes("daily-")) return "D";
+  if (combined.startsWith("usr-") || combined.startsWith("user-") || combined.includes("user-")) return "U";
+  if (combined.startsWith("log-") || combined.includes("log-")) return "L";
+  if (combined.startsWith("slip-") || combined.includes("slip-")) return "K";
+  return "X";
+}
+
+function registerShortId(prefix: string, rawKey: string, shortId: string): string {
+  const upPrefix = prefix.toUpperCase();
+  const upShort = shortId.toUpperCase();
+  if (!shortIdRegistry[upPrefix]) {
+    shortIdRegistry[upPrefix] = new Map<string, string>();
+  }
+  shortIdRegistry[upPrefix].set(rawKey, upShort);
+  const num = parseInt(upShort.slice(1), 10);
+  if (!isNaN(num) && num > (shortIdCounters[upPrefix] || 0)) {
+    shortIdCounters[upPrefix] = num;
+  }
+  return upShort;
+}
 
 /**
- * Deterministically converts any string ID (e.g. "prop-1", "room-101", "t-123")
- * into a valid RFC 4122 UUID v4 format so PostgreSQL UUID columns accept it
- * and always map the same app ID to the exact same database UUID.
+ * Converts any string ID (e.g. "prop-1", "room-101", "t-123")
+ * into a clean 5-character short ID (1 letter prefix + 4 digits, e.g. "P0001", "R0001", "T0001").
  */
 export function toUuid(rawId: string | undefined | null, fallbackSeed = "pakdee-default"): string {
   const str = String(rawId || "").trim();
-  if (UUID_REGEX.test(str)) {
-    return str.toLowerCase();
+  if (SHORT_ID_REGEX.test(str)) {
+    const up = str.toUpperCase();
+    return registerShortId(up[0], str.toLowerCase(), up);
   }
-  const input = str || fallbackSeed;
-  const hash32 = (seed: number): string => {
-    let h = seed >>> 0;
-    for (let i = 0; i < input.length; i++) {
-      h ^= input.charCodeAt(i);
-      h = Math.imul(h, 0x01000193) >>> 0;
+
+  const input = (str || fallbackSeed).trim();
+  const lowerInput = input.toLowerCase();
+  const prefix = detectPrefix(str, fallbackSeed);
+
+  if (!shortIdRegistry[prefix]) {
+    shortIdRegistry[prefix] = new Map<string, string>();
+  }
+  const existing = shortIdRegistry[prefix].get(lowerInput);
+  if (existing) return existing;
+
+  // Well-known deterministic mappings
+  const propMatch = lowerInput.match(/^(?:bldg-|settings-)?prop-(\d{1,4})$/);
+  if (propMatch) {
+    const n = parseInt(propMatch[1], 10);
+    if (n >= 1 && n <= 9999) {
+      return registerShortId(prefix, lowerInput, `${prefix}${String(n).padStart(4, "0")}`);
     }
-    h ^= h >>> 16;
-    h = Math.imul(h, 0x85ebca6b) >>> 0;
-    h ^= h >>> 13;
-    h = Math.imul(h, 0xc2b2ae35) >>> 0;
-    h ^= h >>> 16;
-    return (h >>> 0).toString(16).padStart(8, "0");
-  };
+  }
+  const shortPropMatch = lowerInput.match(/^(?:bldg-|settings-)p(\d{4})$/);
+  if (shortPropMatch) {
+    return registerShortId(prefix, lowerInput, `${prefix}${shortPropMatch[1]}`);
+  }
+  if (lowerInput === "bldg-a") {
+    return registerShortId("B", lowerInput, "B0001");
+  }
+  if (lowerInput === "usr-owner-01") {
+    return registerShortId("U", lowerInput, "U0001");
+  }
+  if (lowerInput === "usr-mgr-01") {
+    return registerShortId("U", lowerInput, "U0002");
+  }
 
-  const h0 = hash32(0x811c9dc5);
-  const h1 = hash32(0x9e3779b9);
-  const h2 = hash32(0x85ebca6b);
-  const h3 = hash32(0xc2b2ae35);
-
-  return `${h0}-${h1.slice(0, 4)}-4${h1.slice(5, 8)}-8${h2.slice(1, 4)}-${h2.slice(4, 8)}${h3}`.toLowerCase();
+  // Sequential 4-digit assignment (0001..9999)
+  const nextNum = Math.min(9999, (shortIdCounters[prefix] || 0) + 1);
+  shortIdCounters[prefix] = nextNum;
+  const generated = `${prefix}${String(nextNum).padStart(4, "0")}`;
+  return registerShortId(prefix, lowerInput, generated);
 }
 
 /**
@@ -886,7 +940,7 @@ export async function loadFromRelationalTables(
       : [];
     const uuidToPropId = new Map<string, string>();
     for (const ep of existingProps) {
-      uuidToPropId.set(toUuid(ep.id), ep.id);
+      uuidToPropId.set(toUuid(ep.id).toLowerCase(), ep.id);
     }
 
     result["properties"] = propRows.map((row: any, idx: number) => {
@@ -959,7 +1013,7 @@ export async function loadFromRelationalTables(
     const mappedTenants: Tenant[] = tenantRows.map((tRow: any) => {
       const rowUuid = String(tRow.id).toLowerCase();
       const existingMatch = existingTenants.find(
-        (et) => toUuid(et.id) === rowUuid || et.fullName === tRow.full_name
+        (et) => toUuid(et.id).toLowerCase() === rowUuid || et.fullName === tRow.full_name
       );
       const mapped: Tenant = {
         ...(existingMatch || {}),
@@ -997,7 +1051,7 @@ export async function loadFromRelationalTables(
       const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || "prop-1";
       const existingRoom = existingRooms.find(
         (er) =>
-          toUuid(er.id) === rowUuid ||
+          toUuid(er.id).toLowerCase() === rowUuid ||
           ((er.propertyId || "prop-1") === propId && er.roomNumber === rRow.room_number)
       );
       uuidToRoomNumber.set(rowUuid, rRow.room_number);
@@ -1033,7 +1087,7 @@ export async function loadFromRelationalTables(
       const rowUuid = String(cRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || "prop-1";
       const existingContract = existingContracts.find(
-        (ec) => toUuid(ec.id) === rowUuid || ec.contractNumber === cRow.contract_number
+        (ec) => toUuid(ec.id).toLowerCase() === rowUuid || ec.contractNumber === cRow.contract_number
       );
       let parsedClauses = existingContract?.clauses;
       if (!parsedClauses && cRow.terms_text && String(cRow.terms_text).trim().startsWith("[")) {
@@ -1071,7 +1125,7 @@ export async function loadFromRelationalTables(
       const rowUuid = String(iRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || "prop-1";
       const existingInv = existingInvoices.find(
-        (ei) => toUuid(ei.id) === rowUuid || ei.invoiceNumber === iRow.invoice_number
+        (ei) => toUuid(ei.id).toLowerCase() === rowUuid || ei.invoiceNumber === iRow.invoice_number
       );
       const relItems = itemRows
         .filter((it: any) => String(it.invoice_id).toLowerCase() === rowUuid)
@@ -1137,7 +1191,7 @@ export async function loadFromRelationalTables(
       result["repairs"] = repairsRes.data.map((rRow: any) => {
         const rowUuid = String(rRow.id).toLowerCase();
         const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || "prop-1";
-        const existingRep = existingRepairs.find((er) => toUuid(er.id) === rowUuid);
+        const existingRep = existingRepairs.find((er) => toUuid(er.id).toLowerCase() === rowUuid);
         return {
           ...(existingRep || {}),
           id: existingRep?.id || String(rRow.id),
@@ -1164,7 +1218,7 @@ export async function loadFromRelationalTables(
       result["expenses"] = expensesRes.data.map((eRow: any) => {
         const rowUuid = String(eRow.id).toLowerCase();
         const propId = uuidToPropId.get(String(eRow.property_id || "").toLowerCase()) || "prop-1";
-        const existingExp = existingExpenses.find((ee) => toUuid(ee.id) === rowUuid);
+        const existingExp = existingExpenses.find((ee) => toUuid(ee.id).toLowerCase() === rowUuid);
         return {
           ...(existingExp || {}),
           id: existingExp?.id || String(eRow.id),
@@ -1186,7 +1240,7 @@ export async function loadFromRelationalTables(
         : [];
       result["daily_bookings"] = dailyRes.data.map((dRow: any) => {
         const rowUuid = String(dRow.id).toLowerCase();
-        const existingDb = existingDaily.find((ed) => toUuid(ed.id) === rowUuid);
+        const existingDb = existingDaily.find((ed) => toUuid(ed.id).toLowerCase() === rowUuid);
         return {
           ...(existingDb || {}),
           id: existingDb?.id || String(dRow.id),
