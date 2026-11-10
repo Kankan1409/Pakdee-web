@@ -52,16 +52,16 @@ BEGIN
             ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('T' || LPAD(nextval('public.tenant_seq')::text, 4, '0'));
 
+        ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS property_id VARCHAR(64);
         ALTER TABLE IF EXISTS public.rooms
-            ADD COLUMN IF NOT EXISTS property_id VARCHAR(64),
             ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('R' || LPAD(nextval('public.room_seq')::text, 4, '0')),
             ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text,
             ALTER COLUMN building_id TYPE VARCHAR(64) USING building_id::text,
             ALTER COLUMN current_tenant_id TYPE VARCHAR(64) USING current_tenant_id::text;
 
+        ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS property_id VARCHAR(64);
         ALTER TABLE IF EXISTS public.invoices
-            ADD COLUMN IF NOT EXISTS property_id VARCHAR(64),
             ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('I' || LPAD(nextval('public.inv_seq')::text, 4, '0')),
             ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text,
