@@ -314,8 +314,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const rawRegistered = localStorage.getItem(REGISTERED_USERS_KEY);
-      let registeredList: StoredRegisteredUser[] = rawRegistered ? JSON.parse(rawRegistered) : [];
+      // Clear any legacy localStorage user cache so Supabase `user_profiles` is the 100% single source of truth
+      try {
+        localStorage.removeItem(REGISTERED_USERS_KEY);
+      } catch {}
 
       // Check Supabase `user_profiles` table as primary source of truth
       const { data: sbUsers, error: sbCheckErr } = await supabase
@@ -343,22 +345,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Check local storage duplicate as fallback
-      const duplicate = registeredList.find(
-        (u) =>
-          u.user.phone?.replace(/[-\s]/g, "") === cleanPhone ||
-          (cleanEmail && u.user.email.toLowerCase() === cleanEmail)
-      );
-
-      if (duplicate) {
-        return {
-          success: false,
-          error: "เบอร์โทรศัพท์หรืออีเมลนี้ถูกใช้งานแล้ว กรุณาเข้าสู่ระบบ",
-        };
-      }
-
       const assignedBranches: string[] = ["all", `pwd:${payload.password}`];
-      const newUserId = `usr-${Date.now()}`;
+      const existingNums = (sbUsers || []).map((u: any) => {
+        const m = String(u.id || "").match(/^U(\d+)$/i);
+        return m ? parseInt(m[1], 10) : 0;
+      });
+      const nextNum = Math.max(0, ...existingNums) + 1;
+      const newUserId = `U${String(nextNum).padStart(4, "0")}`;
       const newUser: AuthUser = {
         id: newUserId,
         name: payload.fullName.trim(),
@@ -378,33 +371,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       // 1. Direct Persist to Supabase `user_profiles` table (Pure Cloud Source of Truth)
-      try {
-        const { error: sbInsertErr } = await supabase.from("user_profiles").insert({
-          id: toUuid(newUserId),
-          full_name: payload.fullName.trim(),
-          phone: cleanPhone,
-          email: cleanEmail || `${cleanPhone}@pakdee.com`,
-          role: "owner",
-          is_active: true,
-          assigned_branch_ids: assignedBranches,
-        });
-
-        if (sbInsertErr) {
-          console.error("Supabase user_profiles insert error:", sbInsertErr);
-          // Fallback to local storage if network or permissions fail
-        }
-      } catch (sbEx) {
-        console.error("Supabase user_profiles exception:", sbEx);
-      }
-
-      // 2. Backup in local storage
-      registeredList.push({
-        user: newUser,
-        password: payload.password,
-        dormitoryName: payload.dormitoryName?.trim(),
-        createdAt: new Date().toISOString(),
+      const { error: sbInsertErr } = await supabase.from("user_profiles").insert({
+        id: newUserId,
+        full_name: payload.fullName.trim(),
+        phone: cleanPhone,
+        email: cleanEmail || `${cleanPhone}@pakdee.com`,
+        role: "owner",
+        is_active: true,
+        assigned_branch_ids: assignedBranches,
       });
-      localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(registeredList));
+
+      if (sbInsertErr) {
+        console.error("Supabase user_profiles insert error:", sbInsertErr);
+        return { success: false, error: "ไม่สามารถบันทึกบัญชีลงฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง" };
+      }
 
       // Auto login
       setSessionExpired(false);
