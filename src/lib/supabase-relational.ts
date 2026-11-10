@@ -15,6 +15,8 @@ import {
 } from "@/types/dormitory";
 
 const SHORT_ID_REGEX = /^[A-Z]\d{4}$/i;
+// Thai National ID Card format (with or without hyphens, e.g., 1-3017-00228-55-8 or 1301700228558)
+const ID_CARD_REGEX = /^\d[\d-]{7,19}\d$/;
 
 const shortIdRegistry: Record<string, Map<string, string>> = {};
 const shortIdCounters: Record<string, number> = {};
@@ -59,6 +61,9 @@ function registerShortId(prefix: string, rawKey: string, shortId: string): strin
  */
 export function toUuid(rawId: string | undefined | null, fallbackSeed = "pakdee-default"): string {
   const str = String(rawId || "").trim();
+  if (ID_CARD_REGEX.test(str)) {
+    return str;
+  }
   if (SHORT_ID_REGEX.test(str)) {
     const up = str.toUpperCase();
     return registerShortId(up[0], str.toLowerCase(), up);
@@ -355,6 +360,18 @@ export async function syncBranchSettingsToSupabase(
   await safeUpsert("branch_settings", [row], "property_id");
 }
 
+function resolveTenantId(t: Partial<Tenant> | undefined | null, fallbackSeed = "tenant-default"): string {
+  const idCard = (t?.idCard || "").trim();
+  if (idCard && idCard !== "-") {
+    return idCard.slice(0, 30);
+  }
+  const rawId = (t?.id || "").trim();
+  if (rawId && ID_CARD_REGEX.test(rawId)) {
+    return rawId.slice(0, 30);
+  }
+  return toUuid(rawId || undefined, fallbackSeed);
+}
+
 /**
  * Merges explicit tenants from KEYS.TENANTS with any active currentTenant on rooms
  * and active contracts so no tenant is ever missing from `public.tenants`.
@@ -368,34 +385,33 @@ export function collectUnifiedTenants(
 
   for (const t of rawTenants || []) {
     if (!t || !t.fullName) continue;
-    const existingByName = Array.from(byKey.values()).find(
+    const tid = resolveTenantId(t, `tenant-${t.fullName}-${t.phone}`);
+    const existingByName = byKey.get(tid) || Array.from(byKey.values()).find(
       (x) =>
         x.fullName.trim() === t.fullName.trim() &&
         (x.propertyId || "prop-1") === (t.propertyId || "prop-1")
     );
     if (existingByName) {
-      const mergedId = toUuid(
-        existingByName.idCard && existingByName.idCard !== "-" ? existingByName.id : t.id
-      );
-      byKey.delete(toUuid(existingByName.id));
+      const mergedIdCard =
+        t.idCard && t.idCard !== "-"
+          ? t.idCard
+          : existingByName.idCard && existingByName.idCard !== "-"
+          ? existingByName.idCard
+          : t.idCard || "-";
+      const mergedId = mergedIdCard && mergedIdCard !== "-" ? mergedIdCard.trim() : resolveTenantId(existingByName);
+      byKey.delete(resolveTenantId(existingByName));
       byKey.set(mergedId, {
         ...existingByName,
         ...t,
         id: mergedId,
-        idCard:
-          t.idCard && t.idCard !== "-"
-            ? t.idCard
-            : existingByName.idCard && existingByName.idCard !== "-"
-            ? existingByName.idCard
-            : t.idCard || "-",
+        idCard: mergedIdCard,
         lineId: t.lineId || t.lineUserId || existingByName.lineId || existingByName.lineUserId,
         lineUserId: t.lineUserId || existingByName.lineUserId,
       });
     } else {
-      const key = t.id ? toUuid(t.id) : `${t.fullName.trim()}|${(t.phone || "").trim()}`;
-      byKey.set(key, {
+      byKey.set(tid, {
         ...t,
-        id: toUuid(t.id || `tenant-${t.fullName}-${t.phone}`),
+        id: tid,
       });
     }
   }
@@ -403,21 +419,24 @@ export function collectUnifiedTenants(
   for (const r of rawRooms || []) {
     if (r?.currentTenant?.fullName) {
       const ct = r.currentTenant;
-      const uuid = toUuid(ct.id || `tenant-${r.propertyId || "prop-1"}-${r.roomNumber}-${ct.fullName}`);
+      const uuid = resolveTenantId(ct, `tenant-${r.propertyId || "prop-1"}-${r.roomNumber}-${ct.fullName}`);
       const existing = byKey.get(uuid) || Array.from(byKey.values()).find(
         (x) => x.fullName.trim() === ct.fullName.trim()
       );
       if (existing) {
-        byKey.set(toUuid(existing.id), {
+        const mergedIdCard =
+          ct.idCard && ct.idCard !== "-"
+            ? ct.idCard
+            : existing.idCard && existing.idCard !== "-"
+            ? existing.idCard
+            : ct.idCard || "-";
+        const mergedId = mergedIdCard && mergedIdCard !== "-" ? mergedIdCard.trim() : resolveTenantId(existing);
+        byKey.delete(resolveTenantId(existing));
+        byKey.set(mergedId, {
           ...existing,
           ...ct,
-          id: toUuid(existing.id),
-          idCard:
-            ct.idCard && ct.idCard !== "-"
-              ? ct.idCard
-              : existing.idCard && existing.idCard !== "-"
-              ? existing.idCard
-              : ct.idCard || "-",
+          id: mergedId,
+          idCard: mergedIdCard,
           lineId: ct.lineId || ct.lineUserId || existing.lineId || existing.lineUserId,
           lineUserId: ct.lineUserId || existing.lineUserId,
           emergencyContact: ct.emergencyContact || existing.emergencyContact,
@@ -479,7 +498,7 @@ export async function syncTenantsToSupabase(
 ): Promise<void> {
   const unified = collectUnifiedTenants(tenants, rooms, contracts);
   const rows = unified.map((t) => ({
-    id: toUuid(t.id, `tenant-${t.fullName}-${t.phone}`),
+    id: resolveTenantId(t, `tenant-${t.fullName}-${t.phone}`),
     full_name: t.fullName || "ไม่ระบุชื่อ",
     phone: t.phone || "-",
     id_card: (t.idCard || "").slice(0, 20),
@@ -540,12 +559,12 @@ export async function syncRoomsToSupabase(
     if (r.currentTenant?.fullName) {
       const matched = unifiedTenants.find(
         (t) =>
-          (r.currentTenant?.id && toUuid(t.id) === toUuid(r.currentTenant.id)) ||
+          (r.currentTenant?.id && resolveTenantId(t) === resolveTenantId(r.currentTenant)) ||
           t.fullName.trim() === r.currentTenant?.fullName.trim()
       );
       tenantUuid = matched
-        ? toUuid(matched.id)
-        : toUuid(r.currentTenant.id || `tenant-${propId}-${r.roomNumber}-${r.currentTenant.fullName}`);
+        ? resolveTenantId(matched)
+        : resolveTenantId(r.currentTenant, `tenant-${propId}-${r.roomNumber}-${r.currentTenant.fullName}`);
     }
 
     return {
@@ -641,7 +660,7 @@ export async function syncInvoicesToSupabase(
       property_id: toUuid(propId),
       invoice_number: inv.invoiceNumber || `INV-${inv.roomNumber}-${Date.now()}`,
       room_id: matchedRoom ? toUuid(matchedRoom.id) : null,
-      tenant_id: matchedTenant ? toUuid(matchedTenant.id) : null,
+      tenant_id: matchedTenant ? resolveTenantId(matchedTenant) : null,
       billing_month: billingMonth,
       due_date: toPgDate(inv.dueDate, todayStr)!,
       total_amount: Number(inv.totalAmount || 0),
