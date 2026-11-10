@@ -1027,15 +1027,12 @@ export const DatabaseService = {
   async createTenant(tenantData: Omit<Tenant, "id"> & { propertyId?: string }): Promise<Tenant | null> {
     const propId = tenantData.propertyId || this.getActivePropertyId();
     const current = await this.getTenants();
-    const cleanIdCard = (tenantData.idCard || "").trim();
-    const tenantId = cleanIdCard && cleanIdCard !== "-" ? cleanIdCard : nextShortId("T", current.map((t) => t.id));
     const newTenant: Tenant = {
-      id: tenantId,
+      id: nextShortId("T", current.map((t) => t.id)),
       propertyId: propId,
       ...tenantData,
     };
-    const filtered = current.filter((t) => t.id !== tenantId);
-    setLocal(KEYS.TENANTS, [newTenant, ...filtered]);
+    setLocal(KEYS.TENANTS, [newTenant, ...current]);
     await this.logActivity("CREATE", "TENANT", `ลงทะเบียนผู้เช่าใหม่: ${newTenant.fullName} (${newTenant.phone})`, propId);
     return newTenant;
   },
@@ -1109,7 +1106,6 @@ export const DatabaseService = {
       (roomMatch.currentTenant?.idCard && roomMatch.currentTenant.idCard !== "-" ? roomMatch.currentTenant.idCard : undefined) ||
       "-";
     const tenantId =
-      (activeIdCard && activeIdCard !== "-" ? activeIdCard.trim() : undefined) ||
       existingTenantRecord?.id ||
       roomMatch.currentTenant?.id ||
       `t-${roomMatch.propertyId || "prop-1"}-${cleanRoom}`;
@@ -1572,10 +1568,7 @@ export const DatabaseService = {
           leaseEndDate: item.endDate,
           currentTenant: {
             ...(baseTenant || {}),
-            id:
-              (baseTenant?.idCard && baseTenant.idCard !== "-" ? baseTenant.idCard.trim() : undefined) ||
-              baseTenant?.id ||
-              nextShortId("T", allTenants.map((t) => t.id)),
+            id: baseTenant?.id || nextShortId("T", allTenants.map((t) => t.id)),
             propertyId: propId,
             roomId: r.id,
             roomNumber: r.roomNumber,

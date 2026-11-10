@@ -147,13 +147,11 @@ BEGIN
     END LOOP;
 
     PERFORM setval('public.tenant_seq', 1, false);
-    FOR rec IN EXECUTE 'SELECT id::text AS id, COALESCE(NULLIF(TRIM(id_card), ''''), NULLIF(TRIM(id_card), ''-'')) AS id_card FROM public.tenants ORDER BY id ASC' LOOP
-        new_id := COALESCE(rec.id_card, 'T' || LPAD(nextval('public.tenant_seq')::text, 4, '0'));
-        IF rec.id <> new_id AND NOT EXISTS (SELECT 1 FROM public.tenants WHERE id = new_id) THEN
-            EXECUTE 'UPDATE public.tenants SET id = $1 WHERE id = $2' USING new_id, rec.id;
-            EXECUTE 'UPDATE public.rooms SET current_tenant_id = $1 WHERE current_tenant_id = $2' USING new_id, rec.id;
-            EXECUTE 'UPDATE public.invoices SET tenant_id = $1 WHERE tenant_id = $2' USING new_id, rec.id;
-        END IF;
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.tenants WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
+        new_id := 'T' || LPAD(nextval('public.tenant_seq')::text, 4, '0');
+        EXECUTE 'UPDATE public.tenants SET id = $1 WHERE id = $2' USING new_id, rec.id;
+        EXECUTE 'UPDATE public.rooms SET current_tenant_id = $1 WHERE current_tenant_id = $2' USING new_id, rec.id;
+        EXECUTE 'UPDATE public.invoices SET tenant_id = $1 WHERE tenant_id = $2' USING new_id, rec.id;
     END LOOP;
 
     PERFORM setval('public.room_seq', 1, false);
