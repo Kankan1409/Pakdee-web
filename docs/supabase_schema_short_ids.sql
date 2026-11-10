@@ -2,7 +2,7 @@ DO $$
 DECLARE
     r RECORD;
     rec RECORD;
-    new_id VARCHAR(20);
+    new_id VARCHAR(64);
 BEGIN
     -- 1. สร้างตัวรันเลขอัตโนมัติ (Sequences) สำหรับแต่ละตาราง (ถ้ายังไม่มี)
     EXECUTE 'CREATE SEQUENCE IF NOT EXISTS public.prop_seq START 1';
@@ -37,92 +37,94 @@ BEGIN
         EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I', r.table_schema, r.table_name, r.constraint_name);
     END LOOP;
 
-    -- 3. เปลี่ยนชนิดคอลัมน์ (ALTER COLUMN) จาก UUID เป็น VARCHAR(20) และตั้งค่า Default รหัส 5 หลัก
+    -- 3. เปลี่ยนชนิดคอลัมน์ (ALTER COLUMN) จาก UUID เป็น VARCHAR(64) และตั้งค่า Default รหัส 5 หลัก
     EXECUTE $sql$
         ALTER TABLE IF EXISTS public.properties
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('P' || LPAD(nextval('public.prop_seq')::text, 4, '0'));
 
         ALTER TABLE IF EXISTS public.buildings
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('B' || LPAD(nextval('public.bldg_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text;
 
         ALTER TABLE IF EXISTS public.tenants
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('T' || LPAD(nextval('public.tenant_seq')::text, 4, '0'));
 
         ALTER TABLE IF EXISTS public.rooms
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ADD COLUMN IF NOT EXISTS property_id VARCHAR(64),
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('R' || LPAD(nextval('public.room_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text,
-            ALTER COLUMN building_id TYPE VARCHAR(20) USING building_id::text,
-            ALTER COLUMN current_tenant_id TYPE VARCHAR(20) USING current_tenant_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text,
+            ALTER COLUMN building_id TYPE VARCHAR(64) USING building_id::text,
+            ALTER COLUMN current_tenant_id TYPE VARCHAR(64) USING current_tenant_id::text;
 
         ALTER TABLE IF EXISTS public.invoices
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ADD COLUMN IF NOT EXISTS property_id VARCHAR(64),
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('I' || LPAD(nextval('public.inv_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text,
-            ALTER COLUMN room_id TYPE VARCHAR(20) USING room_id::text,
-            ALTER COLUMN tenant_id TYPE VARCHAR(20) USING tenant_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text,
+            ALTER COLUMN room_id TYPE VARCHAR(64) USING room_id::text,
+            ALTER COLUMN tenant_id TYPE VARCHAR(64) USING tenant_id::text;
 
         ALTER TABLE IF EXISTS public.invoice_items
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('M' || LPAD(nextval('public.item_seq')::text, 4, '0')),
-            ALTER COLUMN invoice_id TYPE VARCHAR(20) USING invoice_id::text;
+            ALTER COLUMN invoice_id TYPE VARCHAR(64) USING invoice_id::text;
 
         ALTER TABLE IF EXISTS public.meter_readings
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('W' || LPAD(nextval('public.mtr_seq')::text, 4, '0')),
-            ALTER COLUMN room_id TYPE VARCHAR(20) USING room_id::text;
+            ALTER COLUMN room_id TYPE VARCHAR(64) USING room_id::text;
 
         ALTER TABLE IF EXISTS public.contracts
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('C' || LPAD(nextval('public.contract_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text,
-            ALTER COLUMN room_id TYPE VARCHAR(20) USING room_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text,
+            ALTER COLUMN room_id TYPE VARCHAR(64) USING room_id::text;
 
         ALTER TABLE IF EXISTS public.repairs
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('F' || LPAD(nextval('public.repair_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text;
 
         ALTER TABLE IF EXISTS public.expenses
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('E' || LPAD(nextval('public.exp_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text;
 
         ALTER TABLE IF EXISTS public.daily_bookings
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('D' || LPAD(nextval('public.daily_seq')::text, 4, '0'));
 
         ALTER TABLE IF EXISTS public.branch_settings
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('S' || LPAD(nextval('public.settings_seq')::text, 4, '0')),
-            ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text;
+            ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text;
 
         ALTER TABLE IF EXISTS public.user_profiles
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('U' || LPAD(nextval('public.user_seq')::text, 4, '0'));
 
         ALTER TABLE IF EXISTS public.activity_logs
-            ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+            ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
             ALTER COLUMN id SET DEFAULT ('L' || LPAD(nextval('public.log_seq')::text, 4, '0'));
     $sql$;
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'payment_slips') THEN
         EXECUTE $sql$
             ALTER TABLE public.payment_slips
-                ALTER COLUMN id TYPE VARCHAR(20) USING id::text,
+                ALTER COLUMN id TYPE VARCHAR(64) USING id::text,
                 ALTER COLUMN id SET DEFAULT ('K' || LPAD(nextval('public.slip_seq')::text, 4, '0')),
-                ALTER COLUMN property_id TYPE VARCHAR(20) USING property_id::text,
-                ALTER COLUMN invoice_id TYPE VARCHAR(20) USING invoice_id::text;
+                ALTER COLUMN property_id TYPE VARCHAR(64) USING property_id::text,
+                ALTER COLUMN invoice_id TYPE VARCHAR(64) USING invoice_id::text;
         $sql$;
     END IF;
 
     -- 4. แปลงรหัส UUID เดิมให้เป็นรหัส 5 หลัก (P0001, R0001, T0001, ฯลฯ) พร้อมอัปเดตคอลัมน์ที่อ้างอิงกัน
-    PERFORM setval('public.prop_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.properties WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.properties WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.prop_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.properties WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'P' || LPAD(nextval('public.prop_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.properties SET id = $1 WHERE id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.buildings SET property_id = $1 WHERE property_id = $2' USING new_id, rec.id;
@@ -132,25 +134,28 @@ BEGIN
         EXECUTE 'UPDATE public.repairs SET property_id = $1 WHERE property_id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.expenses SET property_id = $1 WHERE property_id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.branch_settings SET property_id = $1 WHERE property_id = $2' USING new_id, rec.id;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'payment_slips') THEN
+            EXECUTE 'UPDATE public.payment_slips SET property_id = $1 WHERE property_id = $2' USING new_id, rec.id;
+        END IF;
     END LOOP;
 
-    PERFORM setval('public.bldg_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.buildings WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.buildings WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.bldg_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.buildings WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'B' || LPAD(nextval('public.bldg_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.buildings SET id = $1 WHERE id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.rooms SET building_id = $1 WHERE building_id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.tenant_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.tenants WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.tenants WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.tenant_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.tenants WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'T' || LPAD(nextval('public.tenant_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.tenants SET id = $1 WHERE id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.rooms SET current_tenant_id = $1 WHERE current_tenant_id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.invoices SET tenant_id = $1 WHERE tenant_id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.room_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.rooms WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.rooms WHERE length(id) > 5 ORDER BY room_number ASC, id ASC' LOOP
+    PERFORM setval('public.room_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.rooms WHERE length(id::text) > 5 ORDER BY room_number ASC, id ASC' LOOP
         new_id := 'R' || LPAD(nextval('public.room_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.rooms SET id = $1 WHERE id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.invoices SET room_id = $1 WHERE room_id = $2' USING new_id, rec.id;
@@ -158,66 +163,83 @@ BEGIN
         EXECUTE 'UPDATE public.contracts SET room_id = $1 WHERE room_id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.inv_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.invoices WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.invoices WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.inv_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.invoices WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'I' || LPAD(nextval('public.inv_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.invoices SET id = $1 WHERE id = $2' USING new_id, rec.id;
         EXECUTE 'UPDATE public.invoice_items SET invoice_id = $1 WHERE invoice_id = $2' USING new_id, rec.id;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'payment_slips') THEN
+            EXECUTE 'UPDATE public.payment_slips SET invoice_id = $1 WHERE invoice_id = $2' USING new_id, rec.id;
+        END IF;
     END LOOP;
 
-    PERFORM setval('public.item_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.invoice_items WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.invoice_items WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.item_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.invoice_items WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'M' || LPAD(nextval('public.item_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.invoice_items SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.mtr_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.meter_readings WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.meter_readings WHERE length(id) > 5 ORDER BY recorded_at ASC, id ASC' LOOP
+    PERFORM setval('public.mtr_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.meter_readings WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'W' || LPAD(nextval('public.mtr_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.meter_readings SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.contract_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.contracts WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.contracts WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.contract_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.contracts WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'C' || LPAD(nextval('public.contract_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.contracts SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.repair_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.repairs WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.repairs WHERE length(id) > 5 ORDER BY reported_at ASC, id ASC' LOOP
+    PERFORM setval('public.repair_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.repairs WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'F' || LPAD(nextval('public.repair_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.repairs SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.exp_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.expenses WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.expenses WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.exp_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.expenses WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'E' || LPAD(nextval('public.exp_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.expenses SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.daily_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.daily_bookings WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.daily_bookings WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.daily_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.daily_bookings WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'D' || LPAD(nextval('public.daily_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.daily_bookings SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.settings_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.branch_settings WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.branch_settings WHERE length(id) > 5 ORDER BY updated_at ASC, id ASC' LOOP
+    PERFORM setval('public.settings_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.branch_settings WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'S' || LPAD(nextval('public.settings_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.branch_settings SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.user_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.user_profiles WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.user_profiles WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.user_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.user_profiles WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'U' || LPAD(nextval('public.user_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.user_profiles SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
 
-    PERFORM setval('public.log_seq', GREATEST(COALESCE((SELECT MAX(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), '')::int) FROM public.activity_logs WHERE length(id) <= 5), 0), 1), false);
-    FOR rec IN EXECUTE 'SELECT id FROM public.activity_logs WHERE length(id) > 5 ORDER BY created_at ASC, id ASC' LOOP
+    PERFORM setval('public.log_seq', 1, false);
+    FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.activity_logs WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
         new_id := 'L' || LPAD(nextval('public.log_seq')::text, 4, '0');
         EXECUTE 'UPDATE public.activity_logs SET id = $1 WHERE id = $2' USING new_id, rec.id;
     END LOOP;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'payment_slips') THEN
+        PERFORM setval('public.slip_seq', 1, false);
+        FOR rec IN EXECUTE 'SELECT id::text AS id FROM public.payment_slips WHERE length(id::text) > 5 ORDER BY id ASC' LOOP
+            new_id := 'K' || LPAD(nextval('public.slip_seq')::text, 4, '0');
+            EXECUTE 'UPDATE public.payment_slips SET id = $1 WHERE id = $2' USING new_id, rec.id;
+        END LOOP;
+    END IF;
+
+    -- เติม property_id ให้ rooms และ invoices จากความสัมพันธ์อาคาร/ห้องพัก
+    EXECUTE $sql$
+        UPDATE public.rooms r SET property_id = b.property_id FROM public.buildings b WHERE r.building_id = b.id AND r.property_id IS NULL;
+        UPDATE public.invoices i SET property_id = r.property_id FROM public.rooms r WHERE i.room_id = r.id AND i.property_id IS NULL;
+    $sql$;
 
     -- 5. ล้างค่าอ้างอิงที่ไม่มีอยู่จริงเป็น NULL และผูก Foreign Key กลับคืน
     EXECUTE $sql$
