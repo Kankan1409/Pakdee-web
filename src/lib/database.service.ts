@@ -278,6 +278,15 @@ export const DatabaseService = {
                   } catch {}
                 }
               }
+            } else {
+              memoryDb[KEYS.ACTIVE_PROPERTY_ID] = "";
+              memoryDb["active_property_id"] = "";
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.removeItem(KEYS.ACTIVE_PROPERTY_ID);
+                  localStorage.removeItem("active_property_id");
+                } catch {}
+              }
             }
 
             isServerSynced = true;
@@ -396,31 +405,7 @@ export const DatabaseService = {
     const sessionUser = getCurrentSessionUser();
     const isCustomUser = isCustomRegisteredUser(sessionUser);
 
-    if (props === null) {
-      const prop1Rooms = allRooms.filter((r) => (r.propertyId || "prop-1") === "prop-1");
-      const defaultBranch: BranchItem = {
-        ...initialProperty,
-        id: "prop-1",
-        totalRooms: prop1Rooms.length || 24,
-        vacantRooms: prop1Rooms.filter((r) => r.status === "vacant").length,
-        occupiedRooms: prop1Rooms.filter((r) => r.status === "occupied" || r.status === "overdue" || r.status === "daily").length,
-        dailyRooms: prop1Rooms.filter((r) => r.status === "daily").length,
-        buildingName: "อาคาร A",
-      };
-      const branchSettings = getLocal<BranchSettingsDetail | null>(KEYS.BRANCH_SETTINGS, null);
-      if (branchSettings) {
-        if (branchSettings.electricRate !== undefined) defaultBranch.electricRate = Number(branchSettings.electricRate);
-        if (branchSettings.waterRate !== undefined) defaultBranch.waterRate = Number(branchSettings.waterRate);
-        if (branchSettings.branchName) defaultBranch.name = branchSettings.branchName;
-      }
-      setLocal(KEYS.PROPERTIES, [defaultBranch]);
-      if (isCustomUser) {
-        return [];
-      }
-      return [defaultBranch];
-    }
-
-    if (props.length === 0) {
+    if (!props || props.length === 0) {
       return [];
     }
 
@@ -641,61 +626,8 @@ export const DatabaseService = {
   // -------------------------------------------------------------
   getAllRawRooms(): Room[] {
     const rooms = getLocal<Room[] | null>(KEYS.ROOMS, null);
-    if (rooms === null) {
-      const seeded: Room[] = [];
-      const tenantSeed = getLocal<Tenant[]>(KEYS.TENANTS, []);
-      for (let floor = 1; floor <= 4; floor++) {
-        for (let unit = 1; unit <= 6; unit++) {
-          const roomNum = `${floor}0${unit}`;
-          let status: RoomStatus = "vacant";
-          let currentTenant: Tenant | undefined = undefined;
-
-          if (roomNum === "101" && tenantSeed.length > 0) {
-            status = "occupied";
-            currentTenant = tenantSeed[0];
-          } else if (roomNum === "102") {
-            status = "occupied";
-            currentTenant = {
-              id: "t-102",
-              propertyId: "prop-1",
-              fullName: "นางสาวมณีรัตน์ แสงทอง",
-              phone: "082-345-6789",
-              idCard: "1100200300401",
-            };
-          } else if (roomNum === "105") {
-            status = "overdue";
-            currentTenant = {
-              id: "t-105",
-              propertyId: "prop-1",
-              fullName: "นายเอกชัย รุ่งโรจน์วิริยะ",
-              phone: "087-777-6655",
-              idCard: "1100200300405",
-            };
-          } else if (roomNum === "201") {
-            status = "daily";
-          } else if (roomNum === "204") {
-            status = "cleaning";
-          }
-
-          seeded.push({
-            id: `room-${roomNum}`,
-            propertyId: "prop-1",
-            buildingId: "bldg-a",
-            roomNumber: roomNum,
-            floor,
-            type: floor === 4 ? "Deluxe Suite" : "Standard",
-            monthlyRate: floor === 4 ? 4500 : 4000,
-            dailyRate: 650,
-            status,
-            currentTenant,
-            currentElectricMeter: 1200 + floor * 100 + unit * 15,
-            currentWaterMeter: 240 + floor * 20 + unit * 5,
-            leaseEndDate: status === "occupied" ? "2027-10-31" : undefined,
-          });
-        }
-      }
-      setLocal(KEYS.ROOMS, seeded);
-      return seeded;
+    if (!rooms || rooms.length === 0) {
+      return [];
     }
 
     // Auto migrate any legacy rooms missing propertyId into prop-1 and strip auto-seeded branch rooms

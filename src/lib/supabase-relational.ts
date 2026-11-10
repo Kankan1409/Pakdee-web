@@ -948,9 +948,8 @@ export async function loadFromRelationalTables(
     const tenantRows = tenantsRes.data || [];
     const contractRows = contractsRes.data || [];
 
-    if (propRows.length > 0 || roomRows.length > 0 || tenantRows.length > 0 || contractRows.length > 0) {
-      hasRelationalData = true;
-    }
+    // Supabase Cloud is the authoritative Single Source of Truth (including when tables are intentionally emptied)
+    hasRelationalData = true;
 
 
     // Map properties (use authoritative 5-character IDs directly from Supabase)
