@@ -499,7 +499,7 @@ export function buildReceiptFlexMessage(
   invoice: Invoice,
   receiptNumber: string,
   paidAmount: number,
-  branchName = "พักดี แมนชั่น"
+  branchName = "หอพัก"
 ) {
   return {
     type: "flex",
@@ -602,7 +602,7 @@ export function buildReceiptFlexMessage(
  */
 export function buildRepairTicketFlexMessage(
   repair: RepairItem,
-  branchName = "พักดี แมนชั่น"
+  branchName = "หอพัก"
 ) {
   return {
     type: "flex",
@@ -698,7 +698,7 @@ export function buildRepairTicketFlexMessage(
 /**
  * 4. สร้าง Flex Message การ์ดต้อนรับและคำแนะนำการใช้งาน
  */
-export function buildWelcomeFlexMessage(branchName = "พักดี แมนชั่น") {
+export function buildWelcomeFlexMessage(branchName = "หอพัก") {
   return {
     type: "flex",
     altText: `ยินดีต้อนรับสู่ LINE Official Account ของ ${branchName}`,
@@ -781,7 +781,7 @@ export function buildBroadcastFlexMessage(
   title: string,
   message: string,
   template: "power" | "water" | "maintenance" | "general" = "general",
-  branchName: string = "พักดี แมนชั่น",
+  branchName: string = "หอพัก",
   targetInfo: string = "ผู้พักอาศัยทุกท่าน",
   branchPhone?: string
 ) {

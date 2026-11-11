@@ -35,7 +35,7 @@ export function BroadcastLineView({
   broadcasts,
   rooms,
   onSendBroadcast,
-  branchName = "พักดี แมนชั่น",
+  branchName = "หอพัก",
   lineChannelId = "@pakdee_mansion",
 }: BroadcastLineViewProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<BroadcastItem["template"]>("power");

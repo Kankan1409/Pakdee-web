@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
 
     const channelSecret = settings?.lineChannelSecret || process.env.LINE_CHANNEL_SECRET || "";
     const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-    const branchName = settings?.branchName || property?.name || "พักดี แมนชั่น";
-    const promptpayNumber = settings?.promptpayNumber || property?.promptpayNumber || "0812345678";
+    const branchName = settings?.branchName || property?.name || "หอพัก";
+    const promptpayNumber = settings?.promptpayNumber || property?.promptpayNumber || "";
 
     // 2. ตรวจสอบ Signature เมื่อมีการตั้งค่า Channel Secret (ป้องกัน Spoofing)
     if (!channelSecret.trim()) return NextResponse.json({ error: "Webhook secret not configured" }, { status: 503 });
@@ -251,7 +251,7 @@ export async function POST(req: NextRequest) {
             await replyLineMessage(channelAccessToken, replyToken, [
               {
                 type: "text",
-                text: `🏢 ${branchName}\n📍 ที่อยู่: ${settings?.address || property?.address || "ที่อยู่หอพัก"}\n📞 เบอร์ติดต่อ: ${settings?.phone || property?.phone || "081-234-5678"}\n⏰ เวลาทำการ: 08:30 - 20:00 น. ทุกวันครับ`,
+                text: `🏢 ${branchName}\n📍 ที่อยู่: ${settings?.address || property?.address || "ที่อยู่หอพัก"}\n📞 เบอร์ติดต่อ: ${settings?.phone || property?.phone || "-"}\n⏰ เวลาทำการ: 08:30 - 20:00 น. ทุกวันครับ`,
                 quickReply: getDefaultQuickReply(),
               },
             ]);

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Room, Property, ContractItem, DailyBooking } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
-import { initialProperty } from "@/lib/mock-data";
+import { initialProperty } from "@/lib/defaults";
 import { DocumentViewerModal, DocumentType } from "@/components/documents/document-viewer-modal";
 import { globalPopup } from "@/lib/popup-context";
 import {

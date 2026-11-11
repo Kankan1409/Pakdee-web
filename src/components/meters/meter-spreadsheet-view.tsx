@@ -115,56 +115,16 @@ export function MeterSpreadsheetView({
     );
   }, [rooms, dailyBookings]);
 
-  // Load and seed history records if empty
+  // Load meter reading history
   const loadHistory = async () => {
     setIsLoadingHistory(true);
     try {
       const records = await DatabaseService.getMeterReadings();
       if (records && records.length > 0) {
         setHistoryRecords(records);
-      } else if (rooms.length > 0) {
-        // Auto-seed realistic initial 2 months history for existing rooms
-        const seeded: MeterReadingRecord[] = [];
-        const pastMonths = [
-          { month: "2026-10", labelDate: "25/10/2569, 14:30 น." },
-          { month: "2026-09", labelDate: "25/09/2569, 15:10 น." },
-        ];
-
-        pastMonths.forEach(({ month, labelDate }, mIdx) => {
-          rooms.forEach((r, rIdx) => {
-            const elecBase = r.currentElectricMeter > 0 ? r.currentElectricMeter : 1000 + rIdx * 50;
-            const waterBase = r.currentWaterMeter > 0 ? r.currentWaterMeter : 200 + rIdx * 10;
-            const elecUnits = r.currentTenant ? 35 + ((rIdx * 7) % 30) : 0;
-            const waterUnits = r.currentTenant ? 5 + ((rIdx * 3) % 8) : 0;
-            const elecCurr = elecBase - mIdx * 40;
-            const elecPrev = Math.max(0, elecCurr - elecUnits);
-            const waterCurr = waterBase - mIdx * 6;
-            const waterPrev = Math.max(0, waterCurr - waterUnits);
-            const totalCost = elecUnits * electricRate + waterUnits * waterRate;
-
-            seeded.push({
-              id: `mtr-seed-${month}-${r.roomNumber}`,
-              property_id: r.propertyId,
-              room_id: r.id,
-              room_number: r.roomNumber,
-              tenant_name: r.currentTenant?.fullName || "(ห้องว่าง)",
-              billing_month: month,
-              electric_prev: elecPrev,
-              electric_curr: elecCurr,
-              electric_units: elecUnits,
-              water_prev: waterPrev,
-              water_curr: waterCurr,
-              water_units: waterUnits,
-              recorded_at: labelDate,
-              total_cost: totalCost,
-              is_invoiced: true,
-            });
-          });
-        });
-
-        setHistoryRecords(seeded);
-        // Persist batch to DatabaseService
-        DatabaseService.persistBatch({ pakdee_dev_meter_readings: seeded });
+      } else {
+        // No history yet: show an empty list (no generated sample readings)
+        setHistoryRecords([]);
       }
     } catch (e) {
       console.warn("Failed to load meter history:", e);

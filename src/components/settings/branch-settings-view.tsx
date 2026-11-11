@@ -822,7 +822,7 @@ export function BranchSettingsView({
                 <input
                   type="text"
                   readOnly
-                  value={formData.lineWebhookUrl || "https://api.pakdee.app/webhook/line/branch-1"}
+                  value={formData.lineWebhookUrl || ""}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono text-emerald-600 dark:text-emerald-400 select-all"
                 />
                 <button

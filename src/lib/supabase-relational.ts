@@ -190,13 +190,19 @@ export async function safeUpsert(
   }
 
   let currentConflict = onConflict;
-  let currentRows = stripMissingColumns(table, rows);
+  let currentRows = dedupeRows(stripMissingColumns(table, rows), onConflict);
 
   for (let attempt = 0; attempt < 12; attempt++) {
     const { error } = await supabase.from(table).upsert(currentRows, { onConflict: currentConflict });
     if (!error) return true;
 
     const msg = error.message || "";
+
+    // 0. Same key twice in one batch ("ON CONFLICT DO UPDATE command cannot affect row a second time")
+    if (msg.includes("cannot affect row a second time")) {
+      currentRows = dedupeRows(currentRows, currentConflict);
+      continue;
+    }
 
     // 1. Missing column in PostgREST schema cache or PostgreSQL table
     const colMatch =
@@ -249,23 +255,84 @@ export async function safeUpsert(
       if (fkFixed) continue;
     }
 
+    console.warn(`[Supabase Relational] Upsert ${table} failed:`, error.code, msg, error.details || "");
     return false;
   }
+  console.warn(`[Supabase Relational] Upsert ${table} gave up after retries`);
   return false;
+}
+
+/**
+ * Keeps one row per conflict key (the last one wins). Postgres rejects an upsert batch
+ * that contains the same key twice, which fails the WHOLE batch with HTTP 400.
+ */
+function dedupeRows(rows: Record<string, any>[], conflict: string): Record<string, any>[] {
+  const cols = conflict.split(",").map((c) => c.trim());
+  const byKey = new Map<string, Record<string, any>>();
+  const noKey: Record<string, any>[] = [];
+  for (const r of rows) {
+    if (cols.some((c) => r[c] === null || r[c] === undefined)) {
+      noKey.push(r);
+      continue;
+    }
+    byKey.set(cols.map((c) => String(r[c]).toLowerCase()).join("|"), r);
+  }
+  return [...byKey.values(), ...noKey];
 }
 
 /**
  * Deletes rows in `table` whose `id` is not in `keepIds` so deleted items in the app
  * are also removed from the corresponding Supabase relational table.
  */
+// Tables whose rows belong to a branch (property) and must go when the branch is deleted.
+// Order matters: children before parents (invoice_items/meter_readings cascade from invoices/rooms).
+const BRANCH_CHILD_TABLES = [
+  "invoices",
+  "contracts",
+  "repairs",
+  "expenses",
+  "rooms",
+  "buildings",
+  "branch_settings",
+] as const;
+
+/**
+ * Permanently removes branches (properties) and every row that belongs to them.
+ * Does not rely on the FK's ON DELETE rule, which on some databases is SET NULL and
+ * would leave orphan rows (property_id = NULL) behind.
+ */
+export async function deletePropertiesCascade(propertyIds: string[]): Promise<void> {
+  const ids = Array.from(new Set(propertyIds.filter(Boolean)));
+  if (ids.length === 0) return;
+  for (const table of BRANCH_CHILD_TABLES) {
+    const { error } = await supabase.from(table).delete().in("property_id", ids);
+    if (error) console.warn(`[Supabase Relational] Delete ${table} for branch failed:`, error.message);
+  }
+  const { error } = await supabase.from("properties").delete().in("id", ids);
+  if (error) console.warn("[Supabase Relational] Delete properties failed:", error.message);
+}
+
 export async function pruneOrphanRows(table: string, keepIds: string[]): Promise<void> {
   try {
     const { data: existing, error } = await supabase.from(table).select("id");
     if (error || !existing || existing.length === 0) return;
     const keepSet = new Set(keepIds.map((id) => id.toLowerCase()));
-    const toDelete = existing
+    let toDelete = existing
       .map((row: any) => String(row.id))
       .filter((id) => !keepSet.has(id.toLowerCase()));
+
+    // Never delete a tenant that still has invoices: the FK is ON DELETE SET NULL, so the
+    // bill (often still unpaid) would lose who owes it. Keep former tenants as history.
+    if (table === "tenants" && toDelete.length > 0) {
+      const { data: billed } = await supabase.from("invoices").select("tenant_id").in("tenant_id", toDelete);
+      const billedSet = new Set((billed || []).map((r: any) => String(r.tenant_id).toLowerCase()));
+      toDelete = toDelete.filter((id) => !billedSet.has(id.toLowerCase()));
+    }
+
+    if (table === "properties") {
+      await deletePropertiesCascade(toDelete);
+      return;
+    }
 
     if (toDelete.length > 0) {
       if (table === "tenants") {
@@ -283,7 +350,7 @@ export async function pruneOrphanRows(table: string, keepIds: string[]): Promise
 export async function syncPropertiesToSupabase(properties: Property[]): Promise<void> {
   const rows = properties.map((p) => ({
     id: toUuid(p.id, `prop-${p.name}`),
-    name: p.name || "พักดี แมนชั่น",
+    name: p.name || "",
     address: p.address || "",
     phone: p.phone || "",
     promptpay_number: p.promptpayNumber || "",
@@ -291,6 +358,9 @@ export async function syncPropertiesToSupabase(properties: Property[]): Promise<
     electric_rate: Number(p.electricRate ?? 8),
     water_rate: Number(p.waterRate ?? 18),
     plan: p.plan || "pro",
+    // Which account owns this branch — keeps branches separate between accounts/devices
+    owner_id: (p as any).ownerId || null,
+    owner_phone: (p as any).ownerPhone || null,
     updated_at: new Date().toISOString(),
   }));
 
@@ -319,7 +389,7 @@ export async function syncBranchSettingsToSupabase(
   const row = {
     id: toUuid(settings.id || `settings-${propertyId}`),
     property_id: propUuid,
-    branch_name: settings.branchName || "พักดี แมนชั่น",
+    branch_name: settings.branchName || "",
     address: settings.address || "",
     phone: settings.phone || "",
     owner_name: settings.ownerName || "",
@@ -629,11 +699,22 @@ export async function syncInvoicesToSupabase(
     const matchedRoom = rooms.find(
       (r) => (r.propertyId || "prop-1") === propId && r.roomNumber === inv.roomNumber
     );
-    const matchedTenant = unifiedTenants.find(
-      (t) =>
-        (inv.tenantId && toUuid(t.id) === toUuid(inv.tenantId)) ||
-        (inv.tenantName && t.fullName.trim() === inv.tenantName.trim())
-    );
+    // Resolve the invoice's tenant, most reliable first:
+    // 1) stored tenantId  2) same name (prefer same room)  3) the room's current tenant
+    const invName = (inv.tenantName || "").trim();
+    const sameName = (t: Tenant) => Boolean(invName) && t.fullName.trim() === invName;
+    const roomTenant = matchedRoom?.currentTenant;
+    const matchedTenant =
+      (inv.tenantId ? unifiedTenants.find((t) => toUuid(t.id) === toUuid(inv.tenantId)) : undefined) ||
+      unifiedTenants.find((t) => sameName(t) && t.roomNumber === inv.roomNumber) ||
+      unifiedTenants.find(sameName) ||
+      (roomTenant
+        ? unifiedTenants.find(
+            (t) =>
+              (roomTenant.id && toUuid(t.id) === toUuid(roomTenant.id)) ||
+              (roomTenant.fullName && t.fullName.trim() === roomTenant.fullName.trim())
+          )
+        : undefined);
 
     const billingMonth = (inv.billingDate || todayStr).slice(0, 7);
 
@@ -786,8 +867,9 @@ export async function syncKeyToRelationalTable(
     const contracts: ContractItem[] = Array.isArray(memoryDb["contracts"]) ? memoryDb["contracts"] : [];
 
     if (normKey === "properties" && Array.isArray(value)) {
+      // No auto-prune here: another device/account may have created branches this device
+      // hasn't loaded yet. Branches are removed only by an explicit deleteBranch().
       await syncPropertiesToSupabase(value);
-      await pruneOrphanRows("properties", value.map((p: any) => toUuid(p.id, `prop-${p.name}`)));
     } else if (normKey.startsWith("branch_settings_") && value && typeof value === "object") {
       const propId = normKey.replace("branch_settings_", "");
       await syncBranchSettingsToSupabase(propId, value);
@@ -947,9 +1029,15 @@ export async function loadFromRelationalTables(
     result["properties"] = propRows.map((row: any) => {
       const origId = String(row.id);
       uuidToPropId.set(origId.toLowerCase(), origId);
-      const existingMatch = existingProps.find((p) => p.id === origId || p.name === row.name);
+      const existingMatch = existingProps.find((p) => p.id === origId);
+      const ownerFields: Record<string, string> = {};
+      const ownerId = row.owner_id ?? (existingMatch as any)?.ownerId;
+      const ownerPhone = row.owner_phone ?? (existingMatch as any)?.ownerPhone;
+      if (ownerId) ownerFields.ownerId = String(ownerId);
+      if (ownerPhone) ownerFields.ownerPhone = String(ownerPhone);
       return {
         ...(existingMatch || {}),
+        ...ownerFields,
         id: origId,
         name: row.name,
         address: row.address || "",

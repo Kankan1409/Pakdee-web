@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
 
     const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-    const branchName = settings?.branchName || property?.name || "พักดี แมนชั่น";
+    const branchName = settings?.branchName || property?.name || "หอพัก";
     const branchPhone = settings?.phone || property?.phone || "";
 
     // 1. ค้นหาผู้เช่าที่เกี่ยวข้องเพื่อคำนวณผู้รับ

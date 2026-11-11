@@ -242,7 +242,7 @@ export function Header({
             </button>
           )}
           <span>/</span>
-          <span className="text-slate-600 dark:text-slate-400">{propertyName || "พักดี แมนชั่น"}</span>
+          <span className="text-slate-600 dark:text-slate-400">{propertyName || "ยังไม่ได้ตั้งชื่อหอพัก"}</span>
           <span>/</span>
           <span className="font-bold text-[var(--foreground)]">
             {activeViewTitle}

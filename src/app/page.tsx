@@ -46,12 +46,11 @@ import { PakdeeLogo } from "@/components/ui/pakdee-logo";
 import {
   initialProperty,
   initialRooms,
-  sampleInvoice,
   initialRepairs,
   initialContracts,
   initialExpenses,
   initialBranchSettings,
-} from "@/lib/mock-data";
+} from "@/lib/defaults";
 import {
   Room,
   RoomStatus,
@@ -534,19 +533,40 @@ export default function HomePage() {
     if (isAuthLoading || !isAuthenticated) return;
     loadData();
 
-    // Supabase Live Cloud Realtime listener
+    // Reload from Supabase, debounced: one save touches many rows/tables and each
+    // fires its own realtime event, so collapse a burst into a single reload.
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null;
+        loadData();
+      }, 800);
+    };
+
+    // Supabase Live Cloud Realtime listener (changes made on other devices)
     const handleRealtimeUpdate = (e: any) => {
-      console.log("[App] Live Realtime DB update received from Supabase:", e?.detail?.key);
-      loadData();
+      console.log("[App] Live Realtime DB update received from Supabase:", e?.detail?.table);
+      scheduleReload();
+    };
+
+    // Fallback when realtime is unavailable: refresh when the user comes back to this tab/window
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") scheduleReload();
     };
 
     if (typeof window !== "undefined") {
       window.addEventListener("pakdee_db_updated", handleRealtimeUpdate);
+      window.addEventListener("focus", scheduleReload);
+      document.addEventListener("visibilitychange", handleVisible);
     }
 
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
       if (typeof window !== "undefined") {
         window.removeEventListener("pakdee_db_updated", handleRealtimeUpdate);
+        window.removeEventListener("focus", scheduleReload);
+        document.removeEventListener("visibilitychange", handleVisible);
       }
     };
   }, [loadData, currentUser?.id, isAuthLoading, isAuthenticated]);
@@ -2577,6 +2597,8 @@ export default function HomePage() {
           await handleChangePlan("pro");
           const created = await DatabaseService.createBranch(branchData);
           if (created) {
+            // Save the new branch to Supabase, then reload fresh data (incl. other devices' changes)
+            await DatabaseService.refreshFromServer();
             const allProps = await DatabaseService.getAllProperties();
             setBranches(allProps);
             const found = allProps.find((b) => b.id === created.id);
@@ -2592,6 +2614,8 @@ export default function HomePage() {
 
     const created = await DatabaseService.createBranch(branchData);
     if (created) {
+      // Save the new branch to Supabase, then reload fresh data (incl. other devices' changes)
+      await DatabaseService.refreshFromServer();
       const allProps = await DatabaseService.getAllProperties();
       setBranches(allProps);
       const found = allProps.find((b) => b.id === created.id);
@@ -2922,6 +2946,7 @@ export default function HomePage() {
           {currentTab === "invoices" && (
             <InvoicesBillingView
               invoices={invoices}
+              propertyName={property.name}
               isSendingLineBatch={isSendingLineBatch}
               onSendLineAllInvoices={handleSendLineAllInvoices}
               onGenerateMonthlyInvoices={handleGenerateMonthlyInvoices}
@@ -2938,6 +2963,7 @@ export default function HomePage() {
           {currentTab === "slips" && (
             <SlipVerificationView
               invoices={invoices}
+              propertyName={property.name}
               onVerifySlip={handleVerifySlip}
               onRejectSlip={handleRejectSlip}
               onOpenInvoiceModal={(inv) => {
@@ -2981,6 +3007,7 @@ export default function HomePage() {
               rooms={rooms}
               initialRoomId={initialAddTenantRoomId}
               existingTenants={tenants}
+              propertyName={property.name}
               onBack={() => handleTabChange("tenants")}
               onSubmit={handleAddTenantComplete}
             />
@@ -2990,6 +3017,7 @@ export default function HomePage() {
           {currentTab === "leases" && (
             <ContractManagementView
               contracts={contracts}
+              propertyName={property.name}
               rooms={rooms}
               onAddContract={handleAddContract}
               onOpenNewTenantRegistration={() => {

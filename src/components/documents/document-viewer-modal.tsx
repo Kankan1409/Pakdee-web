@@ -30,6 +30,8 @@ interface DocumentViewerModalProps {
   invoice?: Invoice | null;
   property: Property;
   contract?: ContractItem | null;
+  /** Branch tax ID (from branch settings); omitted from the receipt when empty */
+  taxId?: string;
 }
 
 export function DocumentViewerModal({
@@ -40,6 +42,7 @@ export function DocumentViewerModal({
   invoice,
   property,
   contract,
+  taxId,
 }: DocumentViewerModalProps) {
   const [docType, setDocType] = useState<DocumentType>(initialDocType);
 
@@ -340,7 +343,7 @@ export function DocumentViewerModal({
                     <h1 className="text-xl font-black text-teal-800 tracking-tight">ใบเสร็จรับเงิน (OFFICIAL RECEIPT)</h1>
                     <p className="font-bold text-sm text-slate-800">{property.name}</p>
                     <p className="text-[11px] text-slate-500 max-w-sm">{property.address}</p>
-                    <p className="text-[11px] text-slate-500">โทร. {property.phone} • เลขประจำตัวผู้เสียภาษี: 0105566012345</p>
+                    <p className="text-[11px] text-slate-500">โทร. {property.phone}{taxId ? ` • เลขประจำตัวผู้เสียภาษี: ${taxId}` : ""}</p>
                   </div>
                   <div className="text-right space-y-1">
                     <div className="text-sm font-bold font-mono text-teal-700">{recNumber}</div>
@@ -419,7 +422,7 @@ export function DocumentViewerModal({
                 <div className="grid grid-cols-2 gap-8 pt-8 border-t text-center text-[11px]">
                   <div className="space-y-1 flex flex-col items-center">
                     <div className="w-20 h-20 rounded-full border-2 border-red-500/40 text-red-600 flex items-center justify-center font-bold text-[10px] transform -rotate-12 mb-2">
-                      พักดี แมนชั่น<br/>PAID
+                      {property.name ? <>{property.name}<br/></> : null}PAID
                     </div>
                     <div className="text-slate-500 font-semibold">ตราประทับรับเงิน</div>
                   </div>

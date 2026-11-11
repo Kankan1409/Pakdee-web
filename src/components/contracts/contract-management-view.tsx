@@ -30,6 +30,8 @@ interface ContractManagementViewProps {
   onAddContract: (contract: Omit<ContractItem, "id" | "createdAt" | "contractNumber">) => void;
   onUpdateSignature?: (contractId: string, signatureUrl: string) => void;
   onOpenNewTenantRegistration?: () => void;
+  /** Current branch name shown on the contract (landlord) */
+  propertyName?: string;
 }
 
 export function ContractManagementView({
@@ -38,7 +40,9 @@ export function ContractManagementView({
   onAddContract,
   onUpdateSignature,
   onOpenNewTenantRegistration,
+  propertyName = "",
 }: ContractManagementViewProps) {
+  const landlordName = propertyName ? `หอพัก ${propertyName}` : "หอพัก";
   const [activeTab, setActiveTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -657,7 +661,7 @@ export function ContractManagementView({
             .replace(/\[หมายเลขห้อง\]/g, previewContract.roomNumber)
             .replace(/\[ชั้น\]/g, String(roomFloor))
             .replace(/\[ประเภทห้อง\]/g, roomType)
-            .replace(/\[ที่อยู่หอพัก\]/g, "หอพัก พักดี แมนชั่น")
+            .replace(/\[ที่อยู่หอพัก\]/g, landlordName)
             .replace(/\[วันเริ่มสัญญา\]/g, startThai)
             .replace(/\[วันสิ้นสุดสัญญา\]/g, endThai)
             .replace(/\[ค่าเช่า\]/g, rentVal.toLocaleString("th-TH"))
@@ -879,7 +883,7 @@ export function ContractManagementView({
                     <div className="flex items-baseline gap-1.5">
                       <span className="shrink-0">ทำที่</span>
                       <span className="flex-1 border-b border-dotted border-slate-500 px-2 font-semibold text-black">
-                        หอพัก พักดี แมนชั่น
+                        {landlordName}
                       </span>
                     </div>
                     <div className="flex items-baseline gap-1.5">
@@ -904,7 +908,7 @@ export function ContractManagementView({
                   <p className="indent-8">
                     สัญญาเช่าฉบับนี้ทำขึ้นระหว่าง{" "}
                     <span className="border-b border-dotted border-slate-500 px-2 font-bold">
-                      หอพัก พักดี แมนชั่น
+                      {landlordName}
                     </span>{" "}
                     ซึ่งต่อไปในสัญญานี้จะเรียกว่า <strong>&ldquo;ผู้ให้เช่า&rdquo;</strong> ฝ่ายหนึ่ง กับ{" "}
                     <span className="border-b border-dotted border-slate-500 px-2 font-bold">
@@ -1030,7 +1034,7 @@ export function ContractManagementView({
                       <div className="text-[11px] text-slate-400 italic">ฝ่ายบริหารจัดการหอพัก</div>
                     </div>
                     <div>ลงชื่อ.................................................... ผู้ให้เช่า</div>
-                    <div className="text-[11px] text-slate-600 mt-0.5">( หอพัก พักดี แมนชั่น )</div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">( {landlordName} )</div>
                   </div>
                   <div>
                     <div className="min-h-[64px] flex items-center justify-center border-b border-dashed border-slate-400 mb-2 pb-1">

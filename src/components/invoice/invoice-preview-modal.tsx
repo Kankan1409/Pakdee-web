@@ -130,12 +130,12 @@ export function InvoicePreviewModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 border-t-4 border-t-slate-800 border-b border-b-slate-200 pt-5 pb-6">
             <div className="min-w-0">
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                {propertyName || "พักดี แมนชั่น (สาขา 1)"}
+                {propertyName || "ยังไม่ได้ตั้งชื่อหอพัก"}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                {propertyAddress || "123/45 ซอยสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110"}
+                {propertyAddress || "-"}
               </p>
-              <p className="text-xs text-slate-500">โทร: {propertyPhone || "081-234-5678"}</p>
+              <p className="text-xs text-slate-500">โทร: {propertyPhone || "-"}</p>
             </div>
             <div className="sm:text-right tabular-nums">
               <h3 className="text-xl font-semibold text-slate-900">ใบแจ้งหนี้</h3>
@@ -235,7 +235,7 @@ export function InvoicePreviewModal({
               </div>
               <div>สแกน QR ผ่านแอปพลิเคชันธนาคาร</div>
               <div>ระบบพร้อมเพย์ (PromptPay)</div>
-              <div>ชื่อบัญชี: {promptpayName || "หอพัก พักดี แมนชั่น"}</div>
+              <div>ชื่อบัญชี: {promptpayName || "-"}</div>
               <div>ยอดชำระ: <strong className="tabular-nums">{formatCurrency(invoice.totalAmount)}</strong></div>
               <div className="text-slate-500 text-[11px] border-t border-slate-100 mt-2 pt-2">
                 เมื่อโอนแล้ว ระบบจะตรวจสลิปและปรับสถานะอัตโนมัติ

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
 
     const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-    const promptpayNumber = settings?.promptpayNumber || "0812345678";
+    const promptpayNumber = settings?.promptpayNumber || property?.promptpayNumber || "";
 
     const allInvoices = await DatabaseService.getInvoices(activePropId);
     const allTenants = await DatabaseService.getTenants(activePropId);

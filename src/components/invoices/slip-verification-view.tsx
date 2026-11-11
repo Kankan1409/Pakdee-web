@@ -25,6 +25,8 @@ import { formatCurrency, formatDateThai } from "@/lib/utils";
 
 export interface SlipVerificationViewProps {
   invoices?: Invoice[];
+  /** Current branch name shown on documents/payment info */
+  propertyName?: string;
   onVerifySlip?: (
     invoiceId: string,
     slipData?: {
@@ -65,6 +67,7 @@ export function SlipVerificationView({
   onRejectSlip = () => { },
   onOpenInvoiceModal,
   onShowToast = () => { },
+  propertyName = "",
 }: SlipVerificationViewProps) {
   const [activeTab, setActiveTab] = useState<"all" | "pending" | "verified">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -652,7 +655,7 @@ export function SlipVerificationView({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-emerald-100 text-[10px]">ผู้รับโอน:</span>
-                      <span className="font-bold">หอพัก พักดี แมนชั่น (PromptPay)</span>
+                      <span className="font-bold">{propertyName || "-"} (PromptPay)</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>

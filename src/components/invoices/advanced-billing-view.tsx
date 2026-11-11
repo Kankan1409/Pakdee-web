@@ -90,7 +90,7 @@ export function AdvancedBillingView({
     onCreateInvoice({
       roomNumber: selectedRoomNumber,
       tenantName: targetRoom?.currentTenant?.fullName || `ผู้เช่าห้อง ${selectedRoomNumber}`,
-      tenantPhone: targetRoom?.currentTenant?.phone || "0812345678",
+      tenantPhone: targetRoom?.currentTenant?.phone || "",
       billingDate: new Date().toISOString().slice(0, 10),
       dueDate: "2026-11-05",
       items: [{ name: customTitle, amount: customAmount, units: 1, rate: customAmount }],
@@ -107,7 +107,7 @@ export function AdvancedBillingView({
     onCreateInvoice({
       roomNumber: selectedRoomNumber,
       tenantName: targetRoom?.currentTenant?.fullName || `ผู้เช่าใหม่ห้อง ${selectedRoomNumber}`,
-      tenantPhone: targetRoom?.currentTenant?.phone || "0812345678",
+      tenantPhone: targetRoom?.currentTenant?.phone || "",
       billingDate: new Date().toISOString().slice(0, 10),
       dueDate: "2026-11-05",
       items: [

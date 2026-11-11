@@ -30,6 +30,8 @@ interface InvoicesBillingViewProps {
   onMarkAsPaid: (invoiceId: string) => void;
   onOpenInvoiceModal: (invoice: Invoice) => void;
   onShowToast: (message: string, type: "success" | "error" | "info" | "warning") => void;
+  /** Current branch name shown on documents/payment info */
+  propertyName?: string;
 }
 
 export function InvoicesBillingView({
@@ -40,6 +42,7 @@ export function InvoicesBillingView({
   onMarkAsPaid,
   onOpenInvoiceModal,
   onShowToast,
+  propertyName = "",
 }: InvoicesBillingViewProps) {
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -451,7 +454,7 @@ export function InvoicesBillingView({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-emerald-100 text-[10px]">ผู้รับโอน:</span>
-                  <span className="font-bold">หอพัก พักดี แมนชั่น (PromptPay)</span>
+                  <span className="font-bold">{propertyName || "-"} (PromptPay)</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>

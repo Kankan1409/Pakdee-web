@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
 
     const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-    const branchName = settings?.branchName || property?.name || "พักดี แมนชั่น";
+    const branchName = settings?.branchName || property?.name || "หอพัก";
 
     const allInvoices = await DatabaseService.getInvoices(activePropId);
     const invoice = allInvoices.find((i) => i.id === invoiceId);

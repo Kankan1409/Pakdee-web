@@ -288,3 +288,12 @@ BEGIN
         ALTER TABLE public.branch_settings ADD CONSTRAINT branch_settings_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id) ON DELETE CASCADE;
     $sql$;
 END $$;
+
+-- ============================================================================
+-- Branch ownership: each branch (property) belongs to one account so branches
+-- created on different accounts/devices stay separate.
+-- ============================================================================
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS owner_id TEXT;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS owner_phone TEXT;
+CREATE INDEX IF NOT EXISTS properties_owner_id_idx ON public.properties (owner_id);
+NOTIFY pgrst, 'reload schema';

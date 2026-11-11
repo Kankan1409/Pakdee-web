@@ -22,7 +22,7 @@ import {
   initialBroadcasts,
   initialActivityLogs,
   initialBranchSettings,
-} from "@/lib/mock-data";
+} from "@/lib/defaults";
 import { BranchItem } from "@/components/branch/branch-selector-view";
 import { supabase } from "@/lib/supabase";
 import {
@@ -30,6 +30,7 @@ import {
   syncAllToRelationalTables,
   loadFromRelationalTables,
   toUuid,
+  deletePropertiesCascade,
 } from "@/lib/supabase-relational";
 
 /**
@@ -65,6 +66,7 @@ const memoryDb: Record<string, any> = {};
 let isServerSynced = false;
 
 const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const pendingRelationalValues: Record<string, any> = {};
 function scheduleRelationalSync(normKey: string, value: any): void {
   if (normKey === "activity_logs" || normKey === "active_property_id") return;
   if (typeof window === "undefined") {
@@ -74,10 +76,26 @@ function scheduleRelationalSync(normKey: string, value: any): void {
   if (relationalSyncTimers[normKey]) {
     clearTimeout(relationalSyncTimers[normKey]);
   }
+  pendingRelationalValues[normKey] = value;
   relationalSyncTimers[normKey] = setTimeout(() => {
     delete relationalSyncTimers[normKey];
+    delete pendingRelationalValues[normKey];
     syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
   }, 1200);
+}
+
+/** Push every debounced change to Supabase right now and wait for it to finish. */
+async function flushRelationalSync(): Promise<void> {
+  const keys = Object.keys(relationalSyncTimers);
+  for (const normKey of keys) {
+    clearTimeout(relationalSyncTimers[normKey]);
+    delete relationalSyncTimers[normKey];
+    const value = pendingRelationalValues[normKey];
+    delete pendingRelationalValues[normKey];
+    try {
+      await syncKeyToRelationalTable(normKey, value, memoryDb);
+    } catch {}
+  }
 }
 
 // Safe Supabase-Synchronized Storage Helper
@@ -110,6 +128,49 @@ function nextShortId(prefix: string, existingIds: (string | undefined)[]): strin
   }
   const next = maxNum > 0 ? maxNum + 1 : existingIds.length + 1;
   return `${p}${String(Math.min(next, 9999)).padStart(4, "0")}`;
+}
+
+// Sample values that older versions wrote into branch settings (and cached in the
+// browser). They are not real data, so they must never be shown or saved again.
+const LEGACY_SAMPLE_VALUES = new Set([
+  "123/45 ซอยสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110",
+  "081-234-5678",
+  "0812345678",
+  "นายพักดี มีสุข",
+  "0105566012345",
+  "012-3-45678-9",
+  "หอพัก พักดี แมนชั่น",
+  "ธนาคารกสิกรไทย",
+  "https://api.pakdee.app/webhook/line/branch-1",
+]);
+const LEGACY_SAMPLE_BRANCH_NAME = /^พักดี แมนชั่น(\s*\(.*\))?$/;
+const LEGACY_SAMPLE_FIELDS = [
+  "address",
+  "phone",
+  "ownerName",
+  "ownerPhone",
+  "taxId",
+  "bankName",
+  "bankAccountNumber",
+  "bankAccountName",
+  "promptpayNumber",
+  "promptpayName",
+  "lineWebhookUrl",
+] as const;
+
+/** Blanks sample/mock values left in branch settings by older versions. */
+function stripLegacySampleSettings<T extends Record<string, any> | null>(settings: T): T {
+  if (!settings || typeof settings !== "object") return settings;
+  const cleaned: Record<string, any> = { ...settings };
+  if (typeof cleaned.branchName === "string" && LEGACY_SAMPLE_BRANCH_NAME.test(cleaned.branchName.trim())) {
+    cleaned.branchName = "";
+  }
+  for (const field of LEGACY_SAMPLE_FIELDS) {
+    if (typeof cleaned[field] === "string" && LEGACY_SAMPLE_VALUES.has(cleaned[field].trim())) {
+      cleaned[field] = "";
+    }
+  }
+  return cleaned as T;
 }
 
 function getLocal<T>(key: string, fallback: T): T {
@@ -310,6 +371,12 @@ export const DatabaseService = {
     return isServerSynced;
   },
 
+  /** Save all pending changes to Supabase, then reload everything fresh from Supabase. */
+  async refreshFromServer(): Promise<boolean> {
+    await flushRelationalSync();
+    return this.init();
+  },
+
   /**
    * Atomically persist multiple keys to memory, localStorage, and Supabase Cloud
    */
@@ -434,7 +501,7 @@ export const DatabaseService = {
     const refreshed = userScopedProps.map((p) => {
       const branchRooms = allRooms.filter((r) => (r.propertyId || "prop-1") === p.id);
       const bSettingsKey = this.getBranchSettingsKey(p.id);
-      const bSettings = getLocal<BranchSettingsDetail | null>(bSettingsKey, null);
+      const bSettings = stripLegacySampleSettings(getLocal<BranchSettingsDetail | null>(bSettingsKey, null));
 
       const vacantCount = branchRooms.filter((r) => r.status === "vacant").length;
       const occupiedCount = branchRooms.filter((r) => r.status === "occupied" || r.status === "overdue" || r.status === "daily").length;
@@ -481,7 +548,7 @@ export const DatabaseService = {
     const branchSettingsKey = this.getBranchSettingsKey(targetId);
     const currentSettings = getLocal<BranchSettingsDetail | null>(branchSettingsKey, null) || {
       ...initialBranchSettings,
-      branchName: updates.name || "พักดี แมนชั่น",
+      branchName: updates.name || "",
     };
 
     const settingsUpdates: Partial<BranchSettingsDetail> = {};
@@ -514,7 +581,15 @@ export const DatabaseService = {
     imageUrl?: string;
   }): Promise<BranchItem | null> {
     const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
-    const newId = nextShortId("P", rawProps.map((p) => p.id));
+    // Include ids already in Supabase: another device may have created a branch this
+    // device hasn't loaded yet. Without this both devices pick the same P000x and
+    // overwrite each other's branch (the branch seems to "switch" between them).
+    let remoteIds: string[] = [];
+    try {
+      const { data } = await supabase.from("properties").select("id");
+      remoteIds = (data || []).map((r: any) => String(r.id));
+    } catch {}
+    const newId = nextShortId("P", [...rawProps.map((p) => p.id), ...remoteIds]);
     const sessionUser = getCurrentSessionUser();
     const newBranch: BranchItem & { ownerId?: string; ownerPhone?: string } = {
       id: newId,
@@ -604,8 +679,8 @@ export const DatabaseService = {
 
     // Permanently delete from Supabase PostgreSQL table 'properties'
     try {
-      const propUuid = toUuid(propertyId);
-      await supabase.from("properties").delete().or(`id.eq.${propUuid},id.eq.${propertyId}`);
+      // Delete the branch and all its rows (settings, buildings, rooms, bills, ...) — nothing kept
+      await deletePropertiesCascade([toUuid(propertyId), propertyId]);
     } catch (err: any) {
       console.warn("[Supabase Relational] Delete property warning:", err?.message);
     }
@@ -1373,6 +1448,7 @@ export const DatabaseService = {
       propertyId: propId,
       invoiceNumber: finalInvoiceNumber,
       roomNumber: invoiceData.roomNumber,
+      tenantId: invoiceData.tenantId,
       tenantName: invoiceData.tenantName,
       tenantPhone: invoiceData.tenantPhone,
       billingDate: invoiceData.billingMonth + "-25",
@@ -1921,9 +1997,9 @@ export const DatabaseService = {
   ): Promise<BranchSettingsDetail> {
     const propId = propertyId || property?.id || this.getActivePropertyId();
     const branchSettingsKey = this.getBranchSettingsKey(propId);
-    let saved = getLocal<BranchSettingsDetail | null>(branchSettingsKey, null);
+    let saved = stripLegacySampleSettings(getLocal<BranchSettingsDetail | null>(branchSettingsKey, null));
     if (!saved) {
-      saved = getLocal<BranchSettingsDetail | null>(KEYS.BRANCH_SETTINGS, null);
+      saved = stripLegacySampleSettings(getLocal<BranchSettingsDetail | null>(KEYS.BRANCH_SETTINGS, null));
     }
 
     if (saved) {
@@ -1951,7 +2027,7 @@ export const DatabaseService = {
     const defaultSettings: BranchSettingsDetail = {
       ...initialBranchSettings,
       id: `settings-${propId}`,
-      branchName: property?.name || (propId === "prop-1" ? "พักดี แมนชั่น (สาขา 1)" : `พักดี แมนชั่น (${propId})`),
+      branchName: property?.name || "",
       address: property?.address || initialBranchSettings.address,
       phone: property?.phone || initialBranchSettings.phone,
       promptpayNumber: property?.promptpayNumber || initialBranchSettings.promptpayNumber,

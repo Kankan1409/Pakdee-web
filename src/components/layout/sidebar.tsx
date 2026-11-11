@@ -259,7 +259,7 @@ export function Sidebar({
             type="button"
             onClick={onOpenBranches}
             className="w-10 h-10 rounded-xl bg-[var(--subtle)] border border-[var(--border)] hover:border-emerald-500 text-emerald-600 dark:text-emerald-400 flex items-center justify-center transition cursor-pointer"
-            title={`สาขาปัจจุบัน: ${propertyName || "พักดี แมนชั่น"} (คลิกเพื่อสลับสาขา)`}
+            title={`สาขาปัจจุบัน: ${propertyName || "ยังไม่ได้ตั้งชื่อหอพัก"} (คลิกเพื่อสลับสาขา)`}
           >
             <Building className="w-4 h-4" />
           </button>
@@ -320,7 +320,7 @@ export function Sidebar({
                 </div>
                 <div className="truncate">
                   <div className="text-[12px] font-semibold text-[var(--foreground)] truncate">
-                    {propertyName || "พักดี แมนชั่น (สาขา 1)"}
+                    {propertyName || "ยังไม่ได้ตั้งชื่อหอพัก"}
                   </div>
                   <div className="text-[10px] text-[var(--muted)] truncate">
                     {propertyAddress ? propertyAddress.slice(0, 24) + "..." : "คลิกเพื่อสลับสาขา / เพิ่มสาขา"}

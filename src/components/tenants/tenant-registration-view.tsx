@@ -122,6 +122,8 @@ const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
 
 interface TenantRegistrationViewProps {
   rooms: Room[];
+  /** Current branch name shown on the contract (landlord) */
+  propertyName?: string;
   initialRoomId?: string;
   onBack: () => void;
   onSubmit: (tenantData: {
@@ -177,6 +179,7 @@ export function TenantRegistrationView({
   onBack,
   onSubmit,
   existingTenants,
+  propertyName = "",
 }: TenantRegistrationViewProps) {
   // Vacant rooms only
   const vacantRooms = rooms.filter((r) => r.status === "vacant" && !r.currentTenant);
@@ -463,7 +466,7 @@ export function TenantRegistrationView({
         content: c.content
           .replace(/\[หมายเลขห้อง\]/g, selectedRoom?.roomNumber || "-")
           .replace(/\[ชั้น\]/g, String(selectedRoom?.floor || 1))
-          .replace(/\[ที่อยู่หอพัก\]/g, "หอพัก พักดี แมนชั่น")
+          .replace(/\[ที่อยู่หอพัก\]/g, propertyName ? `หอพัก ${propertyName}` : "หอพัก")
           .replace(/\[วันเริ่มสัญญา\]/g, startDate)
           .replace(/\[วันสิ้นสุดสัญญา\]/g, isContinuous ? "สัญญาต่อเนื่อง" : endDate)
           .replace(/\[ค่าเช่า\]/g, roomRent.toLocaleString("th-TH"))

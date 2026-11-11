@@ -198,43 +198,43 @@ export interface PrintableContractData {
 }
 
 export const DEFAULT_PRINTABLE_CONTRACT: PrintableContractData = {
-  contractNumber: "CT-2026-103-01",
-  contractDate: "2026-03-11",
-  // 1. Room Allocation (ตรงตามภาพตัวอย่าง: ห้อง 103 ชั้น 1 ห้องแอร์ ฿4,000/ด.)
-  roomNumber: "103",
+  contractNumber: "",
+  contractDate: "",
+  // 1. Room Allocation (blank — filled from the real contract/room)
+  roomNumber: "",
   floor: 1,
   roomType: "ห้องแอร์",
-  monthlyRate: 4000,
+  monthlyRate: 0,
   // 2. Tenant Profile (14 ฟิลด์)
-  fullName: "คุณนวรัตน์ มงคลสุข",
-  phone: "089-456-7890",
-  idCard: "1-1005-01234-56-7",
+  fullName: "",
+  phone: "",
+  idCard: "",
   gender: "MALE",
-  age: 26,
-  lineId: "nawarat_line",
-  email: "tenant@email.com",
-  vehiclePlate: "1กข 9999 กทม.",
-  address: "99/12 หมู่ 4 ซอยสุขุมวิท 101 ถนนสุขุมวิท แขวงบางจาก เขตพระโขนง กรุงเทพมหานคร 10260",
-  emergencyContact: "มารดา (คุณสมศรี) 081-234-5678",
+  age: 0,
+  lineId: "",
+  email: "",
+  vehiclePlate: "",
+  address: "",
+  emergencyContact: "",
   taxId: "",
   invoiceLang: "TH",
   notes: "",
-  // 3. Financial & Dates (ตรงตามภาพตัวอย่าง: 11/03/2026 - 11/03/2027, ชำระวันที่ 5, ค่าปรับ 100, เงินประกัน 8000, ทีวี/ตู้เย็น ปิดไว้)
-  startDate: "2026-03-11",
-  endDate: "2027-03-11",
+  // 3. Financial & Dates
+  startDate: "",
+  endDate: "",
   isContinuous: false,
   paymentDueDay: 5,
   lateFeePerDay: 100,
   electricalEquipmentFee: 0,
   furnitureFee: 0,
-  hasDeposit: true,
-  depositAmount: 8000,
+  hasDeposit: false,
+  depositAmount: 0,
   hasTv: false,
   tvRentalFee: 300,
   hasFridge: false,
   fridgeRentalFee: 300,
   additionalFees: [],
-  // 4. Lease Conditions (ตรงตามภาพตัวอย่าง: แจ้งล่วงหน้า 30 วัน, คืนเงินประกัน 7 วัน, ค้างชำระได้ 7 วัน, ห้ามสูบบุหรี่)
+  // 4. Lease Conditions
   noticeDays: 30,
   depositRefundDays: 7,
   overdueGraceDays: 7,
@@ -244,9 +244,9 @@ export const DEFAULT_PRINTABLE_CONTRACT: PrintableContractData = {
   // 5. Clauses
   clauses: STANDARD_14_CLAUSES,
   // Property Info
-  propertyName: "หอพักพักดี เรสซิเดนซ์ (PAKDEE RESIDENCE)",
-  propertyAddress: "128/9 ถนนพหลโยธิน แขวงจอมพล เขตจตุจักร กรุงเทพมหานคร 10900",
-  propertyPhone: "02-888-9999, 081-999-8888",
+  propertyName: "",
+  propertyAddress: "",
+  propertyPhone: "",
   electricRate: 8,
   waterRate: 18,
 };
