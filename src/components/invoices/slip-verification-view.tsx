@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Invoice } from "@/types/dormitory";
+import { requestPaymentSlips } from "@/lib/payment-slips-client";
 import {
   CreditCard,
   Sparkles,
@@ -27,6 +28,8 @@ export interface SlipVerificationViewProps {
   invoices?: Invoice[];
   /** Current branch name shown on documents/payment info */
   propertyName?: string;
+  /** Current branch id, used to load slip images stored in payment_slips (e.g. sent via LINE) */
+  propertyId?: string;
   onVerifySlip?: (
     invoiceId: string,
     slipData?: {
@@ -61,6 +64,22 @@ function SlipImagePreview({ url }: { url?: string }) {
   </div>;
 }
 
+/** A slip image saved in payment_slips (sent by the tenant via LINE or uploaded by staff). */
+type StoredSlip = {
+  id: string;
+  verification_status: "pending" | "passed" | "rejected";
+  transaction_ref?: string | null;
+  rejection_reason?: string | null;
+  uploaded_at: string;
+  invoices: { invoice_number: string } | null;
+};
+
+const storedSlipStatusLabel: Record<StoredSlip["verification_status"], string> = {
+  pending: "รอตรวจสอบ",
+  passed: "ผ่านการตรวจสอบ",
+  rejected: "ไม่ผ่าน",
+};
+
 export function SlipVerificationView({
   invoices = [],
   onVerifySlip = () => { },
@@ -68,10 +87,69 @@ export function SlipVerificationView({
   onOpenInvoiceModal,
   onShowToast = () => { },
   propertyName = "",
+  propertyId = "",
 }: SlipVerificationViewProps) {
   const [activeTab, setActiveTab] = useState<"all" | "pending" | "verified">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedSlipInvoice, setSelectedSlipInvoice] = useState<Invoice | null>(null);
+
+  // Slip images stored in payment_slips (LINE / upload). Display only — reloads when invoices refresh.
+  const [storedSlips, setStoredSlips] = useState<StoredSlip[]>([]);
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    requestPaymentSlips(propertyId, "list")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setStoredSlips(Array.isArray(data?.slips) ? data.slips : []);
+      })
+      .catch(() => {
+        if (!cancelled) setStoredSlips([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, invoices]);
+
+  // Per bill: the passed slip if any, otherwise the most recent one (list is newest first)
+  const storedSlipByInvoice = useMemo(() => {
+    const map = new Map<string, StoredSlip>();
+    for (const slip of storedSlips) {
+      const num = slip.invoices?.invoice_number;
+      if (!num) continue;
+      const current = map.get(num);
+      if (!current || (current.verification_status !== "passed" && slip.verification_status === "passed")) {
+        map.set(num, slip);
+      }
+    }
+    return map;
+  }, [storedSlips]);
+
+  // Viewer for a stored slip image (loaded through the authorized /api/payment-slips endpoint)
+  const [viewingStoredSlip, setViewingStoredSlip] = useState<{ slip: StoredSlip; invoice: Invoice } | null>(null);
+  const [storedSlipImage, setStoredSlipImage] = useState("");
+  const [storedSlipError, setStoredSlipError] = useState("");
+  useEffect(() => {
+    if (!viewingStoredSlip || !propertyId) return;
+    let cancelled = false;
+    let objectUrl = "";
+    setStoredSlipImage("");
+    setStoredSlipError("");
+    requestPaymentSlips(propertyId, "image", viewingStoredSlip.slip.id)
+      .then((r) => r.blob())
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setStoredSlipImage(objectUrl);
+      })
+      .catch((e) => {
+        if (!cancelled) setStoredSlipError(e instanceof Error ? e.message : "โหลดรูปสลิปไม่สำเร็จ");
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [viewingStoredSlip, propertyId]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanningTargetId, setScanningTargetId] = useState<string | null>(null);
 
@@ -445,6 +523,25 @@ export function SlipVerificationView({
                             <ImageIcon className={`w-3.5 h-3.5 ${inv.slipStatus === "action_needed" ? "text-rose-500" : "text-blue-500"}`} />
                             <span>{inv.slipStatus === "action_needed" ? "ตรวจสลิป" : "ดูสลิป"}</span>
                           </button>
+                        ) : storedSlipByInvoice.get(inv.invoiceNumber) ? (
+                          (() => {
+                            const stored = storedSlipByInvoice.get(inv.invoiceNumber)!;
+                            const failed = stored.verification_status !== "passed" && !!stored.rejection_reason;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setViewingStoredSlip({ slip: stored, invoice: inv })}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition cursor-pointer font-bold text-[11px] ${failed
+                                    ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30"
+                                    : "bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/25"
+                                  }`}
+                                title="ดูสลิปที่ผู้เช่าส่งมา (เก็บในฐานข้อมูล)"
+                              >
+                                <ImageIcon className={`w-3.5 h-3.5 ${failed ? "text-rose-500" : "text-blue-500"}`} />
+                                <span>{failed ? "สลิปไม่ผ่าน" : "ดูสลิป"}</span>
+                              </button>
+                            );
+                          })()
                         ) : (
                           <span className="text-[11px] text-[var(--muted)] italic">
                             รอส่งสลิป
@@ -458,13 +555,13 @@ export function SlipVerificationView({
                           <div className="space-y-0.5">
                             <div className="font-semibold text-xs flex items-center gap-1">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                              <span>{inv.slipBank || "ธนาคารกสิกรไทย (KBank PromptPay)"}</span>
+                              <span>{inv.slipBank || "ไม่ระบุธนาคาร"}</span>
                             </div>
                             <div className="text-[10px] text-[var(--muted)] font-mono">
-                              Ref: {inv.slipTransRef || `014310${inv.roomNumber}882`}
+                              Ref: {inv.slipTransRef || storedSlipByInvoice.get(inv.invoiceNumber)?.transaction_ref || "-"}
                             </div>
                             <div className="text-[10px] text-[var(--muted)]">
-                              โอนเมื่อ: {inv.paidAt || inv.slipVerifiedAt || "26 ต.ค. 2026 09:38 น."}
+                              โอนเมื่อ: {inv.paidAt || inv.slipVerifiedAt || "-"}
                             </div>
                           </div>
                         ) : (
@@ -560,6 +657,64 @@ export function SlipVerificationView({
           </table>
         </div>
       </div>
+
+      {/* Modal: stored slip image from payment_slips (sent via LINE / uploaded) */}
+      {viewingStoredSlip && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70" onClick={() => setViewingStoredSlip(null)} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="รูปสลิปที่ผู้เช่าส่งมา"
+            className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--card)] border border-[var(--border)] rounded-3xl p-5 shadow-2xl z-10"
+          >
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--border)]">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-[var(--foreground)]">
+                  ห้อง {viewingStoredSlip.invoice.roomNumber} · {viewingStoredSlip.invoice.tenantName}
+                </div>
+                <div className="text-[11px] text-[var(--muted)] font-mono">
+                  {viewingStoredSlip.invoice.invoiceNumber} ·{" "}
+                  {new Date(viewingStoredSlip.slip.uploaded_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="ปิด"
+                onClick={() => setViewingStoredSlip(null)}
+                className="p-1.5 rounded-xl text-[var(--muted)] hover:bg-[var(--subtle)] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mt-3 text-xs space-y-1">
+              <div>
+                สถานะ: <strong>{storedSlipStatusLabel[viewingStoredSlip.slip.verification_status]}</strong>
+                {viewingStoredSlip.slip.transaction_ref && (
+                  <span className="ml-2 font-mono text-[var(--muted)]">Ref: {viewingStoredSlip.slip.transaction_ref}</span>
+                )}
+              </div>
+              {viewingStoredSlip.slip.verification_status !== "passed" && viewingStoredSlip.slip.rejection_reason && (
+                <div className="text-rose-600 dark:text-rose-400">เหตุผลที่ไม่ผ่าน: {viewingStoredSlip.slip.rejection_reason}</div>
+              )}
+            </div>
+            <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--subtle)] p-3 min-h-[160px] flex items-center justify-center">
+              {storedSlipError ? (
+                <p role="alert" className="text-sm text-rose-600">{storedSlipError}</p>
+              ) : storedSlipImage ? (
+                <img
+                  src={storedSlipImage}
+                  alt="รูปสลิปที่ผู้เช่าส่งมา"
+                  className="w-full h-auto max-h-[65vh] object-contain rounded-lg"
+                  onError={() => setStoredSlipError("ไฟล์รูปสลิปไม่สามารถแสดงได้")}
+                />
+              ) : (
+                <p className="text-sm text-[var(--muted)]">กำลังโหลดรูปสลิป...</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 4. Modal: Interactive Slip Preview & Side-by-Side Verification */}
       {selectedSlipInvoice && (
@@ -659,12 +814,12 @@ export function SlipVerificationView({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>
-                      <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "26 ต.ค. 2026 09:38 น."}</span>
+                      <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "-"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-emerald-100 text-[10px]">รหัสอ้างอิง:</span>
                       <span className="font-mono text-[10px] text-amber-200">
-                        {selectedSlipInvoice.slipTransRef || `014310${selectedSlipInvoice.roomNumber}882`}
+                        {selectedSlipInvoice.slipTransRef || storedSlipByInvoice.get(selectedSlipInvoice.invoiceNumber)?.transaction_ref || "-"}
                       </span>
                     </div>
                   </div>

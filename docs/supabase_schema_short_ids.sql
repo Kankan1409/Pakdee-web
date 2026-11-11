@@ -297,3 +297,24 @@ ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS owner_id TEXT;
 ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS owner_phone TEXT;
 CREATE INDEX IF NOT EXISTS properties_owner_id_idx ON public.properties (owner_id);
 NOTIFY pgrst, 'reload schema';
+
+-- ============================================================================
+-- Restore payment_slips -> invoices relationship.
+-- The short-ID migration above drops every foreign key and re-adds a list that
+-- missed this one. Without it PostgREST cannot embed invoices(invoice_number),
+-- so /api/payment-slips (list) and re-checking a stored slip fail with 503.
+-- Same rule as the original table (docs/migrations/20261106_create_payment_slips.sql):
+-- ON DELETE RESTRICT, so a bill with payment evidence cannot be deleted silently.
+-- NOT VALID: existing slips whose invoice was already deleted are kept as-is
+-- (no data is deleted); the rule applies to new/updated rows.
+-- ============================================================================
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'payment_slips')
+       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payment_slips_invoice_id_fkey') THEN
+        ALTER TABLE public.payment_slips
+            ADD CONSTRAINT payment_slips_invoice_id_fkey
+            FOREIGN KEY (invoice_id) REFERENCES public.invoices(id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+END $$;
+NOTIFY pgrst, 'reload schema';

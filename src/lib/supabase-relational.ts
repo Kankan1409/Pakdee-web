@@ -287,6 +287,8 @@ function dedupeRows(rows: Record<string, any>[], conflict: string): Record<strin
 // Tables whose rows belong to a branch (property) and must go when the branch is deleted.
 // Order matters: children before parents (invoice_items/meter_readings cascade from invoices/rooms).
 const BRANCH_CHILD_TABLES = [
+  // payment_slips -> invoices is ON DELETE RESTRICT, so slips must go before their bills
+  "payment_slips",
   "invoices",
   "contracts",
   "repairs",
@@ -701,7 +703,8 @@ export async function syncInvoicesToSupabase(
     );
     // Resolve the invoice's tenant, most reliable first:
     // 1) stored tenantId  2) same name (prefer same room)  3) the room's current tenant
-    const invName = (inv.tenantName || "").trim();
+    // Daily bills are named "<guest> (รายวัน)"; compare without that suffix so they link to the guest
+    const invName = (inv.tenantName || "").replace(/\s*\(รายวัน\)\s*$/, "").trim();
     const sameName = (t: Tenant) => Boolean(invName) && t.fullName.trim() === invName;
     const roomTenant = matchedRoom?.currentTenant;
     const matchedTenant =
@@ -724,6 +727,9 @@ export async function syncInvoicesToSupabase(
       invoice_number: inv.invoiceNumber || `INV-${inv.roomNumber}-${Date.now()}`,
       room_id: matchedRoom ? toUuid(matchedRoom.id) : null,
       tenant_id: matchedTenant ? toUuid(matchedTenant.id) : null,
+      // Name/phone as written on the bill, kept even if the tenant record is later removed
+      tenant_name: inv.tenantName || null,
+      tenant_phone: inv.tenantPhone || null,
       billing_month: billingMonth,
       due_date: toPgDate(inv.dueDate, todayStr)!,
       total_amount: Number(inv.totalAmount || 0),
@@ -1251,8 +1257,8 @@ export async function loadFromRelationalTables(
         propertyId: propId,
         invoiceNumber: iRow.invoice_number,
         roomNumber,
-        tenantName: existingInv?.tenantName || linkedTenant?.fullName || "ผู้เช่า",
-        tenantPhone: existingInv?.tenantPhone || linkedTenant?.phone || "-",
+        tenantName: existingInv?.tenantName || iRow.tenant_name || linkedTenant?.fullName || "ผู้เช่า",
+        tenantPhone: existingInv?.tenantPhone || iRow.tenant_phone || linkedTenant?.phone || "-",
         billingDate: existingInv?.billingDate || `${iRow.billing_month}-25`,
         dueDate: iRow.due_date,
         totalAmount: Number(iRow.total_amount || 0),

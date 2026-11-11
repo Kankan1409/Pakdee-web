@@ -81,6 +81,8 @@ interface HeaderProps {
   rooms?: Room[];
   invoices?: Invoice[];
   repairs?: RepairItem[];
+  /** Current branch id (for slip-verification failure notifications) */
+  propertyId?: string;
   onSelectRoom?: (room: Room) => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
@@ -107,6 +109,7 @@ export function Header({
   rooms = [],
   invoices,
   repairs,
+  propertyId,
   onSelectRoom,
   searchQuery,
   onSearchChange,
@@ -517,6 +520,7 @@ export function Header({
           rooms={rooms}
           invoices={invoices}
           repairs={repairs}
+          propertyId={propertyId}
         />
 
         {/* Quick Logout Button */}

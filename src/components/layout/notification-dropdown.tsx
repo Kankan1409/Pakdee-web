@@ -17,6 +17,7 @@ import {
   FileSignature,
 } from "lucide-react";
 import { Room, Invoice, RepairItem } from "@/types/dormitory";
+import { useFailedSlips } from "@/lib/use-failed-slips";
 
 export interface NotificationItem {
   id: string;
@@ -71,6 +72,8 @@ interface NotificationDropdownProps {
   rooms?: Room[];
   invoices?: Invoice[];
   repairs?: RepairItem[];
+  /** Current branch id, used to load slips that failed Slip2Go verification */
+  propertyId?: string;
 }
 
 export function NotificationDropdown({
@@ -78,7 +81,9 @@ export function NotificationDropdown({
   rooms = [],
   invoices = [],
   repairs = [],
+  propertyId = "",
 }: NotificationDropdownProps) {
+  const { entries: failedSlipEntries } = useFailedSlips(propertyId, invoices);
   const [isOpen, setIsOpen] = useState(false);
   const [readIds, setReadIds] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
@@ -111,6 +116,22 @@ export function NotificationDropdown({
         time: "รอดำเนินการ",
         isRead: readIds.includes(`cleaning-${r.id}`),
         actionText: `ไปที่หน้าทำความสะอาดห้อง ${r.roomNumber}`,
+      });
+    });
+
+    // 1b. Slips that failed Slip2Go verification (fake / duplicate / wrong amount ...)
+    failedSlipEntries.forEach(({ slip, invoice }) => {
+      const room = invoice?.roomNumber || "-";
+      list.push({
+        id: `slipfail-${slip.id}`,
+        title: `ห้อง ${room} สลิปตรวจไม่ผ่าน${invoice?.tenantName ? ` (${invoice.tenantName})` : ""}`,
+        description: `${(slip.rejection_reason || "").replace(/^[❌⚠️\s]+/u, "")} · บิล ${slip.invoices?.invoice_number || "-"}`,
+        type: "urgent",
+        category: "billing",
+        targetTab: "invoices",
+        time: new Date(slip.uploaded_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }),
+        isRead: readIds.includes(`slipfail-${slip.id}`),
+        actionText: "ไปที่รายการใบแจ้งหนี้ & การชำระเงิน",
       });
     });
 
@@ -186,7 +207,7 @@ export function NotificationDropdown({
     }
 
     return list;
-  }, [rooms, invoices, repairs, readIds]);
+  }, [rooms, invoices, repairs, readIds, failedSlipEntries]);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 

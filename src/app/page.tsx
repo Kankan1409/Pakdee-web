@@ -2788,6 +2788,7 @@ export default function HomePage() {
           rooms={rooms}
           invoices={invoices}
           repairs={repairs}
+          propertyId={property.id}
         />
 
         {/* Scrollable Content Workspace */}
@@ -2947,6 +2948,7 @@ export default function HomePage() {
             <InvoicesBillingView
               invoices={invoices}
               propertyName={property.name}
+              propertyId={property.id}
               isSendingLineBatch={isSendingLineBatch}
               onSendLineAllInvoices={handleSendLineAllInvoices}
               onGenerateMonthlyInvoices={handleGenerateMonthlyInvoices}
@@ -2964,6 +2966,7 @@ export default function HomePage() {
             <SlipVerificationView
               invoices={invoices}
               propertyName={property.name}
+              propertyId={property.id}
               onVerifySlip={handleVerifySlip}
               onRejectSlip={handleRejectSlip}
               onOpenInvoiceModal={(inv) => {

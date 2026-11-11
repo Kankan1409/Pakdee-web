@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { Invoice } from "@/types/dormitory";
+import { useFailedSlips } from "@/lib/use-failed-slips";
 import {
   Receipt,
   CheckCircle2,
@@ -32,6 +33,8 @@ interface InvoicesBillingViewProps {
   onShowToast: (message: string, type: "success" | "error" | "info" | "warning") => void;
   /** Current branch name shown on documents/payment info */
   propertyName?: string;
+  /** Current branch id, used to load slips that failed Slip2Go verification */
+  propertyId?: string;
 }
 
 export function InvoicesBillingView({
@@ -43,10 +46,14 @@ export function InvoicesBillingView({
   onOpenInvoiceModal,
   onShowToast,
   propertyName = "",
+  propertyId = "",
 }: InvoicesBillingViewProps) {
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedSlipInvoice, setSelectedSlipInvoice] = useState<Invoice | null>(null);
+
+  // Latest failed Slip2Go check per bill (fake, duplicate, wrong amount, ...). Display only.
+  const { byInvoiceNumber: failedSlipByInvoice } = useFailedSlips(propertyId, invoices);
 
   // Extract available billing months
   const invoiceMonths = useMemo(() => {
@@ -275,6 +282,18 @@ export function InvoicesBillingView({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Why the tenant's latest slip failed Slip2Go (only for unpaid bills) */}
+                  {failedSlipByInvoice.get(inv.invoiceNumber) && (
+                    <span
+                      className="max-w-[260px] truncate bg-rose-500/10 text-rose-700 dark:text-rose-300 font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1 border border-rose-500/30 text-xs"
+                      title={`สลิปไม่ผ่าน: ${failedSlipByInvoice.get(inv.invoiceNumber)!.slip.rejection_reason}`}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">
+                        สลิปไม่ผ่าน: {failedSlipByInvoice.get(inv.invoiceNumber)!.slip.rejection_reason?.replace(/^[❌⚠️\s]+/u, "")}
+                      </span>
+                    </span>
+                  )}
                   {inv.status === "paid" ? (
                     inv.slipStatus === "passed" || inv.slipUrl ? (
                       <div className="flex items-center gap-1.5">
@@ -458,12 +477,12 @@ export function InvoicesBillingView({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>
-                  <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "26 ต.ค. 2026 09:38 น."}</span>
+                  <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "-"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-emerald-100 text-[10px]">รหัสอ้างอิง:</span>
                   <span className="font-mono text-[10px] text-amber-200">
-                    {selectedSlipInvoice.slipTransRef || `014310${selectedSlipInvoice.roomNumber}882`}
+                    {selectedSlipInvoice.slipTransRef || "-"}
                   </span>
                 </div>
               </div>

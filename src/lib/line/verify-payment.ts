@@ -29,6 +29,21 @@ export async function verifyStoredPayment(propertyId: string, id: string) {
   return { ...result, status: result.amount !== undefined ? "passed" : "pending" };
 }
 
+/**
+ * Saves why a slip did not pass (fake, duplicate, wrong amount, ...) in payment_slips.rejection_reason
+ * so staff can see it on the invoices page. Only writes the reason: verification_status is left
+ * unchanged, so re-checking a slip works exactly as before. Never throws.
+ */
+async function recordSlipFailure(db: ReturnType<typeof slipDatabase>, propertyId: string, slipId: string, reason: string) {
+  try {
+    const { error } = await db.from("payment_slips").update({ rejection_reason: reason.slice(0, 500) })
+      .eq("id", slipId).eq("property_id", toUuid(propertyId));
+    if (error) console.error("[SLIP2GO] Failed to record slip failure reason", { code: error.code });
+  } catch (err) {
+    console.error("[SLIP2GO] Failed to record slip failure reason", err);
+  }
+}
+
 export async function verifyLinePayment(propertyId: string, invoice: Invoice, settings: BranchSettingsDetail,
   image: Buffer, filename: string): Promise<{ message: string; amount?: number }> {
   const id = await savePaymentSlip(propertyId, invoice.invoiceNumber, image, filename);
@@ -48,11 +63,17 @@ export async function verifyLinePayment(propertyId: string, invoice: Invoice, se
     receiverAccount: settings.promptpayNumber?.trim() || settings.bankAccountNumber?.trim(),
     receiverAccountType,
   });
-  if (!result.success) return { message: `${result.error}\n\nบิล ${invoice.invoiceNumber} ห้อง ${invoice.roomNumber}: ยังไม่ยืนยันการชำระเงินจากสลิปนี้ครับ` };
+  if (!result.success) {
+    await recordSlipFailure(db, propertyId, id, result.error || "Slip2Go ตรวจสลิปไม่ผ่าน");
+    return { message: `${result.error}\n\nบิล ${invoice.invoiceNumber} ห้อง ${invoice.roomNumber}: ยังไม่ยืนยันการชำระเงินจากสลิปนี้ครับ` };
+  }
   const { data: duplicates, error: duplicateError } = await db.from("payment_slips").select("id")
     .eq("transaction_ref", result.transRef!).neq("id", id).limit(1);
   if (duplicateError) return { message: "⚠️ ตรวจประวัติสลิปไม่สำเร็จ ยังไม่รับชำระ กรุณาลองใหม่ภายหลัง" };
-  if (duplicates?.length) return { message: "⚠️ ตรวจพบสลิปซ้ำ ธุรกรรมนี้มีอยู่ในระบบแล้ว จึงไม่รับชำระซ้ำครับ" };
+  if (duplicates?.length) {
+    await recordSlipFailure(db, propertyId, id, "ตรวจพบสลิปซ้ำ ธุรกรรมนี้มีอยู่ในระบบแล้ว");
+    return { message: "⚠️ ตรวจพบสลิปซ้ำ ธุรกรรมนี้มีอยู่ในระบบแล้ว จึงไม่รับชำระซ้ำครับ" };
+  }
   // No fallback to an invoice amount, guessed bank or manufactured reference.
   const latest = (await DatabaseService.getInvoices(propertyId)).find(i => i.id === invoice.id);
   if (!latest || !["unpaid", "overdue", "pending_review"].includes(latest.status) || latest.totalAmount !== result.amount) {

@@ -204,9 +204,13 @@ export function RoomDetailModal({
                     </div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-[var(--muted)]">LINE ID / แชท</div>
-                    <div className="text-xs font-bold text-teal-600 dark:text-teal-400 mt-0.5">
-                      {tenant.lineId ? `@${tenant.lineId}` : "-"}
+                    <div className="text-[11px] text-[var(--muted)]">ชื่อ LINE</div>
+                    <div
+                      className="text-xs font-bold text-teal-600 dark:text-teal-400 mt-0.5"
+                      title={tenant.lineId || undefined}
+                    >
+                      {tenant.Line_Acc || tenant.lineAcc || tenant.lineDisplayName ||
+                        (tenant.lineId ? "ผูก LINE แล้ว (ยังไม่มีชื่อ)" : "-")}
                     </div>
                   </div>
                   {tenant.taxId && (
