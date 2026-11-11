@@ -1021,6 +1021,10 @@ export async function loadFromRelationalTables(
       ? existingMemoryDb["properties"]
       : [];
     const defaultPropId = propRows[0]?.id ? String(propRows[0].id) : "P0001";
+    // Rows whose branch no longer exists (property_id NULL or unknown) are leftovers from a
+    // deleted branch. Skip them instead of attaching them to the first branch.
+    const knownBranchIds = new Set(propRows.map((row: any) => String(row.id).toLowerCase()));
+    const belongsToKnownBranch = (row: any) => knownBranchIds.has(String(row?.property_id || "").toLowerCase());
     const uuidToPropId = new Map<string, string>();
     for (const ep of existingProps) {
       uuidToPropId.set(toUuid(ep.id).toLowerCase(), ep.id);
@@ -1053,7 +1057,11 @@ export async function loadFromRelationalTables(
     // Map branch_settings
     if (settingsRes.data && settingsRes.data.length > 0) {
       for (const sRow of settingsRes.data) {
-        const propId = uuidToPropId.get(String(sRow.property_id || "").toLowerCase()) || String(sRow.property_id || defaultPropId);
+        // Skip settings left over from a deleted branch (property_id NULL or unknown).
+        // Previously they fell back to the FIRST branch and overwrote its real name/settings.
+        const rawPropId = String(sRow.property_id || "").toLowerCase();
+        if (!rawPropId || !knownBranchIds.has(rawPropId)) continue;
+        const propId = uuidToPropId.get(rawPropId) || String(sRow.property_id);
         const existingSetting = existingMemoryDb[`branch_settings_${propId}`] || {};
         result[`branch_settings_${propId}`] = {
           ...existingSetting,
@@ -1133,7 +1141,7 @@ export async function loadFromRelationalTables(
       ? existingMemoryDb["rooms"]
       : [];
     const uuidToRoomNumber = new Map<string, string>();
-    result["rooms"] = roomRows.map((rRow: any) => {
+    result["rooms"] = roomRows.filter(belongsToKnownBranch).map((rRow: any) => {
       const rowUuid = String(rRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
       const existingRoom = existingRooms.find(
@@ -1173,7 +1181,7 @@ export async function loadFromRelationalTables(
     const existingContracts: ContractItem[] = Array.isArray(existingMemoryDb["contracts"])
       ? existingMemoryDb["contracts"]
       : [];
-    result["contracts"] = contractRows.map((cRow: any) => {
+    result["contracts"] = contractRows.filter(belongsToKnownBranch).map((cRow: any) => {
       const rowUuid = String(cRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || String(cRow.property_id || defaultPropId);
       const existingContract = existingContracts.find(
@@ -1211,7 +1219,7 @@ export async function loadFromRelationalTables(
       : [];
     const invRows = invoicesRes.data || [];
     const itemRows = invoiceItemsRes.data || [];
-    result["invoices"] = invRows.map((iRow: any) => {
+    result["invoices"] = invRows.filter(belongsToKnownBranch).map((iRow: any) => {
       const rowUuid = String(iRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || String(iRow.property_id || defaultPropId);
       const existingInv = existingInvoices.find(
@@ -1278,7 +1286,7 @@ export async function loadFromRelationalTables(
       const existingRepairs: RepairItem[] = Array.isArray(existingMemoryDb["repairs"])
         ? existingMemoryDb["repairs"]
         : [];
-      result["repairs"] = repairsRes.data.map((rRow: any) => {
+      result["repairs"] = repairsRes.data.filter(belongsToKnownBranch).map((rRow: any) => {
         const rowUuid = String(rRow.id).toLowerCase();
         const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
         const existingRep = existingRepairs.find((er) => toUuid(er.id).toLowerCase() === rowUuid);
@@ -1305,7 +1313,7 @@ export async function loadFromRelationalTables(
       const existingExpenses: ExpenseItem[] = Array.isArray(existingMemoryDb["expenses"])
         ? existingMemoryDb["expenses"]
         : [];
-      result["expenses"] = expensesRes.data.map((eRow: any) => {
+      result["expenses"] = expensesRes.data.filter(belongsToKnownBranch).map((eRow: any) => {
         const rowUuid = String(eRow.id).toLowerCase();
         const propId = uuidToPropId.get(String(eRow.property_id || "").toLowerCase()) || String(eRow.property_id || defaultPropId);
         const existingExp = existingExpenses.find((ee) => toUuid(ee.id).toLowerCase() === rowUuid);

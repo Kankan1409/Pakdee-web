@@ -304,7 +304,6 @@ export function TenantsListView({
               <th className="py-3 px-3">ห้อง</th>
               <th className="py-3 px-3">ชื่อ-นามสกุล</th>
               <th className="py-3 px-3">เบอร์โทรศัพท์</th>
-              <th className="py-3 px-3">ข้อมูลสัญญา / การเข้าพัก</th>
               <th className="py-3 px-3">Line_acc</th>
               <th className="py-3 px-3">เลขบัตรประชาชน</th>
               <th className="py-3 px-3">มัดจำ</th>
@@ -337,9 +336,6 @@ export function TenantsListView({
                   </td>
                   <td className="py-3 px-3 font-bold">{t.fullName}</td>
                   <td className="py-3 px-3 font-mono">{t.phone}</td>
-                  <td className="py-3 px-3 text-[var(--muted)] text-[11px] max-w-xs truncate">
-                    {t.stayInfo || "-"}
-                  </td>
                   <td className="py-3 px-3">
                     {t.lineAcc ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#06C755]/10 text-[#06C755] font-semibold text-[11px] border border-[#06C755]/20">

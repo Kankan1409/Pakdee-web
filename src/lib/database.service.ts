@@ -374,6 +374,13 @@ export const DatabaseService = {
   /** Save all pending changes to Supabase, then reload everything fresh from Supabase. */
   async refreshFromServer(): Promise<boolean> {
     await flushRelationalSync();
+    // A load that started before the flush would return data without the new changes,
+    // so wait for it to finish and then start a fresh load.
+    if (activeInitPromise) {
+      try {
+        await activeInitPromise;
+      } catch {}
+    }
     return this.init();
   },
 
@@ -479,18 +486,18 @@ export const DatabaseService = {
     // Filter branches by account owner so newly registered accounts start with their own branches
     const userScopedProps = props.filter((p: any) => {
       if (typeof window === "undefined") return true;
+      const isLegacyDemoOwner = p.ownerId === "usr-owner-01" || p.ownerId === "usr-mgr-01";
+      if (!p.ownerId || isLegacyDemoOwner) return true;
+      // A user always sees branches they created themselves. (Previously users whose id is
+      // U0001/U0002 were treated as demo accounts and their own new branches were hidden
+      // until a manual page reload dropped the ownerId from memory.)
+      if (sessionUser && p.ownerId === sessionUser.id) return true;
       if (isCustomUser && sessionUser) {
         const cleanUserPhone = String(sessionUser.phone || "").replace(/\D/g, "");
         const cleanPropPhone = String(p.phone || p.ownerPhone || "").replace(/\D/g, "");
-        return (
-          !p.ownerId ||
-          p.ownerId === sessionUser.id ||
-          p.ownerId === "usr-owner-01" ||
-          p.ownerId === "usr-mgr-01" ||
-          (cleanUserPhone.length >= 9 && cleanPropPhone.length >= 9 && cleanUserPhone === cleanPropPhone)
-        );
+        return cleanUserPhone.length >= 9 && cleanPropPhone.length >= 9 && cleanUserPhone === cleanPropPhone;
       }
-      return !p.ownerId || p.ownerId === "usr-owner-01" || p.ownerId === "usr-mgr-01";
+      return false;
     });
 
     if (userScopedProps.length === 0) {
