@@ -136,7 +136,7 @@ export function NotificationDropdown({
     });
 
     // 2. Live Unpaid Invoices alerts (ยอดค้างชำระทั้งหมด)
-    const unpaidInvoices = invoices.filter((inv) => inv.status === "unpaid" || inv.status === "overdue");
+    const unpaidInvoices = invoices.filter((inv) => inv.status === "unpaid" || inv.status === "overdue" || inv.status === "deferred");
     unpaidInvoices.forEach((inv) => {
       list.push({
         id: `inv-${inv.id}`,

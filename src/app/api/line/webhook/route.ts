@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
                   (i.roomNumber === boundTenant.roomNumber ||
                     DatabaseService.isRoomNumberMatch(i.roomNumber, boundTenant.roomNumber) ||
                     DatabaseService.isRoomNumberMatch(i.roomNumber, requestedRoom)) &&
-                  i.status !== "paid"
+                  i.status !== "paid" && i.status !== "carried_forward"
               );
 
               const replyTexts: any[] = [
@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
               (i) =>
                 (i.roomNumber === tenant.roomNumber ||
                   DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
-                i.status !== "paid"
+                i.status !== "paid" && i.status !== "carried_forward"
             );
 
             if (unpaid) {
@@ -302,7 +302,7 @@ export async function POST(req: NextRequest) {
             (i) =>
               (i.roomNumber === tenant.roomNumber ||
                 DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
-              i.status !== "paid"
+              i.status !== "paid" && i.status !== "carried_forward"
           );
 
           if (!unpaid) {

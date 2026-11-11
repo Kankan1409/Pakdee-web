@@ -676,7 +676,6 @@ export function BranchSelectorView({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     เบอร์โทรติดต่อ
@@ -686,28 +685,9 @@ export function BranchSelectorView({
                     placeholder="081-234-5678"
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white"
+                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    จำนวนห้องเริ่มต้น
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={form.initialRoomCount}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        initialRoomCount: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

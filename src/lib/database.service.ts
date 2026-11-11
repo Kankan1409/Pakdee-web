@@ -1501,7 +1501,7 @@ export const DatabaseService = {
 
   async updateInvoiceStatus(
     invoiceId: string,
-    status: "paid" | "unpaid" | "overdue" | "partial" | "pending_review" | "cancelled",
+    status: "paid" | "unpaid" | "overdue" | "partial" | "pending_review" | "cancelled" | "deferred" | "carried_forward",
     paidAmount?: number,
     extraData?: Partial<Invoice>
   ): Promise<boolean> {
@@ -2164,6 +2164,24 @@ export const DatabaseService = {
   },
 
   async clearAllData(): Promise<boolean> {
+    const clearErrors: string[] = [];
+
+    // 0) ลบสลิปโอนเงิน (payment_slips) ของทุกสาขาที่ผู้ใช้เห็น ผ่าน API ฝั่งเซิร์ฟเวอร์
+    //    ต้องทำก่อน resetToCleanSlate (ใช้ session ใน localStorage) และก่อนลบ invoices (FK ผูกอยู่)
+    try {
+      const { requestPaymentSlips } = await import("@/lib/payment-slips-client");
+      const branches = await this.getAllProperties();
+      for (const b of branches) {
+        try {
+          await requestPaymentSlips(b.id, "clear");
+        } catch (e: any) {
+          clearErrors.push(`payment_slips (${b.id}): ${e?.message || e}`);
+        }
+      }
+    } catch (e: any) {
+      clearErrors.push(`payment_slips: ${e?.message || e}`);
+    }
+
     this.resetToCleanSlate();
     const allKeysToReset = [
       KEYS.ROOMS,
@@ -2201,6 +2219,7 @@ export const DatabaseService = {
 
       const relationalTablesToClear = [
         "invoice_items",
+        "invoices",
         "meter_readings",
         "repairs",
         "expenses",
@@ -2211,17 +2230,30 @@ export const DatabaseService = {
         "activity_logs",
       ];
       for (const table of relationalTablesToClear) {
-        await supabase
+        const { error } = await supabase
           .from(table)
           .delete()
           .neq("id", "00000000-0000-0000-0000-000000000000");
+        // ตารางที่ไม่มีในฐานข้อมูล (เช่น daily_bookings) ข้ามได้ ส่วน error อื่นต้องแจ้ง ไม่เงียบ
+        if (error && !["PGRST205", "42P01"].includes(String(error.code))) {
+          clearErrors.push(`${table}: ${error.message}`);
+        }
       }
     } catch (e: any) {
-      console.warn("[Supabase Relational] Clear all tables warning:", e?.message);
+      clearErrors.push(`relational: ${e?.message || e}`);
     }
 
+    if (clearErrors.length > 0) {
+      console.error("[Supabase Relational] Clear all tables errors:", clearErrors);
+      this.lastClearErrors = clearErrors;
+      return false;
+    }
+    this.lastClearErrors = [];
     return true;
   },
+
+  /** Errors from the last clearAllData() call (empty when everything was deleted) */
+  lastClearErrors: [] as string[],
 
   resetToCleanSlate(): void {
     if (typeof window === "undefined") return;

@@ -41,7 +41,7 @@ export function TodoToday({
   });
 
   // 1. Identify Overdue Rooms & Invoices
-  const unpaidInvoices = invoices.filter((inv) => inv.status === "unpaid" || inv.status === "overdue");
+  const unpaidInvoices = invoices.filter((inv) => inv.status === "unpaid" || inv.status === "overdue" || inv.status === "deferred");
   const overdueRooms = rooms.filter((r) => r.status === "overdue" || unpaidInvoices.some((inv) => inv.roomNumber === r.roomNumber));
   const totalOverdueAmount = unpaidInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
 

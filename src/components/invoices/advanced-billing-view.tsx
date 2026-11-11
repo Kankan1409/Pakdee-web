@@ -62,7 +62,7 @@ export function AdvancedBillingView({
 
   const totalAmount = invoices.reduce((acc, i) => acc + i.totalAmount, 0);
   const unpaidAmount = invoices
-    .filter((i) => i.status === "unpaid" || i.status === "overdue")
+    .filter((i) => i.status === "unpaid" || i.status === "overdue" || i.status === "deferred")
     .reduce((acc, i) => acc + i.totalAmount, 0);
   const paidAmount = invoices
     .filter((i) => i.status === "paid")

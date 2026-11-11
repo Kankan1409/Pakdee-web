@@ -19,7 +19,7 @@ export function OverviewMetrics({ rooms, invoices = [], overdueAmount }: Overvie
 
   // ห้องที่มียอดค้างชำระจริงจากระบบใบแจ้งหนี้ (สถานะไม่ใช่ 'paid')
   const unpaidRoomNumbers = new Set(
-    invoices.filter((i) => i.status !== "paid").map((i) => i.roomNumber)
+    invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").map((i) => i.roomNumber)
   );
   const overdue = rooms.filter(
     (r) => unpaidRoomNumbers.has(r.roomNumber) || r.status === "overdue"

@@ -46,7 +46,7 @@ export function useFailedSlips(propertyId: string | undefined, invoices: Invoice
   return useMemo(() => {
     const entries: FailedSlipEntry[] = failedSlips
       .map((slip) => ({ slip, invoice: invoices.find((i) => i.invoiceNumber === slip.invoices?.invoice_number) }))
-      .filter(({ invoice }) => !invoice || invoice.status !== "paid");
+      .filter(({ invoice }) => !invoice || (invoice.status !== "paid" && invoice.status !== "carried_forward"));
     const byInvoiceNumber = new Map<string, FailedSlipEntry>();
     for (const entry of entries) {
       const num = entry.slip.invoices?.invoice_number;

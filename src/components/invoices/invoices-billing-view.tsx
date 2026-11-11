@@ -37,6 +37,8 @@ interface InvoicesBillingViewProps {
   propertyId?: string;
   /** If set, the "generate monthly invoices" button is disabled and this text explains why */
   generateBlockedReason?: string;
+  /** Tenant asked to defer this bill; it will be carried into next month's bill */
+  onDeferInvoice?: (invoiceId: string) => void;
 }
 
 export function InvoicesBillingView({
@@ -50,6 +52,7 @@ export function InvoicesBillingView({
   propertyName = "",
   propertyId = "",
   generateBlockedReason = "",
+  onDeferInvoice,
 }: InvoicesBillingViewProps) {
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -93,10 +96,10 @@ export function InvoicesBillingView({
     .filter((i) => i.status === "paid")
     .reduce((acc, i) => acc + i.totalAmount, 0);
   const invOverdue = displayedInvoices
-    .filter((i) => i.status !== "paid")
+    .filter((i) => i.status !== "paid" && i.status !== "carried_forward")
     .reduce((acc, i) => acc + i.totalAmount, 0);
   const invPaidCount = displayedInvoices.filter((i) => i.status === "paid").length;
-  const invOverdueCount = displayedInvoices.filter((i) => i.status !== "paid").length;
+  const invOverdueCount = displayedInvoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").length;
   const invCollectionRate = invBilled > 0 ? Math.round((invPaid / invBilled) * 100) : 0;
 
   return (
@@ -292,6 +295,25 @@ export function InvoicesBillingView({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {inv.status === "carried_forward" ? (
+                    // ยกยอดไปรวมกับบิลถัดไปแล้ว: แสดง chip เดียว ไม่มีปุ่มรับชำระ (ต้องไปจ่ายที่บิลใหม่)
+                    (() => {
+                      const carriedInto = invoices.find((other) =>
+                        (other.items || []).some((it) =>
+                          it.name.startsWith("ยอดค้างชำระยกมา") && it.name.includes(`(${inv.invoiceNumber})`)
+                        )
+                      );
+                      return (
+                        <span
+                          className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg"
+                          title="ยอดของบิลนี้ถูกยกไปรวมกับบิลถัดไปแล้ว ให้ชำระที่บิลใหม่"
+                        >
+                          ค้างชำระ → ยกไป {carriedInto ? carriedInto.invoiceNumber : "บิลถัดไป"}
+                        </span>
+                      );
+                    })()
+                  ) : (
+                  <>
                   {/* Why the tenant's latest slip failed Slip2Go (only for unpaid bills) */}
                   {failedSlipByInvoice.get(inv.invoiceNumber) && (
                     <span
@@ -347,10 +369,27 @@ export function InvoicesBillingView({
                             <span>ตรวจสลิป</span>
                           </button>
                         </div>
+                      ) : inv.status === "deferred" ? (
+                        <span
+                          className="bg-amber-500/15 text-amber-700 dark:text-amber-300 font-semibold px-2.5 py-1 rounded-lg border border-amber-500/30"
+                          title="ผู้เช่าขอค้างชำระ ยอดจะถูกยกไปรวมกับบิลเดือนถัดไปตอนคำนวณบิล (คิดค่าปรับชำระล่าช้า)"
+                        >
+                          ขอค้างชำระ · รอยกไปบิลถัดไป
+                        </span>
                       ) : (
                         <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg">
                           ค้างชำระ
                         </span>
+                      )}
+                      {onDeferInvoice && inv.status !== "deferred" && /^INV-\d{6}-/.test(inv.invoiceNumber) && (
+                        <button
+                          type="button"
+                          onClick={() => onDeferInvoice(inv.id)}
+                          className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2.5 py-1 rounded-lg font-semibold border border-amber-500/30 transition cursor-pointer"
+                          title="ผู้เช่าขอค้างชำระเดือนนี้ ยอดจะถูกยกไปรวมกับบิลเดือนถัดไป"
+                        >
+                          ขอค้างชำระ
+                        </button>
                       )}
                       <button
                         type="button"
@@ -386,6 +425,8 @@ export function InvoicesBillingView({
                     <QrCode className="w-3.5 h-3.5" />
                     <span>ดูบิล / QR</span>
                   </button>
+                  </>
+                  )}
                 </div>
               </div>
             ))

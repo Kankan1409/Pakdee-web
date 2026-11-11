@@ -61,7 +61,7 @@ export function ExecutiveDashboard({
   const occupiedMonthly = rooms.filter((r) => r.status === "occupied").length;
   const occupiedDaily = rooms.filter((r) => r.status === "daily").length;
   const unpaidRoomNumbers = React.useMemo(() => {
-    return new Set(invoices.filter((i) => i.status !== "paid").map((i) => i.roomNumber));
+    return new Set(invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").map((i) => i.roomNumber));
   }, [invoices]);
   const overdueRooms = rooms.filter(
     (r) => unpaidRoomNumbers.has(r.roomNumber) || r.status === "overdue"
@@ -103,7 +103,7 @@ export function ExecutiveDashboard({
   const currentOcc = occupancyRate;
   const currentBilled = filteredInvoices.reduce((acc, i) => acc + i.totalAmount, 0);
   const currentPaid = filteredInvoices.filter((i) => i.status === "paid").reduce((acc, i) => acc + i.totalAmount, 0);
-  const currentOverdue = filteredInvoices.filter((i) => i.status !== "paid").reduce((acc, i) => acc + i.totalAmount, 0);
+  const currentOverdue = filteredInvoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").reduce((acc, i) => acc + i.totalAmount, 0);
   const collectionRate = currentBilled > 0 ? Math.round((currentPaid / currentBilled) * 100) : 0;
 
   // Previous Month for MoM Comparison
@@ -198,7 +198,7 @@ export function ExecutiveDashboard({
         .filter((inv) => inv.status === "paid")
         .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
       const over = monthInvs
-        .filter((inv) => inv.status !== "paid")
+        .filter((inv) => inv.status !== "paid" && inv.status !== "carried_forward")
         .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
       // Utility usage calculated from actual invoice items
@@ -442,7 +442,7 @@ export function ExecutiveDashboard({
             {formatCurrency(currentOverdue)}
           </div>
           <div className="text-xs text-rose-600 font-semibold mt-1.5 flex items-center gap-1">
-            <span>{filteredInvoices.filter((i) => i.status !== "paid").length} รายการค้างชำระ</span>
+            <span>{filteredInvoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").length} รายการค้างชำระ</span>
           </div>
         </div>
 
@@ -1057,7 +1057,7 @@ export function ExecutiveDashboard({
                   <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-1">
                     {formatCurrency(currentOverdue)}
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{filteredInvoices.filter((i) => i.status !== "paid").length} บิลรอชำระ</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{filteredInvoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").length} บิลรอชำระ</div>
                 </div>
 
                 <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-indigo-50/50 dark:bg-indigo-950/20">

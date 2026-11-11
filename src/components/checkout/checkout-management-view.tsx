@@ -95,7 +95,7 @@ export function CheckoutManagementView({
     (c) => c.roomNumber === selectedRoom?.roomNumber && c.status === "active"
   );
   const unpaidInvs = invoices.filter(
-    (i) => i.roomNumber === selectedRoom?.roomNumber && i.status !== "paid"
+    (i) => i.roomNumber === selectedRoom?.roomNumber && i.status !== "paid" && i.status !== "carried_forward"
   );
   const unpaidBillsTotal = unpaidInvs.reduce(
     (acc, i) => acc + (i.remainingAmount ?? i.totalAmount),

@@ -244,7 +244,7 @@ export function InvoicePreviewModal({
           </div>
 
           {/* Tenant Payment & AI Slip Verification Actions */}
-          {invoice.status !== "paid" && (
+          {invoice.status !== "paid" && invoice.status !== "carried_forward" && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-800 flex items-center gap-1.5">

@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. ส่งบิลทุกห้องพร้อมกัน (Batch Mode)
-    const unpaidInvoices = allInvoices.filter((i) => i.status !== "paid");
+    const unpaidInvoices = allInvoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward");
     let sentCount = 0;
     let simulatedCount = 0;
     const deliveredRooms: string[] = [];

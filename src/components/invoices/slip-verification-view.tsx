@@ -167,7 +167,7 @@ export function SlipVerificationView({
     [invoices]
   );
   const pendingInvoices = useMemo(
-    () => invoices.filter((i) => i.status !== "paid" && i.slipStatus !== "passed"),
+    () => invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward" && i.slipStatus !== "passed"),
     [invoices]
   );
   const verifiedAmount = useMemo(
@@ -186,7 +186,7 @@ export function SlipVerificationView({
       if (activeTab === "verified") {
         matchTab = inv.status === "paid" || inv.slipStatus === "passed";
       } else if (activeTab === "pending") {
-        matchTab = inv.status !== "paid" && inv.slipStatus !== "passed";
+        matchTab = inv.status !== "paid" && inv.status !== "carried_forward" && inv.slipStatus !== "passed";
       }
 
       const q = searchQuery.trim().toLowerCase();
@@ -316,7 +316,7 @@ export function SlipVerificationView({
           <button
             type="button"
             onClick={() => {
-              const pendingRooms = invoices.filter((i) => i.status !== "paid");
+              const pendingRooms = invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward");
               if (pendingRooms.length > 0) {
                 setUploadedRoom(pendingRooms[0].roomNumber);
                 setUploadedAmount(pendingRooms[0].totalAmount);

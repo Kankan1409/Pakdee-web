@@ -450,7 +450,7 @@ export default function HomePage() {
         let finalRooms = roomsData;
         if (invsData) {
           const unpaidRoomNumbers = new Set(
-            invsData.filter((i) => i.status !== "paid").map((i) => i.roomNumber)
+            invsData.filter((i) => i.status !== "paid" && i.status !== "carried_forward").map((i) => i.roomNumber)
           );
 
           finalRooms = roomsData.map((room) => {
@@ -1070,6 +1070,21 @@ export default function HomePage() {
             setSelectedRoom(null);
             setActiveInvoice(null);
             showToast("เคลียร์ข้อมูลทั้งหมดสู่ Clean Slate เรียบร้อยแล้ว", "success");
+          } else {
+            // ล้างในเครื่องแล้ว แต่ฐานข้อมูลลบไม่ครบ — แจ้งตารางที่มีปัญหา
+            setRooms([]);
+            setTenants([]);
+            setInvoices([]);
+            setContracts([]);
+            setRepairs([]);
+            setExpenses([]);
+            setDailyBookings([]);
+            setSelectedRoom(null);
+            setActiveInvoice(null);
+            showToast(
+              `ล้างข้อมูลในฐานข้อมูลไม่ครบ: ${DatabaseService.lastClearErrors.join(" | ")}`,
+              "error"
+            );
           }
         } catch (err) {
           console.error("Error clearing data:", err);
@@ -1356,6 +1371,8 @@ export default function HomePage() {
     const currentMonth = invoiceMonthFilter !== "all" ? invoiceMonthFilter : new Date().toISOString().slice(0, 7);
     let successCount = 0;
 
+    let carriedCount = 0;
+
     // คำนวณเฉพาะห้องที่บันทึกมิเตอร์ใหม่ (ดู splitRoomsByNewMeter) — ห้องอื่นไม่แตะ
     const [monthReadings, existingInvoices] = await Promise.all([
       DatabaseService.getMeterReadings(property.id),
@@ -1431,6 +1448,60 @@ export default function HomePage() {
         totalAmount += fridgeFee;
       }
 
+      // ยกยอดค้างชำระ: บิลรายเดือนของเดือนก่อนๆ (ผู้เช่าคนเดียวกัน) ที่ยังไม่จ่าย / ขอค้างชำระ
+      // จะถูกรวมเข้าบิลนี้เป็นรายการ "ยอดค้างชำระยกมา" + "ค่าปรับชำระล่าช้า" (วันละ lateFeePerDay นับจากวันครบกำหนด)
+      // แล้วบิลเก่าจะเปลี่ยนสถานะเป็น carried_forward
+      const tenantNameForBill = room.currentTenant?.fullName || "ผู้เช่า";
+      const isMonthlyBillNo = (no: string) => /^INV-\d{6}-/.test(no || "");
+      const billsToCarry = existingInvoices.filter(
+        (inv) =>
+          inv.roomNumber === room.roomNumber &&
+          inv.tenantName === tenantNameForBill &&
+          isMonthlyBillNo(inv.invoiceNumber) &&
+          (inv.billingDate || "").slice(0, 7) < currentMonth &&
+          ["unpaid", "overdue", "deferred", "partial"].includes(inv.status)
+      );
+      // ถ้าคำนวณบิลเดือนนี้ซ้ำ (บันทึกมิเตอร์ใหม่) ให้คงรายการยกยอดเดิมไว้ ไม่ให้หายตอนเขียนทับ
+      const sameMonthBill = existingInvoices.find(
+        (inv) =>
+          inv.invoiceNumber === `INV-${currentMonth.replace("-", "")}-${room.roomNumber}` &&
+          inv.tenantName === tenantNameForBill &&
+          inv.status !== "paid" &&
+          inv.status !== "partial"
+      );
+      const keptCarryItems = (sameMonthBill?.items || []).filter(
+        (it) => it.name.startsWith("ยอดค้างชำระยกมา") || it.name.startsWith("ค่าปรับชำระล่าช้า")
+      );
+      for (const it of keptCarryItems) {
+        items.push(it);
+        totalAmount += Number(it.amount) || 0;
+      }
+      const lateFeeRate = Number(tenantContract?.lateFeePerDay ?? branchSettings.lateFeePerDay ?? 0) || 0;
+      for (const oldBill of billsToCarry) {
+        const owed =
+          oldBill.status === "partial"
+            ? Number(oldBill.remainingAmount ?? oldBill.totalAmount - (oldBill.paidAmount || 0))
+            : Number(oldBill.totalAmount) || 0;
+        if (owed > 0) {
+          items.push({ name: `ยอดค้างชำระยกมา (${oldBill.invoiceNumber})`, amount: owed });
+          totalAmount += owed;
+        }
+        const dueTime = new Date(oldBill.dueDate).getTime();
+        const daysLate = Number.isFinite(dueTime)
+          ? Math.max(0, Math.floor((Date.now() - dueTime) / 86400000))
+          : 0;
+        const lateFee = daysLate * lateFeeRate;
+        if (lateFee > 0) {
+          items.push({
+            name: `ค่าปรับชำระล่าช้า ${daysLate} วัน (${oldBill.invoiceNumber})`,
+            units: daysLate,
+            rate: lateFeeRate,
+            amount: lateFee,
+          });
+          totalAmount += lateFee;
+        }
+      }
+
       const ok = await DatabaseService.createInvoice({
         roomNumber: room.roomNumber,
         roomId: room.id,
@@ -1445,7 +1516,18 @@ export default function HomePage() {
         status: "unpaid",
       });
 
-      if (ok) successCount++;
+      if (ok) {
+        successCount++;
+        for (const oldBill of billsToCarry) {
+          // คงยอดที่จ่ายไปแล้ว (กรณีจ่ายบางส่วน) ไว้ตามเดิม แค่เปลี่ยนสถานะ
+          await DatabaseService.updateInvoiceStatus(oldBill.id, "carried_forward", undefined, {
+            status: "carried_forward",
+            paidAmount: oldBill.paidAmount,
+            remainingAmount: oldBill.remainingAmount,
+          });
+        }
+        carriedCount += billsToCarry.length;
+      }
     }
 
     const skippedNotes: string[] = [];
@@ -1467,15 +1549,30 @@ export default function HomePage() {
       return;
     }
 
-    showToast(`ออกบิลรอบเดือน ${currentMonth} สำเร็จ ${successCount} ใบ${skippedText}`, "success");
+    const carriedText = carriedCount > 0 ? ` (ยกยอดค้างชำระมารวม ${carriedCount} บิล)` : "";
+    showToast(`ออกบิลรอบเดือน ${currentMonth} สำเร็จ ${successCount} ใบ${carriedText}${skippedText}`, "success");
     const updatedInvs = await DatabaseService.getInvoices(property.id);
     setInvoices(updatedInvs);
+  };
+
+  // Handler: ผู้เช่าขอค้างชำระ — เปลี่ยนสถานะบิลเป็น "deferred" (ยังจ่ายได้ตามปกติ)
+  // ยอดจะถูกยกไปรวมกับบิลเดือนถัดไปตอนกด "คำนวณและออกบิลรอบเดือน" (พร้อมค่าปรับชำระล่าช้า)
+  const handleDeferInvoice = async (invoiceId: string) => {
+    const target = invoices.find((i) => i.id === invoiceId);
+    if (!target) return;
+    await DatabaseService.updateInvoiceStatus(invoiceId, "deferred", undefined, {
+      status: "deferred",
+      paidAmount: target.paidAmount,
+      remainingAmount: target.remainingAmount,
+    });
+    setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: "deferred" } : inv)));
+    showToast(`บันทึกแล้ว: ห้อง ${target.roomNumber} ขอค้างชำระ — จะยกยอดไปรวมกับบิลเดือนถัดไป`, "info");
   };
 
   // Handler: Batch Send LINE Invoices
   const [isSendingLineBatch, setIsSendingLineBatch] = useState<boolean>(false);
   const handleSendLineAllInvoices = async () => {
-    const unpaid = invoices.filter((i) => i.status !== "paid");
+    const unpaid = invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward");
     if (unpaid.length === 0) {
       showToast("ไม่มีบิลค้างชำระที่ต้องส่งเข้า LINE ในขณะนี้", "info");
       return;
@@ -1592,7 +1689,7 @@ export default function HomePage() {
       const room = rooms.find((r) => r.roomNumber === targetInv.roomNumber);
       if (room && room.status === "overdue") {
         const remainingUnpaid = invoices.some(
-          (i) => i.roomNumber === targetInv.roomNumber && i.id !== invoiceId && i.status !== "paid"
+          (i) => i.roomNumber === targetInv.roomNumber && i.id !== invoiceId && i.status !== "paid" && i.status !== "carried_forward"
         );
         if (!remainingUnpaid) {
           await DatabaseService.updateRoomStatus(room.id, "occupied");
@@ -2296,7 +2393,7 @@ export default function HomePage() {
 
     // บิลค้างชำระจริงของห้องนี้
     const roomUnpaidInvs = invoices.filter(
-      (i) => i.roomNumber === targetRoom.roomNumber && i.status !== "paid"
+      (i) => i.roomNumber === targetRoom.roomNumber && i.status !== "paid" && i.status !== "carried_forward"
     );
     const unpaidBillsAmount = roomUnpaidInvs.reduce(
       (acc, i) => acc + (i.remainingAmount ?? i.totalAmount),
@@ -2847,7 +2944,7 @@ export default function HomePage() {
           rooms.filter((r) => r.status === "daily").length,
           dailyBookings.filter((b) => b.status === "checked_in" || b.status === "confirmed").length
         )}
-        overdueCount={invoices.filter((i) => i.status !== "paid").length}
+        overdueCount={invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward").length}
         cleaningCount={rooms.filter((r) => r.status === "cleaning").length}
         repairsCount={repairs.filter((r) => r.status !== "completed").length}
         onLogout={handleLogoutPrompt}
@@ -2971,7 +3068,7 @@ export default function HomePage() {
                 rooms={rooms}
                 invoices={invoices}
                 overdueAmount={invoices
-                  .filter((i) => i.status !== "paid")
+                  .filter((i) => i.status !== "paid" && i.status !== "carried_forward")
                   .reduce((sum, i) => sum + i.totalAmount, 0)}
               />
               <RoomMatrix
@@ -3050,6 +3147,7 @@ export default function HomePage() {
               onSendLineAllInvoices={handleSendLineAllInvoices}
               onGenerateMonthlyInvoices={handleGenerateMonthlyInvoices}
               generateBlockedReason={billingBlockedReason}
+              onDeferInvoice={handleDeferInvoice}
               onMarkAsPaid={handleMarkAsPaid}
               onOpenInvoiceModal={(inv) => {
                 setActiveInvoice(inv);

@@ -71,7 +71,7 @@ export function RoomMatrix({
   // Group unpaid invoices by roomNumber
   const unpaidInvoicesByRoom = new Map<string, Invoice[]>();
   (invoices || []).forEach((inv) => {
-    if (inv.status !== "paid") {
+    if (inv.status !== "paid" && inv.status !== "carried_forward") {
       const list = unpaidInvoicesByRoom.get(inv.roomNumber) || [];
       list.push(inv);
       unpaidInvoicesByRoom.set(inv.roomNumber, list);

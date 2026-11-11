@@ -28,6 +28,13 @@ export async function POST(request: NextRequest) {
       if (error) throw new SlipError("โหลดรายการสลิปไม่สำเร็จ", 503);
       return NextResponse.json({ slips: data }, { headers: privateHeaders });
     }
+    if (action === "clear") {
+      // ใช้ตอน "รีเซ็ตระบบ": ลบสลิปทั้งหมดของสาขานี้ (ต้องลบก่อนลบ invoices เพราะมี FK ผูกอยู่)
+      const { error, count } = await db.from("payment_slips")
+        .delete({ count: "exact" }).eq("property_id", propertyUuid);
+      if (error) throw new SlipError("ลบสลิปของสาขาไม่สำเร็จ", 503);
+      return NextResponse.json({ deleted: count ?? 0 }, { headers: privateHeaders });
+    }
     if (!["image", "check"].includes(action)) throw new SlipError("คำขอไม่ถูกต้อง");
     const id = request.nextUrl.searchParams.get("id");
     if (!id) throw new SlipError("ไม่พบรหัสสลิป");

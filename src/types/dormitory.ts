@@ -173,7 +173,8 @@ export interface Invoice {
   totalAmount: number;
   paidAmount?: number;
   remainingAmount?: number;
-  status: "unpaid" | "partial" | "pending_review" | "paid" | "overdue" | "cancelled";
+  // deferred = ผู้เช่าขอค้างชำระ (รอยกไปบิลถัดไป), carried_forward = ยกยอดไปรวมกับบิลถัดไปแล้ว
+  status: "unpaid" | "partial" | "pending_review" | "paid" | "overdue" | "cancelled" | "deferred" | "carried_forward";
   slipUrl?: string;
   paidAt?: string;
   qrCodeUrl?: string;

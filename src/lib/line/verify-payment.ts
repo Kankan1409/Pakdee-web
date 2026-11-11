@@ -20,7 +20,7 @@ export async function verifyStoredPayment(propertyId: string, id: string) {
     i.invoiceNumber === linked?.invoice_number && toUuid(i.id) === slip.invoice_id &&
     i.propertyId && toUuid(i.propertyId) === toUuid(propertyId));
   if (!invoice) throw new SlipError("ไม่พบบิลที่ตรงกับสลิปในสาขานี้", 404);
-  if (!["unpaid", "overdue", "pending_review"].includes(invoice.status)) {
+  if (!["unpaid", "overdue", "pending_review", "deferred"].includes(invoice.status)) {
     return { status: "pending", message: "บิลนี้ไม่ได้อยู่ในสถานะรอรับชำระ จึงไม่ตรวจและตัดยอดซ้ำ" };
   }
   const property = await DatabaseService.getProperty(propertyId);
@@ -76,7 +76,7 @@ export async function verifyLinePayment(propertyId: string, invoice: Invoice, se
   }
   // No fallback to an invoice amount, guessed bank or manufactured reference.
   const latest = (await DatabaseService.getInvoices(propertyId)).find(i => i.id === invoice.id);
-  if (!latest || !["unpaid", "overdue", "pending_review"].includes(latest.status) || latest.totalAmount !== result.amount) {
+  if (!latest || !["unpaid", "overdue", "pending_review", "deferred"].includes(latest.status) || latest.totalAmount !== result.amount) {
     return { message: "สถานะหรือยอดบิลเปลี่ยนไป กรุณาให้เจ้าหน้าที่ตรวจสอบก่อนรับชำระ" };
   }
   const updated = await DatabaseService.updateInvoiceStatus(invoice.id, "paid", result.amount!, {
