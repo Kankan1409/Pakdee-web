@@ -1272,8 +1272,77 @@ export default function HomePage() {
     }
   };
 
+  // ความพร้อมในการออกบิลรอบเดือน: ปุ่ม "คำนวณและออกบิลรอบเดือน" กดได้ก็ต่อเมื่อ
+  // กดบันทึกมิเตอร์ (หน้า บันทึกมิเตอร์น้ำ-ไฟ) ของรอบเดือนนี้แล้ว และยังมีห้องที่ยังไม่ได้ออกบิลรอบนี้
+  const [billingMeterReadings, setBillingMeterReadings] = useState<any[]>([]);
+  useEffect(() => {
+    if (currentTab !== "invoices") return;
+    let cancelled = false;
+    DatabaseService.getMeterReadings(property.id).then((list) => {
+      if (!cancelled) setBillingMeterReadings(Array.isArray(list) ? list : []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTab, property.id, invoices, rooms]);
+
+  // แยกห้องที่ "บันทึกมิเตอร์ใหม่" แล้วยังไม่ได้คำนวณบิล:
+  // ห้องจะถูกคำนวณก็ต่อเมื่อมีเลขมิเตอร์ของรอบเดือนนี้ และเลขล่าสุดนั้นยังไม่เคยถูกใช้ในบิลรอบนี้
+  // (เทียบเลขมิเตอร์ปัจจุบันน้ำ/ไฟ กับ meterCurr ในรายการของบิลเดิม) — ห้องที่ไม่ได้บันทึกมิเตอร์ใหม่จะไม่ถูกคำนวณซ้ำ
+  const splitRoomsByNewMeter = (month: string, roomList: Room[], readings: any[], invList: Invoice[]) => {
+    const prefix = `INV-${month.replace("-", "")}-`;
+    const ready: { room: Room; reading: any }[] = [];
+    const missingMeter: string[] = [];
+    const unchanged: string[] = [];
+    for (const room of roomList) {
+      const roomReadings = readings
+        .filter((m) => m.room_id === room.id && m.billing_month === month)
+        .sort((a, b) => String(b.id).localeCompare(String(a.id), undefined, { numeric: true }));
+      const reading = roomReadings[0];
+      if (!reading) {
+        missingMeter.push(room.roomNumber);
+        continue;
+      }
+      const roomBills = invList.filter(
+        (inv) =>
+          inv.status !== "cancelled" &&
+          (inv.invoiceNumber === `${prefix}${room.roomNumber}` ||
+            (inv.invoiceNumber || "").startsWith(`${prefix}${room.roomNumber}-`))
+      );
+      const alreadyUsed = roomBills.some((inv) => {
+        const elec = (inv.items || []).find((it) => it.name.startsWith("ค่าไฟ"));
+        const water = (inv.items || []).find((it) => it.name.startsWith("ค่าน้ำ"));
+        return (
+          Number(elec?.meterCurr) === Number(reading.electric_curr) &&
+          Number(water?.meterCurr) === Number(reading.water_curr)
+        );
+      });
+      if (alreadyUsed) {
+        unchanged.push(room.roomNumber);
+        continue;
+      }
+      ready.push({ room, reading });
+    }
+    return { ready, missingMeter, unchanged };
+  };
+
+  const billingBlockedReason = (() => {
+    const month = invoiceMonthFilter !== "all" ? invoiceMonthFilter : new Date().toISOString().slice(0, 7);
+    const activeRoomList = rooms.filter((r) => r.status === "occupied" || r.status === "overdue");
+    const { ready, unchanged } = splitRoomsByNewMeter(month, activeRoomList, billingMeterReadings, invoices);
+    if (ready.length > 0) return "";
+    if (unchanged.length > 0) {
+      return `คำนวณบิลรอบเดือน ${month} ไปแล้ว — กดบันทึกมิเตอร์ใหม่ก่อนถึงจะคำนวณได้อีก`;
+    }
+    return `กรุณากดบันทึกมิเตอร์น้ำ-ไฟของรอบเดือน ${month} ก่อน`;
+  })();
+
   // Handler: Generate Monthly Invoices (Auto-Billing)
   const handleGenerateMonthlyInvoices = async () => {
+    if (billingBlockedReason) {
+      showToast(billingBlockedReason, "warning");
+      return;
+    }
     const activeRooms = rooms.filter(
       (r) => r.status === "occupied" || r.status === "overdue"
     );
@@ -1287,9 +1356,18 @@ export default function HomePage() {
     const currentMonth = invoiceMonthFilter !== "all" ? invoiceMonthFilter : new Date().toISOString().slice(0, 7);
     let successCount = 0;
 
-    for (const room of activeRooms) {
-      // Pull actual meter reading if already recorded for this month
-      const latestReading = await DatabaseService.getLatestMeterReading(room.id, currentMonth);
+    // คำนวณเฉพาะห้องที่บันทึกมิเตอร์ใหม่ (ดู splitRoomsByNewMeter) — ห้องอื่นไม่แตะ
+    const [monthReadings, existingInvoices] = await Promise.all([
+      DatabaseService.getMeterReadings(property.id),
+      DatabaseService.getInvoices(property.id),
+    ]);
+    const {
+      ready: roomsToBill,
+      missingMeter: roomsMissingMeter,
+      unchanged: roomsAlreadyBilled,
+    } = splitRoomsByNewMeter(currentMonth, activeRooms, monthReadings, existingInvoices);
+
+    for (const { room, reading: latestReading } of roomsToBill) {
       const electricUnits = latestReading?.electric_units !== undefined ? latestReading.electric_units : 0;
       const waterUnits = latestReading?.water_units !== undefined ? latestReading.water_units : 0;
       const elecPrev = latestReading?.electric_prev !== undefined ? latestReading.electric_prev : room.currentElectricMeter;
@@ -1370,7 +1448,26 @@ export default function HomePage() {
       if (ok) successCount++;
     }
 
-    showToast(`ออกบิลรอบเดือน ${currentMonth} สำเร็จ ${successCount} ใบ`, "success");
+    const skippedNotes: string[] = [];
+    if (roomsAlreadyBilled.length > 0) {
+      skippedNotes.push(`ไม่มีมิเตอร์ใหม่ (คำนวณไปแล้ว) ${roomsAlreadyBilled.length} ห้อง (${roomsAlreadyBilled.join(", ")})`);
+    }
+    if (roomsMissingMeter.length > 0) {
+      skippedNotes.push(`ยังไม่บันทึกมิเตอร์ ${roomsMissingMeter.length} ห้อง (${roomsMissingMeter.join(", ")})`);
+    }
+    const skippedText = skippedNotes.length > 0 ? ` — ข้าม: ${skippedNotes.join(" / ")}` : "";
+
+    if (successCount === 0) {
+      showToast(
+        roomsMissingMeter.length > 0 && roomsAlreadyBilled.length === 0
+          ? `ยังออกบิลรอบเดือน ${currentMonth} ไม่ได้ กรุณาบันทึกมิเตอร์น้ำ-ไฟของรอบนี้ก่อน${skippedText}`
+          : `ไม่มีบิลใหม่ที่ต้องออกสำหรับรอบเดือน ${currentMonth}${skippedText}`,
+        "warning"
+      );
+      return;
+    }
+
+    showToast(`ออกบิลรอบเดือน ${currentMonth} สำเร็จ ${successCount} ใบ${skippedText}`, "success");
     const updatedInvs = await DatabaseService.getInvoices(property.id);
     setInvoices(updatedInvs);
   };
@@ -2952,6 +3049,7 @@ export default function HomePage() {
               isSendingLineBatch={isSendingLineBatch}
               onSendLineAllInvoices={handleSendLineAllInvoices}
               onGenerateMonthlyInvoices={handleGenerateMonthlyInvoices}
+              generateBlockedReason={billingBlockedReason}
               onMarkAsPaid={handleMarkAsPaid}
               onOpenInvoiceModal={(inv) => {
                 setActiveInvoice(inv);

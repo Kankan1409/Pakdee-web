@@ -35,6 +35,8 @@ interface InvoicesBillingViewProps {
   propertyName?: string;
   /** Current branch id, used to load slips that failed Slip2Go verification */
   propertyId?: string;
+  /** If set, the "generate monthly invoices" button is disabled and this text explains why */
+  generateBlockedReason?: string;
 }
 
 export function InvoicesBillingView({
@@ -47,6 +49,7 @@ export function InvoicesBillingView({
   onShowToast,
   propertyName = "",
   propertyId = "",
+  generateBlockedReason = "",
 }: InvoicesBillingViewProps) {
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -170,6 +173,7 @@ export function InvoicesBillingView({
               ออกบิลอัตโนมัติพร้อมสร้าง Dynamic PromptPay QR Code และส่งเข้า LINE ผู้เช่า
             </p>
           </div>
+          <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -184,11 +188,17 @@ export function InvoicesBillingView({
             <button
               type="button"
               onClick={() => onGenerateMonthlyInvoices(monthFilter !== "all" ? monthFilter : undefined)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
+              disabled={Boolean(generateBlockedReason)}
+              title={generateBlockedReason || undefined}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>⚡ คำนวณและออกบิลรอบเดือน</span>
             </button>
+          </div>
+          {generateBlockedReason && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">{generateBlockedReason}</p>
+          )}
           </div>
         </div>
 
