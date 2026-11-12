@@ -1868,6 +1868,92 @@ export const DatabaseService = {
     return true;
   },
 
+  /**
+   * สร้างสัญญาฉบับแก้ไขจากฉบับเดิม (เช่น เพิ่มตู้เย็น) — ฉบับใหม่ "รอลงนาม" ส่วนฉบับเดิมยังใช้งานต่อ
+   * จนกว่าผู้เช่าจะเซ็นฉบับใหม่ (ดู activateContractRevision) เลขสัญญา = เลขฉบับแรก + "-R<ครั้งที่>"
+   */
+  async createContractRevision(base: ContractItem, changes: Partial<ContractItem>): Promise<ContractItem> {
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
+    const root = base.rootContractNumber || base.contractNumber;
+    const family = all.filter((c) => (c.rootContractNumber || c.contractNumber) === root);
+    const revision = Math.max(0, ...family.map((c) => Number(c.revision || 0))) + 1;
+    const revised: ContractItem = {
+      ...base,
+      ...changes,
+      id: nextShortId("C", all.map((c) => c.id)),
+      contractNumber: `${root}-R${revision}`,
+      revision,
+      rootContractNumber: root,
+      previousContractNumber: base.contractNumber,
+      supersededBy: undefined,
+      status: "pending_signature",
+      signatureUrl: undefined,
+      signedAt: undefined,
+      // ผู้ให้เช่าเป็นคนทำฉบับแก้ไขเอง: ใช้ลายเซ็นผู้ให้เช่าเดิม (เซ็นใหม่ได้ในหน้าดูสัญญา)
+      landlordSignatureUrl: base.landlordSignatureUrl,
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    setLocal(KEYS.CONTRACTS, [revised, ...all]);
+    await this.logActivity("CREATE", "CONTRACT", `สร้างสัญญาฉบับแก้ไข ${revised.contractNumber} (แทน ${base.contractNumber})`, revised.propertyId);
+    return revised;
+  },
+
+  /**
+   * ผู้เช่าเซ็นสัญญาฉบับแก้ไขแล้ว: ฉบับก่อนหน้าเป็น "ถูกแทนที่" และค่าบริการของห้อง/ผู้เช่า
+   * (ทีวี ตู้เย็น ส่วนกลาง ไวไฟ ที่จอดรถ ค่าเช่า) เปลี่ยนตามฉบับใหม่ เพื่อให้บิลรอบถัดไปคิดถูก
+   * คืนค่าสัญญาทั้งหมดหลังอัปเดต (หรือ null ถ้าไม่ใช่ฉบับแก้ไข)
+   */
+  async activateContractRevision(contractId: string): Promise<ContractItem[] | null> {
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
+    const revised = all.find((c) => c.id === contractId);
+    if (!revised?.previousContractNumber) return null;
+    const updated = all.map((c) =>
+      c.contractNumber === revised.previousContractNumber && c.status !== "superseded"
+        ? { ...c, status: "superseded" as ContractItem["status"], supersededBy: revised.contractNumber }
+        : c
+    );
+    setLocal(KEYS.CONTRACTS, updated);
+
+    const fees = {
+      hasTv: revised.hasTv,
+      tvRentalFee: revised.tvRentalFee,
+      hasFridge: revised.hasFridge,
+      fridgeRentalFee: revised.fridgeRentalFee,
+      hasCommonFee: revised.hasCommonFee,
+      commonFee: revised.commonFee,
+      hasWifi: revised.hasWifi,
+      wifiFee: revised.wifiFee,
+      hasParking: revised.hasParking,
+      parkingFee: revised.parkingFee,
+    };
+    const propId = revised.propertyId || this.getActivePropertyId();
+    const allRooms = this.getAllRawRooms();
+    setLocal(
+      KEYS.ROOMS,
+      allRooms.map((r) =>
+        (r.propertyId || "prop-1") === propId && r.roomNumber === revised.roomNumber
+          ? {
+              ...r,
+              monthlyRate: Number(revised.monthlyRent) || r.monthlyRate,
+              leaseEndDate: revised.endDate || r.leaseEndDate,
+              currentTenant: r.currentTenant ? { ...r.currentTenant, ...fees } : r.currentTenant,
+            }
+          : r
+      )
+    );
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    setLocal(
+      KEYS.TENANTS,
+      allTenants.map((t) =>
+        (t.propertyId || "prop-1") === propId && (t.roomNumber || "").trim() === revised.roomNumber
+          ? { ...t, ...fees }
+          : t
+      )
+    );
+    await this.logActivity("UPDATE", "CONTRACT", `สัญญาฉบับแก้ไข ${revised.contractNumber} มีผลแล้ว (แทน ${revised.previousContractNumber})`, propId);
+    return updated;
+  },
+
   /** ผู้ให้เช่าลงนามในสัญญาฉบับนี้ (ไม่เปลี่ยนสถานะสัญญา) */
   async updateContractLandlordSignature(id: string, landlordSignatureUrl: string): Promise<boolean> {
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);

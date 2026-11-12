@@ -278,7 +278,8 @@ export interface ContractItem {
   noSmoking?: boolean;
   additionalRules?: string[];
   clauses?: ContractClause[];
-  status: "draft" | "pending_signature" | "active" | "expired" | "terminated";
+  // superseded = ถูกแทนที่โดยสัญญาฉบับแก้ไข (ดูย้อนหลังได้ แก้ไม่ได้)
+  status: "draft" | "pending_signature" | "active" | "expired" | "terminated" | "superseded";
   terms?: string;
   createdAt: string;
   /** ลายเซ็นผู้เช่า (PNG data URL) */
@@ -286,6 +287,11 @@ export interface ContractItem {
   signedAt?: string;
   /** สำเนาลายเซ็นผู้ให้เช่า ณ วันที่ผู้เช่าเซ็น (ถ้าไม่มี ใช้ลายเซ็นปัจจุบันในตั้งค่าสาขา) */
   landlordSignatureUrl?: string;
+  // สัญญาฉบับแก้ไข: ฉบับที่ (0 = ฉบับแรก), เลขสัญญาฉบับแรก, ฉบับก่อนหน้า, ฉบับที่มาแทน
+  revision?: number;
+  rootContractNumber?: string;
+  previousContractNumber?: string;
+  supersededBy?: string;
 }
 
 // 3. Operating Expense

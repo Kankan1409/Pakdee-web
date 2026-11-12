@@ -23,8 +23,8 @@ import {
 import { formatCurrency, formatDateThai } from "@/lib/utils";
 import { isDateAfter, isValidThaiPhone, formatThaiPhone } from "@/lib/validators";
 import { numberToThaiBahtText, STANDARD_14_CLAUSES } from "@/components/contracts/contract-print-view";
-import { requestContractAddenda, requestContractSign } from "@/lib/payment-slips-client";
-import { ContractAddendaModal } from "@/components/contracts/contract-addenda-modal";
+import { requestContractSign } from "@/lib/payment-slips-client";
+import { ReviseContractModal, describeContractChanges } from "@/components/contracts/revise-contract-modal";
 
 interface ContractManagementViewProps {
   contracts: ContractItem[];
@@ -42,6 +42,8 @@ interface ContractManagementViewProps {
   onRemoteSigned?: (contractId: string, tenantSignatureUrl: string, landlordSignatureUrl: string | undefined, signedAt: string) => void;
   /** Landlord drew a signature for this contract */
   onUpdateLandlordSignature?: (contractId: string, signatureUrl: string) => void;
+  /** Create a revised version of a signed contract (returns the new contract) */
+  onCreateRevision?: (base: ContractItem, changes: Partial<ContractItem>) => Promise<ContractItem | null>;
   onShowToast?: (message: string, type: "success" | "error" | "info" | "warning") => void;
 }
 
@@ -66,6 +68,7 @@ export function ContractManagementView({
   onRemoteSigned,
   onShowToast,
   onUpdateLandlordSignature,
+  onCreateRevision,
 }: ContractManagementViewProps) {
   const landlordName = propertyName ? `หอพัก ${propertyName}` : "หอพัก";
 
@@ -79,17 +82,6 @@ export function ContractManagementView({
       const map = new Map<string, SignRequestStatus>();
       for (const r of (data.requests || []) as SignRequestStatus[]) map.set(r.contract_number, r);
       setSignRequests(map);
-      // จำนวนบันทึกแนบท้าย (ไม่นับที่ยกเลิก) ต่อสัญญา — แสดงบนปุ่มในแถว
-      try {
-        const add = await requestContractAddenda(propertyId, "list");
-        const counts = new Map<string, number>();
-        for (const a of (add.addenda || []) as { contract_number: string; status: string }[]) {
-          if (a.status !== "cancelled") counts.set(a.contract_number, (counts.get(a.contract_number) || 0) + 1);
-        }
-        setAddendaCounts(counts);
-      } catch {
-        // ยังไม่ได้รัน SQL ของบันทึกแนบท้าย
-      }
     } catch {
       // ยังไม่ได้รัน SQL หรือออฟไลน์ — ปุ่มเซ็นที่หอยังใช้ได้ตามปกติ
     }
@@ -136,6 +128,14 @@ export function ContractManagementView({
         landlordName,
         landlordSignatureUrl: contract.landlordSignatureUrl || landlordSignatureUrl || "",
         contractHtml: clone.innerHTML,
+        // สัญญาฉบับแก้ไข: แสดงในการ์ด LINE ว่าเป็นฉบับแก้ไขและเปลี่ยนอะไร
+        revision: Number(contract.revision || 0),
+        changeSummary: describeContractChanges(
+          contracts.find((x) => x.contractNumber === contract.previousContractNumber),
+          contract
+        )
+          .filter((c) => !c.startsWith("มีผลตั้งแต่"))
+          .join(", "),
       });
       onShowToast?.(data.message || "ส่งลิงก์เซ็นสัญญาแล้ว", "success");
       await loadSignRequests();
@@ -154,8 +154,10 @@ export function ContractManagementView({
   const [signingContract, setSigningContract] = useState<ContractItem | null>(null);
   /** who is drawing in the signature pad: the tenant (at the dorm) or the landlord */
   const [signingRole, setSigningRole] = useState<"tenant" | "landlord">("tenant");
-  const [addendaContract, setAddendaContract] = useState<ContractItem | null>(null);
-  const [addendaCounts, setAddendaCounts] = useState<Map<string, number>>(new Map());
+  // สัญญาฉบับแก้ไข: ฉบับที่กำลังแก้ / ประวัติสัญญา (ทุกฉบับของสัญญาเดียวกัน)
+  const [reviseContract, setReviseContract] = useState<ContractItem | null>(null);
+  const [historyRoot, setHistoryRoot] = useState<string | null>(null);
+  const familyOf = (c: ContractItem) => c.rootContractNumber || c.contractNumber;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [hasSignatureDrawn, setHasSignatureDrawn] = useState<boolean>(false);
@@ -195,6 +197,8 @@ export function ContractManagementView({
   const expiredCount = contracts.filter((c) => c.status === "expired").length;
 
   const filtered = contracts.filter((c) => {
+    // ฉบับที่ถูกแทนที่แล้ว ดูได้จากปุ่ม "ประวัติ" ไม่แสดงในตารางหลัก
+    if (c.status === "superseded") return false;
     if (activeTab === "active" && c.status !== "active") return false;
     if (activeTab === "pending" && c.status !== "pending_signature") return false;
     if (activeTab === "draft" && c.status !== "draft") return false;
@@ -390,7 +394,7 @@ export function ContractManagementView({
           }`}
         >
           <div className="text-xs text-[var(--muted)]">สัญญาทั้งหมด</div>
-          <div className="text-2xl font-bold text-[var(--foreground)] mt-1">{contracts.length}</div>
+          <div className="text-2xl font-bold text-[var(--foreground)] mt-1">{contracts.filter((c) => c.status !== "superseded").length}</div>
           <div className="text-[11px] text-[var(--muted)] mt-1">สัญญาในระบบ</div>
         </div>
 
@@ -511,13 +515,32 @@ export function ContractManagementView({
                           รอเซ็นทาง LINE
                         </span>
                       )}
-                      {c.signatureUrl && propertyId && (
+                      {c.signatureUrl && c.status === "active" && onCreateRevision && (
                         <button
-                          onClick={() => setAddendaContract(c)}
+                          onClick={() => {
+                            const pendingRevision = contracts.find(
+                              (x) => x.previousContractNumber === c.contractNumber && x.status === "pending_signature"
+                            );
+                            if (pendingRevision) {
+                              onShowToast?.(`มีฉบับแก้ไข ${pendingRevision.contractNumber} รอเซ็นอยู่แล้ว (แก้/ส่งต่อจากฉบับนั้น)`, "warning");
+                              setPreviewContract(pendingRevision);
+                              return;
+                            }
+                            setReviseContract(c);
+                          }}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
-                          title="บันทึกแนบท้ายสัญญา (เพิ่ม/เปลี่ยนเงื่อนไข เช่น เพิ่มเช่าตู้เย็น)"
+                          title="ทำสัญญาฉบับแก้ไข (เช่น เพิ่มเช่าตู้เย็น) ให้ผู้เช่าเซ็นใหม่ทั้งฉบับ ฉบับเดิมเก็บไว้ดูย้อนหลัง"
                         >
-                          {addendaCounts.get(c.contractNumber) ? `แนบท้าย (${addendaCounts.get(c.contractNumber)})` : "+ แนบท้าย"}
+                          แก้ไขสัญญา
+                        </button>
+                      )}
+                      {contracts.filter((x) => familyOf(x) === familyOf(c)).length > 1 && (
+                        <button
+                          onClick={() => setHistoryRoot(familyOf(c))}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-semibold text-[11px] border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                          title="ดูสัญญาทุกฉบับ (ฉบับเดิมและฉบับแก้ไข)"
+                        >
+                          ประวัติ ({contracts.filter((x) => familyOf(x) === familyOf(c)).length})
                         </button>
                       )}
                       <button
@@ -988,6 +1011,35 @@ export function ContractManagementView({
                   </div>
                 </div>
 
+                {/* ฉบับนี้ถูกแทนที่แล้ว (ดูย้อนหลังเท่านั้น) — ไม่รวมในเอกสารที่ส่งให้ผู้เช่า */}
+                {previewContract.status === "superseded" && (
+                  <div data-sign-block className="p-3 rounded-xl bg-slate-100 border border-slate-300 text-xs text-slate-700 print:hidden">
+                    ฉบับนี้ถูกแทนที่โดยสัญญาฉบับแก้ไข <b>{previewContract.supersededBy || "-"}</b> แล้ว (เก็บไว้ดูย้อนหลัง)
+                  </div>
+                )}
+
+                {/* สัญญาฉบับแก้ไข: บอกว่าแก้ไขจากฉบับไหน และสิ่งที่เปลี่ยน (อยู่ในเนื้อหาสัญญาที่ผู้เช่าเซ็นด้วย) */}
+                {Number(previewContract.revision || 0) > 0 && (() => {
+                  const prevVersion = contracts.find((x) => x.contractNumber === previewContract.previousContractNumber);
+                  const changeList = describeContractChanges(prevVersion, previewContract);
+                  return (
+                    <div className="p-3 rounded-xl border-2 border-amber-400 bg-amber-50 text-[12px] text-black space-y-1">
+                      <div className="font-bold">
+                        สัญญาฉบับแก้ไข ครั้งที่ {previewContract.revision} — ใช้แทนสัญญาเลขที่ {previewContract.previousContractNumber}
+                        {previewContract.startDate ? ` ตั้งแต่วันที่ ${formatDateThai(previewContract.startDate)}` : ""}
+                      </div>
+                      {changeList.length > 0 && (
+                        <ul className="list-disc pl-5">
+                          {changeList.map((c) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="text-[11px] text-slate-600">ข้อความอื่นที่ไม่ได้ระบุไว้ข้างต้น คงเดิมตามสัญญาฉบับก่อนหน้า</div>
+                    </div>
+                  );
+                })()}
+
                 {/* ทำที่ / วันที่ เดือน พ.ศ. */}
                 <div className="flex justify-end">
                   <div className="w-full sm:w-[60%] space-y-1 text-xs sm:text-[13px]">
@@ -1207,7 +1259,7 @@ export function ContractManagementView({
               {/* Modal Footer Buttons (Hidden when printing) */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-slate-200 shrink-0 print:hidden">
                 <div className="flex items-center gap-2">
-                  {!previewContract.signatureUrl && propertyId && (
+                  {!previewContract.signatureUrl && previewContract.status !== "superseded" && propertyId && (
                     <button
                       type="button"
                       onClick={() => sendSignLink(previewContract)}
@@ -1293,16 +1345,74 @@ export function ContractManagementView({
         );
       })()}
 
-      {/* บันทึกแนบท้ายสัญญา */}
-      {addendaContract && propertyId && (
-        <ContractAddendaModal
-          contract={addendaContract}
-          propertyId={propertyId}
-          landlordName={landlordName}
-          landlordSignatureUrl={addendaContract.landlordSignatureUrl || landlordSignatureUrl}
-          onClose={() => setAddendaContract(null)}
-          onShowToast={onShowToast}
+      {/* สัญญาฉบับแก้ไข: แก้รายการในสัญญา */}
+      {reviseContract && onCreateRevision && (
+        <ReviseContractModal
+          contract={reviseContract}
+          onClose={() => setReviseContract(null)}
+          onSubmit={async (changes) => {
+            const created = await onCreateRevision(reviseContract, changes);
+            setReviseContract(null);
+            if (created) setPreviewContract(created);
+          }}
         />
+      )}
+
+      {/* ประวัติสัญญา: ทุกฉบับของสัญญาเดียวกัน */}
+      {historyRoot && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-sm">ประวัติสัญญา</h3>
+                <p className="text-[11px] text-slate-500">สัญญาฉบับแรก {historyRoot}</p>
+              </div>
+              <button type="button" onClick={() => setHistoryRoot(null)} className="text-slate-400 hover:text-slate-700 text-xs p-1 cursor-pointer">
+                ✕ ปิด
+              </button>
+            </div>
+            <div className="p-5 space-y-2 overflow-y-auto">
+              {contracts
+                .filter((x) => familyOf(x) === historyRoot)
+                .sort((a, b) => Number(b.revision || 0) - Number(a.revision || 0))
+                .map((x) => (
+                  <div key={x.id} className="p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-2 text-xs">
+                    <div>
+                      <div className="font-semibold font-mono">{x.contractNumber}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {Number(x.revision || 0) === 0 ? "ฉบับแรก" : `ฉบับแก้ไขครั้งที่ ${x.revision}`} · ค่าเช่า {formatCurrency(x.monthlyRent)}
+                        {x.signedAt ? ` · เซ็น ${new Date(x.signedAt).toLocaleDateString("th-TH")}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold ${
+                          x.status === "active"
+                            ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/30"
+                            : x.status === "pending_signature"
+                              ? "bg-amber-500/10 text-amber-700 border-amber-500/30"
+                              : "bg-slate-500/10 text-slate-500 border-slate-500/30"
+                        }`}
+                      >
+                        {x.status === "active" ? "ใช้งานอยู่" : x.status === "pending_signature" ? "รอลงนาม" : x.status === "superseded" ? "ถูกแทนที่" : x.status}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHistoryRoot(null);
+                          setPreviewContract(x);
+                        }}
+                        className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 cursor-pointer"
+                        title="ดูสัญญาฉบับนี้"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* E-Signature Drawing Modal */}

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { FloatingAlert } from "@/components/ui/floating-alert";
-import { requestContractAddenda } from "@/lib/payment-slips-client";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
@@ -1366,14 +1365,6 @@ export default function HomePage() {
 
     let carriedCount = 0;
     const billedRoomNumbers: string[] = [];
-    // บันทึกแนบท้ายสัญญาที่มีผลแล้ว (เซ็นแล้ว) — โหลดไม่ได้ (ยังไม่รัน SQL / ออฟไลน์) ก็ออกบิลต่อได้ตามปกติ
-    let signedAddenda: { contract_number: string; addendum_no: number; effective_date: string; items: { title: string; amount: number; type: string }[] }[] = [];
-    try {
-      const addData = await requestContractAddenda(property.id, "list");
-      signedAddenda = (addData.addenda || []).filter((a: any) => a.status === "signed");
-    } catch {
-      signedAddenda = [];
-    }
 
     // คำนวณเฉพาะห้องที่บันทึกมิเตอร์ใหม่ (ดู splitRoomsByNewMeter) — ห้องอื่นไม่แตะ
     const [monthReadings, existingInvoices] = await Promise.all([
@@ -1448,22 +1439,6 @@ export default function HomePage() {
       if (hasFridge) {
         items.push({ name: "ค่าบริการเช่าตู้เย็น (Refrigerator)", amount: fridgeFee });
         totalAmount += fridgeFee;
-      }
-
-      // บันทึกแนบท้ายสัญญาที่ผู้เช่าเซ็นแล้ว: รายการรายเดือนคิดตั้งแต่เดือนที่มีผล, รายการครั้งเดียวคิดเฉพาะเดือนที่มีผล
-      if (tenantContract) {
-        for (const ad of signedAddenda) {
-          if (ad.contract_number !== tenantContract.contractNumber) continue;
-          const effMonth = String(ad.effective_date || "").slice(0, 7);
-          if (!effMonth || effMonth > currentMonth) continue;
-          for (const it of ad.items || []) {
-            const amt = Math.max(0, Number(it.amount) || 0);
-            if (!it.title || amt <= 0) continue;
-            if (it.type === "one_time" && effMonth !== currentMonth) continue;
-            items.push({ name: `${it.title} (แนบท้ายสัญญาฉบับที่ ${ad.addendum_no})`, amount: amt });
-            totalAmount += amt;
-          }
-        }
       }
 
       // ยกยอดค้างชำระ: บิลรายเดือนของเดือนก่อนๆ (ผู้เช่าคนเดียวกัน) ที่ยังไม่จ่าย / ขอค้างชำระ
@@ -1629,10 +1604,34 @@ export default function HomePage() {
             : c
         )
       );
-      DatabaseService.updateContractSignature(contractId, tenantSig, landlordSig, signedAt).catch(() => {});
+      DatabaseService.updateContractSignature(contractId, tenantSig, landlordSig, signedAt)
+        .then(() => applyContractRevision(contractId))
+        .catch(() => {});
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
+
+  // สัญญาฉบับแก้ไขถูกเซ็นแล้ว → ฉบับเดิม "ถูกแทนที่" + ค่าบริการของห้องเปลี่ยนตามฉบับใหม่ (บิลรอบถัดไปคิดตาม)
+  const applyContractRevision = async (contractId: string) => {
+    const updated = await DatabaseService.activateContractRevision(contractId);
+    if (!updated) return;
+    setContracts(await DatabaseService.getContracts(property.id));
+    setRooms(await DatabaseService.getRooms(property.id));
+  };
+
+  // สร้างสัญญาฉบับแก้ไขจากฉบับที่เซ็นแล้ว (เช่น เพิ่มตู้เย็น) — ได้ฉบับใหม่ "รอลงนาม"
+  const handleCreateContractRevision = async (base: ContractItem, changes: Partial<ContractItem>) => {
+    try {
+      const created = await DatabaseService.createContractRevision(base, changes);
+      setContracts((prev) => [created, ...prev]);
+      showToast(`สร้างสัญญาฉบับแก้ไข ${created.contractNumber} แล้ว — ตรวจแล้วกด "ส่งให้ผู้เช่าเซ็นทาง LINE"`, "success");
+      return created;
+    } catch (e: any) {
+      showToast("สร้างสัญญาฉบับแก้ไขไม่สำเร็จ: " + (e?.message || e), "error");
+      return null;
+    }
+  };
 
   // Handler: ผู้เช่าขอค้างชำระ — เปลี่ยนสถานะบิลเป็น "deferred" (ยังจ่ายได้ตามปกติ)
   // ยอดจะถูกยกไปรวมกับบิลเดือนถัดไปตอนกด "คำนวณและออกบิลรอบเดือน" (พร้อมค่าปรับชำระล่าช้า)
@@ -3316,8 +3315,9 @@ export default function HomePage() {
                 handleTabChange("tenant-new");
               }}
               onUpdateSignature={async (contractId, signatureUrl) => {
-                // เซ็นที่หอ: เก็บสำเนาลายเซ็นผู้ให้เช่า (จากตั้งค่าสาขา) ไว้ในสัญญาด้วย
-                const landlordSig = branchSettings.signatureUrl || undefined;
+                // เซ็นที่หอ: เก็บสำเนาลายเซ็นผู้ให้เช่าไว้ในสัญญาด้วย (ลายเซ็นที่เซ็นในสัญญานี้ก่อน ไม่มีจึงใช้ของตั้งค่าสาขา)
+                const landlordSig =
+                  contracts.find((c) => c.id === contractId)?.landlordSignatureUrl || branchSettings.signatureUrl || undefined;
                 await DatabaseService.updateContractSignature(contractId, signatureUrl, landlordSig);
                 setContracts((prev) =>
                   prev.map((c) =>
@@ -3333,7 +3333,9 @@ export default function HomePage() {
                   )
                 );
                 showToast("บันทึกลายเซ็นสัญญาอิเล็กทรอนิกส์ (E-Signature) เรียบร้อยแล้ว ✓", "success");
+                await applyContractRevision(contractId);
               }}
+              onCreateRevision={handleCreateContractRevision}
               propertyId={property.id}
               landlordSignatureUrl={branchSettings.signatureUrl || ""}
               onShowToast={showToast}

@@ -146,6 +146,20 @@ export async function POST(request: NextRequest) {
           })
           .eq("contract_number", row.contract_number);
         if (contractError) console.error("[CONTRACT-SIGN] contracts update:", contractError.message);
+
+        // สัญญาฉบับแก้ไข: ฉบับก่อนหน้าเปลี่ยนเป็น "ถูกแทนที่" (ต้องรัน docs/supabase_contract_revisions.sql)
+        const { data: signedContract } = await db
+          .from("contracts")
+          .select("previous_contract_number")
+          .eq("contract_number", row.contract_number)
+          .maybeSingle();
+        if (signedContract?.previous_contract_number) {
+          const { error: supError } = await db
+            .from("contracts")
+            .update({ status: "superseded", superseded_by: row.contract_number })
+            .eq("contract_number", signedContract.previous_contract_number);
+          if (supError) console.error("[CONTRACT-SIGN] supersede previous:", supError.message);
+        }
       }
 
       // Confirmation to the tenant's LINE (best effort)
@@ -279,9 +293,19 @@ export async function POST(request: NextRequest) {
               layout: "vertical",
               spacing: "sm",
               contents: [
-                { type: "text", text: "📝 สัญญาเช่ารอลงนาม", weight: "bold", size: "lg" },
+                {
+                  type: "text",
+                  text: Number(body.revision) > 0 ? `📝 สัญญาฉบับแก้ไข ครั้งที่ ${Number(body.revision)} รอลงนาม` : "📝 สัญญาเช่ารอลงนาม",
+                  weight: "bold",
+                  size: "lg",
+                  wrap: true,
+                },
                 { type: "text", text: `สัญญาเลขที่ ${contractNumber}`, size: "sm", color: "#555555", wrap: true },
                 { type: "text", text: `ห้อง ${roomNumber} · ${String(body.tenantName || "ผู้เช่า")}`, size: "sm", color: "#555555", wrap: true },
+                // สิ่งที่เปลี่ยนจากฉบับเดิม (สัญญาฉบับแก้ไข)
+                ...(String(body.changeSummary || "").trim()
+                  ? [{ type: "text", text: `สิ่งที่เปลี่ยน: ${String(body.changeSummary).slice(0, 400)}`, size: "sm", wrap: true, margin: "md" }]
+                  : []),
                 {
                   type: "text",
                   text: `กดปุ่มด้านล่างเพื่ออ่านสัญญาและเซ็นชื่อบนมือถือ (ภายใน ${LINK_DAYS} วัน)`,

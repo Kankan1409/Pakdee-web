@@ -727,6 +727,35 @@ export async function syncContractsToSupabase(
       // without the signature in memory never erases one saved by another device / the tenant.
       ...(c.signatureUrl ? { tenant_signature_url: c.signatureUrl } : {}),
       ...(c.landlordSignatureUrl ? { landlord_signature_url: c.landlordSignatureUrl } : {}),
+      // Contract revisions + fee details (docs/supabase_contract_revisions.sql; stripped by safeUpsert if missing)
+      revision: Number(c.revision || 0),
+      root_contract_number: c.rootContractNumber || null,
+      previous_contract_number: c.previousContractNumber || null,
+      ...(c.supersededBy ? { superseded_by: c.supersededBy } : {}),
+      contract_details: {
+        hasTv: c.hasTv,
+        tvRentalFee: c.tvRentalFee,
+        hasFridge: c.hasFridge,
+        fridgeRentalFee: c.fridgeRentalFee,
+        hasCommonFee: c.hasCommonFee,
+        commonFee: c.commonFee,
+        hasWifi: c.hasWifi,
+        wifiFee: c.wifiFee,
+        hasParking: c.hasParking,
+        parkingFee: c.parkingFee,
+        additionalFees: c.additionalFees,
+        paymentDueDay: c.paymentDueDay,
+        lateFeePerDay: c.lateFeePerDay,
+        electricalEquipmentFee: c.electricalEquipmentFee,
+        furnitureFee: c.furnitureFee,
+        isContinuous: c.isContinuous,
+        noticeDays: c.noticeDays,
+        depositRefundDays: c.depositRefundDays,
+        overdueGraceDays: c.overdueGraceDays,
+        allowPets: c.allowPets,
+        noSmoking: c.noSmoking,
+        additionalRules: c.additionalRules,
+      },
     };
   });
 
@@ -1300,6 +1329,18 @@ export async function loadFromRelationalTables(
         signedAt: cRow.signed_at || existingContract?.signedAt,
         signatureUrl: cRow.tenant_signature_url || existingContract?.signatureUrl,
         landlordSignatureUrl: cRow.landlord_signature_url || existingContract?.landlordSignatureUrl,
+        // fee details from the DB fill in what this device does not have in memory
+        ...(cRow.contract_details && typeof cRow.contract_details === "object"
+          ? Object.fromEntries(
+              Object.entries(cRow.contract_details).filter(
+                ([k, v]) => v !== undefined && v !== null && (existingContract as any)?.[k] === undefined
+              )
+            )
+          : {}),
+        revision: cRow.revision ?? existingContract?.revision,
+        rootContractNumber: cRow.root_contract_number || existingContract?.rootContractNumber,
+        previousContractNumber: cRow.previous_contract_number || existingContract?.previousContractNumber,
+        supersededBy: cRow.superseded_by || existingContract?.supersededBy,
       } satisfies ContractItem;
     });
 
