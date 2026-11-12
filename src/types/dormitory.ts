@@ -179,6 +179,8 @@ export interface Invoice {
   paidAt?: string;
   qrCodeUrl?: string;
   invoiceType?: "monthly" | "move_in" | "custom";
+  /** วิธีชำระที่ยืนยันแล้ว (บันทึกตอนยืนยันรับชำระ ใช้ในใบเสร็จรับเงิน) */
+  paymentMethod?: "transfer" | "cash" | "promptpay" | "credit_card";
   slipStatus?: "passed" | "action_needed" | "retrying" | "none";
   slipVerifiedAt?: string;
   slipVerifiedBy?: "ai" | "manual";
@@ -292,6 +294,8 @@ export interface ContractItem {
   rootContractNumber?: string;
   previousContractNumber?: string;
   supersededBy?: string;
+  /** วันที่ย้ายออกจริง (YYYY-MM-DD) บันทึกตอนสัญญาถูกยกเลิก/หมดอายุ */
+  movedOutAt?: string;
 }
 
 // 3. Operating Expense

@@ -1676,7 +1676,7 @@ export const DatabaseService = {
         roomNumber: target.roomNumber,
         tenantName: target.tenantName,
         amount: actualPaid,
-        paymentMethod: (extraData as any)?.paymentMethod || "cash",
+        paymentMethod: extraData?.paymentMethod || "cash",
       });
     }
 
@@ -1821,7 +1821,12 @@ export const DatabaseService = {
   async updateContractStatus(id: string, status: ContractItem["status"]): Promise<boolean> {
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
     const target = all.find((c) => c.id === id);
-    const updated = all.map((c) => (c.id === id ? { ...c, status } : c));
+    const endedNow = status === "terminated" || status === "expired";
+    const updated = all.map((c) =>
+      c.id === id
+        ? { ...c, status, ...(endedNow && !c.movedOutAt ? { movedOutAt: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }) } : {}) }
+        : c
+    );
     setLocal(KEYS.CONTRACTS, updated);
 
     // If terminated or expired, mark room as vacant
@@ -1970,7 +1975,11 @@ export const DatabaseService = {
     const targetPropId = propertyId || this.getActivePropertyId();
     const updated = all.map((c) =>
       c.roomNumber === roomNumber && (!targetPropId || (c.propertyId || "prop-1") === targetPropId) && c.status === "active"
-        ? { ...c, status: "terminated" as const }
+        ? {
+            ...c,
+            status: "terminated" as const,
+            movedOutAt: c.movedOutAt || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }),
+          }
         : c
     );
     setLocal(KEYS.CONTRACTS, updated);
@@ -2086,6 +2095,26 @@ export const DatabaseService = {
     }
 
     return true;
+  },
+
+  /**
+   * บันทึกว่าผู้เข้าพักรายวันเช็คเอาท์แล้ว (วันที่ออกจริง) ลงใน notes ของทะเบียนผู้เช่า
+   * เพราะการจองถูกลบตอนเช็คเอาท์ ทะเบียนผู้เช่าจึงต้องเก็บวันออกไว้เอง: "[เช็คเอาท์ YYYY-MM-DD]"
+   */
+  async markDailyGuestCheckedOut(guestName: string, roomNumber: string, checkoutDate: string): Promise<Tenant[]> {
+    const all = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const name = (guestName || "").trim().toLowerCase();
+    const updated = all.map((t) => {
+      const isDailyGuest = t.notes?.includes("[ผู้เข้าพักรายวัน]");
+      const sameName = (t.fullName || "").trim().toLowerCase() === name;
+      const sameRoom = t.roomNumber === roomNumber || Boolean(t.notes?.includes(`ห้อง ${roomNumber}`));
+      if (isDailyGuest && sameName && sameRoom && !t.notes?.includes("[เช็คเอาท์")) {
+        return { ...t, notes: `${t.notes} [เช็คเอาท์ ${checkoutDate}]` };
+      }
+      return t;
+    });
+    setLocal(KEYS.TENANTS, updated);
+    return updated;
   },
 
   async removeDailyBooking(id: string, roomNumber?: string): Promise<boolean> {

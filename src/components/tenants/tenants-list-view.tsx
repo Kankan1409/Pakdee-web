@@ -2,8 +2,25 @@
 
 import React, { useState, useMemo } from "react";
 import { Room, Tenant, ContractItem, Invoice, DailyBooking } from "@/types/dormitory";
-import { Users, Plus, Search } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { Users, Plus, Search, X } from "lucide-react";
+
+/** Normalize a date string to YYYY-MM-DD (converts พ.ศ. years) for filtering/sorting. */
+const toDateKey = (v?: string): string => {
+  if (!v) return "";
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const y = Number(m[1]);
+    return `${y > 2400 ? y - 543 : y}-${m[2]}-${m[3]}`;
+  }
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+};
+
+const formatThaiDate = (v?: string): string => {
+  const key = toDateKey(v);
+  if (!key) return v || "-";
+  return new Date(`${key}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+};
 
 interface TenantsListViewProps {
   rooms: Room[];
@@ -24,6 +41,9 @@ export function TenantsListView({
 }: TenantsListViewProps) {
   const [filterTab, setFilterTab] = useState<"all" | "monthly" | "daily">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
   const { combinedList, filteredList, monthlyCount, dailyCount } = useMemo(() => {
     // Map room numbers and room statuses to tenants (Multi-source: rooms, contracts, invoices)
@@ -87,7 +107,13 @@ export function TenantsListView({
       depositAmount?: number;
       stayInfo?: string;
       statusText?: string;
+      moveInDate?: string;
+      moveOutDate?: string;
+      isActive: boolean;
     }> = [];
+
+    // Daily booking: active while confirmed / checked in; inactive once checked out or cancelled.
+    const bookingIsActive = (b: DailyBooking) => b.status === "confirmed" || b.status === "checked_in";
 
     tenants.forEach((t) => {
       const cleanPhone = t.phone ? t.phone.replace(/\D/g, "") : "";
@@ -138,6 +164,43 @@ export function TenantsListView({
           : "ผู้เข้าพักรายวัน"
         : "ผู้เช่ารายเดือน";
 
+      // Move-in / move-out dates and Active status (monthly: from this tenant's own contracts).
+      // Daily guests never use contracts. Match contracts by name first; phone only as a fallback,
+      // because several people can share one phone number.
+      const usableContracts = isDaily ? [] : contracts.filter((c) => c.status !== "draft");
+      const byName = usableContracts.filter(
+        (c) => c.tenantName && c.tenantName.trim().toLowerCase() === normalizedName
+      );
+      const ownContracts =
+        byName.length > 0
+          ? byName
+          : usableContracts.filter(
+              (c) => cleanPhone && c.tenantPhone && c.tenantPhone.replace(/\D/g, "") === cleanPhone
+            );
+      // Daily guest without a live booking (booking is deleted at checkout): read the stay
+      // "(YYYY-MM-DD ถึง YYYY-MM-DD)" and the checkout mark "[เช็คเอาท์ YYYY-MM-DD]" from notes.
+      const noteStay = t.notes?.match(/\((\d{4}-\d{2}-\d{2})\s*ถึง\s*(\d{4}-\d{2}-\d{2})\)/);
+      const noteCheckout = t.notes?.match(/\[เช็คเอาท์\s*(\d{4}-\d{2}-\d{2})\]/);
+      const dailyStillStaying = !noteCheckout && roomStatus === "daily";
+      const livesInRoom = rooms.some(
+        (r) =>
+          r.currentTenant &&
+          (r.currentTenant.id === t.id ||
+            (normalizedName && r.currentTenant.fullName?.trim().toLowerCase() === normalizedName))
+      );
+      const hasOpenContract = ownContracts.some((c) => c.status === "active" || c.status === "pending_signature");
+      const monthlyActive = livesInRoom || hasOpenContract;
+      const earliestStart = ownContracts
+        .map((c) => toDateKey(c.startDate))
+        .filter(Boolean)
+        .sort()[0];
+      const lastEnded = ownContracts
+        .filter((c) => c.status === "terminated" || c.status === "expired")
+        .map((c) => toDateKey(c.movedOutAt || c.endDate))
+        .filter(Boolean)
+        .sort()
+        .pop();
+
       combined.push({
         id: t.id,
         type: isDaily ? "daily" : "monthly",
@@ -155,6 +218,21 @@ export function TenantsListView({
             : t.depositAmount,
         stayInfo: stayInfoText,
         statusText: statusBadgeText,
+        moveInDate: isDaily
+          ? matchingBooking?.checkInDate || noteStay?.[1]
+          : earliestStart,
+        moveOutDate: isDaily
+          ? matchingBooking
+            ? matchingBooking.checkOutDate
+            : noteCheckout?.[1] || (dailyStillStaying ? undefined : noteStay?.[2])
+          : monthlyActive
+            ? undefined
+            : lastEnded,
+        isActive: isDaily
+          ? matchingBooking
+            ? bookingIsActive(matchingBooking)
+            : dailyStillStaying
+          : monthlyActive,
       });
     });
 
@@ -180,6 +258,9 @@ export function TenantsListView({
         }
         existingItem.stayInfo = `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights || 1} คืน)`;
         existingItem.statusText = b.status === "checked_in" ? "กำลังเข้าพัก (รายวัน)" : "ยืนยันการจองแล้ว";
+        existingItem.moveInDate = b.checkInDate;
+        existingItem.moveOutDate = b.checkOutDate;
+        existingItem.isActive = bookingIsActive(b);
       } else {
         combined.push({
           id: b.id,
@@ -192,6 +273,9 @@ export function TenantsListView({
           depositAmount: (b.keyDeposit || 0) + (b.roomDeposit || 0),
           stayInfo: `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights || 1} คืน)`,
           statusText: b.status === "checked_in" ? "กำลังเข้าพัก (รายวัน)" : "ยืนยันการจองแล้ว",
+          moveInDate: b.checkInDate,
+          moveOutDate: b.checkOutDate,
+          isActive: bookingIsActive(b),
         });
       }
     });
@@ -206,7 +290,19 @@ export function TenantsListView({
         (item.lineAcc && item.lineAcc.toLowerCase().includes(q)) ||
         (item.idCard && item.idCard.toLowerCase().includes(q)) ||
         (item.roomNumber && item.roomNumber.toLowerCase().includes(q));
-      return matchType && matchSearch;
+      const matchStatus =
+        statusFilter === "all" || (statusFilter === "active" ? item.isActive : !item.isActive);
+      // วันที่เริ่ม: วันที่เข้า ตั้งแต่วันนี้เป็นต้นไป · วันที่ออก: วันที่ออก ไม่เกินวันนี้
+      let matchDate = true;
+      if (dateFrom) {
+        const inKey = toDateKey(item.moveInDate);
+        matchDate = Boolean(inKey) && inKey >= dateFrom;
+      }
+      if (matchDate && dateTo) {
+        const outKey = toDateKey(item.moveOutDate);
+        matchDate = Boolean(outKey) && outKey <= dateTo;
+      }
+      return matchType && matchSearch && matchStatus && matchDate;
     });
 
     const mCount = combined.filter((i) => i.type === "monthly").length;
@@ -218,7 +314,11 @@ export function TenantsListView({
       monthlyCount: mCount,
       dailyCount: dCount,
     };
-  }, [rooms, tenants, contracts, invoices, dailyBookings, filterTab, searchQuery]);
+  }, [rooms, tenants, contracts, invoices, dailyBookings, filterTab, searchQuery, statusFilter, dateFrom, dateTo]);
+
+  const hasExtraFilter = statusFilter !== "all" || Boolean(dateFrom) || Boolean(dateTo);
+  const filterInputCls =
+    "px-2 py-1.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] focus:outline-emerald-500";
 
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
@@ -295,6 +395,37 @@ export function TenantsListView({
         </div>
       </div>
 
+      {/* Status & move-in/out date filters */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-[var(--muted)] font-semibold">สถานะ</span>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
+          className={filterInputCls}
+        >
+          <option value="all">ทั้งหมด</option>
+          <option value="active">Active (ใช้งาน)</option>
+          <option value="inactive">Inactive (ออกแล้ว)</option>
+        </select>
+        <span className="text-[var(--muted)] font-semibold ml-2">วันที่เริ่ม</span>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={filterInputCls} />
+        <span className="text-[var(--muted)] font-semibold ml-2">วันที่ออก</span>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={filterInputCls} />
+        {hasExtraFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("all");
+              setDateFrom("");
+              setDateTo("");
+            }}
+            className="px-2 py-1.5 rounded-xl text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--subtle)] flex items-center gap-1 cursor-pointer"
+          >
+            <X className="w-3 h-3" /> ล้างตัวกรอง
+          </button>
+        )}
+      </div>
+
       {/* Directory Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-xs text-left">
@@ -306,14 +437,16 @@ export function TenantsListView({
               <th className="py-3 px-3">เบอร์โทรศัพท์</th>
               <th className="py-3 px-3">Line_acc</th>
               <th className="py-3 px-3">เลขบัตรประชาชน</th>
-              <th className="py-3 px-3">มัดจำ</th>
               <th className="py-3 px-3">ทะเบียนรถ</th>
+              <th className="py-3 px-3">วันที่เข้า</th>
+              <th className="py-3 px-3">วันที่ออก</th>
+              <th className="py-3 px-3">สถานะ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
             {filteredList.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-8 text-center text-[var(--muted)]">
+                <td colSpan={10} className="py-8 text-center text-[var(--muted)]">
                   ไม่พบข้อมูลผู้เช่าตามตัวกรองที่เลือก
                 </td>
               </tr>
@@ -347,11 +480,27 @@ export function TenantsListView({
                     )}
                   </td>
                   <td className="py-3 px-3 font-mono text-[11px]">{t.idCard || "-"}</td>
-                  <td className="py-3 px-3 font-medium">
-                    {t.depositAmount ? formatCurrency(t.depositAmount) : "-"}
-                  </td>
                   <td className="py-3 px-3 text-[var(--muted)] text-[11px]">
                     {t.vehiclePlate || "-"}
+                  </td>
+                  <td className="py-3 px-3 text-[11px] whitespace-nowrap">
+                    {t.moveInDate ? formatThaiDate(t.moveInDate) : "-"}
+                  </td>
+                  <td className="py-3 px-3 text-[11px] whitespace-nowrap">
+                    {t.moveOutDate ? formatThaiDate(t.moveOutDate) : "-"}
+                  </td>
+                  <td className="py-3 px-3">
+                    {t.isActive ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/25">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        Inactive
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))

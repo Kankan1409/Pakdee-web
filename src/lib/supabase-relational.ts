@@ -199,7 +199,8 @@ const missingColumnsCache: Record<string, Set<string>> =
       "address",
       "id_card_image_url",
       "invoice_lang",
-      "notes",
+      // "notes" exists in the tenants table (checked 2026-11-12) and carries the daily-guest
+      // marker "[ผู้เข้าพักรายวัน] ห้อง X" — it must be sent, or daily guests lose room/type on reload.
       "updated_at",
     ]),
   });
@@ -755,6 +756,7 @@ export async function syncContractsToSupabase(
         allowPets: c.allowPets,
         noSmoking: c.noSmoking,
         additionalRules: c.additionalRules,
+        movedOutAt: c.movedOutAt,
       },
     };
   });
@@ -814,6 +816,11 @@ export async function syncInvoicesToSupabase(
       status: (inv.status || "unpaid").slice(0, 30),
       slip_url: inv.slipUrl || "",
       paid_at: toPgTimestamp(inv.paidAt, inv.status === "paid"),
+      // Payment method + slip details for the receipt (docs/supabase_invoice_payment_method.sql;
+      // stripped by safeUpsert if missing). Only sent when known so nothing is erased.
+      ...(inv.paymentMethod ? { payment_method: inv.paymentMethod } : {}),
+      ...(inv.slipTransRef ? { slip_trans_ref: inv.slipTransRef } : {}),
+      ...(inv.slipBank ? { slip_bank: inv.slipBank } : {}),
     });
 
     (inv.items || []).forEach((item, idx) => {
@@ -1246,7 +1253,8 @@ export async function loadFromRelationalTables(
         vehiclePlate: tRow.vehicle_plate ?? existingMatch?.vehiclePlate ?? "",
         idCardImageUrl: tRow.id_card_image_url ?? existingMatch?.idCardImageUrl ?? "",
         invoiceLang: (tRow.invoice_lang || existingMatch?.invoiceLang || "TH") as "TH" | "EN",
-        notes: tRow.notes ?? existingMatch?.notes ?? "",
+        // An empty DB value must not wipe a local note that has not been uploaded yet.
+        notes: tRow.notes || existingMatch?.notes || "",
       };
       tenantByUuid.set(rowUuid, mapped);
       return mapped;
@@ -1390,6 +1398,9 @@ export async function loadFromRelationalTables(
         status: (iRow.status || "unpaid") as Invoice["status"],
         slipUrl: iRow.slip_url || existingInv?.slipUrl,
         paidAt: iRow.paid_at || existingInv?.paidAt,
+        paymentMethod: iRow.payment_method || existingInv?.paymentMethod,
+        slipTransRef: iRow.slip_trans_ref || existingInv?.slipTransRef,
+        slipBank: iRow.slip_bank || existingInv?.slipBank,
         items: relItems.length > 0 ? relItems : existingInv?.items || [],
       } satisfies Invoice;
     });

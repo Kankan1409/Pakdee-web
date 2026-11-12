@@ -80,7 +80,7 @@ export async function verifyLinePayment(propertyId: string, invoice: Invoice, se
     return { message: "สถานะหรือยอดบิลเปลี่ยนไป กรุณาให้เจ้าหน้าที่ตรวจสอบก่อนรับชำระ" };
   }
   const updated = await DatabaseService.updateInvoiceStatus(invoice.id, "paid", result.amount!, {
-    slipStatus: "passed", slipVerifiedAt: new Date().toISOString(), slipVerifiedBy: "ai",
+    slipStatus: "passed", slipVerifiedAt: new Date().toISOString(), slipVerifiedBy: "ai", paymentMethod: "transfer",
     slipTransRef: result.transRef, slipBank: result.senderBank || result.receiverBank,
     slipHash: slip.image_sha256,
   });

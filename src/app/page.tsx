@@ -13,6 +13,7 @@ import { RoomDetailModal } from "@/components/dashboard/room-detail-modal";
 import { QuickMeterModal } from "@/components/meter/quick-meter-modal";
 import { MeterSpreadsheetView } from "@/components/meters/meter-spreadsheet-view";
 import { InvoicePreviewModal } from "@/components/invoice/invoice-preview-modal";
+import { ReceiptPreviewModal } from "@/components/invoice/receipt-preview-modal";
 import { InvoicesBillingView } from "@/components/invoices/invoices-billing-view";
 import { SlipVerificationView } from "@/components/invoices/slip-verification-view";
 import { ReceiptsListView } from "@/components/invoices/receipts-list-view";
@@ -130,6 +131,10 @@ export default function HomePage() {
   const [isNewBookingOpen, setIsNewBookingOpen] = useState(false);
   const [isLeaseModalOpen, setIsLeaseModalOpen] = useState(false);
   const [activeInvoice, setActiveInvoice] = useState<Invoice | null>(null);
+  // ใบเสร็จรับเงิน (บิลที่ชำระแล้ว) แยกจากใบแจ้งหนี้
+  const [receiptInvoice, setReceiptInvoice] = useState<Invoice | null>(null);
+  // บิลที่กำลังรอเลือกวิธีชำระก่อนยืนยันรับชำระ
+  const [payMethodInvoiceId, setPayMethodInvoiceId] = useState<string | null>(null);
   const [selectedLeaseRoom, setSelectedLeaseRoom] = useState<Room | null>(null);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   // First screen on entry/login: Always open Branch Selector Screen
@@ -1743,6 +1748,7 @@ export default function HomePage() {
         slipStatus: "passed",
         slipVerifiedBy: "manual",
         slipVerifiedAt: nowIso,
+        paymentMethod,
       });
 
       // 2. อัปเดต Local State ของ Invoices ทันที
@@ -1758,6 +1764,7 @@ export default function HomePage() {
                 slipStatus: "passed",
                 slipVerifiedBy: "manual",
                 slipVerifiedAt: nowIso,
+                paymentMethod,
               }
             : inv
         )
@@ -1785,6 +1792,7 @@ export default function HomePage() {
           paidAmount: totalAmount,
           remainingAmount: 0,
           paidAt: nowFormatted,
+          paymentMethod,
         });
       }
 
@@ -1808,6 +1816,9 @@ export default function HomePage() {
       showToast("เกิดข้อผิดพลาดในการบันทึกรับชำระเงิน: " + (err?.message || "ไม่ทราบสาเหตุ"), "error");
     }
   };
+
+  // ยืนยันรับชำระด้วยมือ: ถามวิธีชำระก่อน (เงินสด / โอน-พร้อมเพย์) เพื่อบันทึกลงบิลและใบเสร็จ
+  const requestMarkAsPaid = (invoiceId: string) => setPayMethodInvoiceId(invoiceId);
 
   // Handler: Add Tenant (with optional Room Assignment)
   const handleAddTenant = async (e: React.FormEvent) => {
@@ -2067,6 +2078,7 @@ export default function HomePage() {
     booking,
     extraCharges,
     extraNote,
+    paymentMethod: dailyPaymentMethod,
     electricPrev,
     electricCurr,
     waterPrev,
@@ -2150,6 +2162,7 @@ export default function HomePage() {
       dueDate: dateStr,
       status: "paid",
       paidAt: now.toISOString(),
+      paymentMethod: dailyPaymentMethod,
       invoiceType: "custom",
       items,
       totalAmount,
@@ -2161,6 +2174,12 @@ export default function HomePage() {
 
       // 2. ปลดสถานะการจองรายวัน
       await DatabaseService.removeDailyBooking(booking.id, booking.roomNumber);
+      // 2.1 เก็บวันที่ออกจริงไว้ในทะเบียนผู้เช่า (การจองถูกลบแล้ว)
+      const checkoutDay = now.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+      const tenantsAfterCheckout = await DatabaseService.markDailyGuestCheckedOut(booking.guestName, booking.roomNumber, checkoutDay);
+      setTenants((prev) =>
+        prev.map((t) => tenantsAfterCheckout.find((u) => u.id === t.id) || t)
+      );
 
       // 3. ปรับสถานะห้องเป็น "รอทำความสะอาด" (cleaning) พร้อมบันทึกมิเตอร์จริงที่ขยับลงในฐานข้อมูล
       if (targetRoom) {
@@ -3145,7 +3164,7 @@ export default function HomePage() {
               onAutoBilling={handleGenerateMonthlyInvoices}
               onNavigateTab={handleTabChange}
               onSelectRoom={(room) => setSelectedRoom(room)}
-              onMarkInvoicePaid={handleMarkAsPaid}
+              onMarkInvoicePaid={requestMarkAsPaid}
               onUpdateRoomStatus={handleUpdateStatus}
             />
           )}
@@ -3238,7 +3257,7 @@ export default function HomePage() {
               onGenerateMonthlyInvoices={handleGenerateMonthlyInvoices}
               generateBlockedReason={billingBlockedReason}
               onDeferInvoice={handleDeferInvoice}
-              onMarkAsPaid={handleMarkAsPaid}
+              onMarkAsPaid={requestMarkAsPaid}
               onOpenInvoiceModal={(inv) => {
                 setActiveInvoice(inv);
                 setIsInvoiceModalOpen(true);
@@ -3256,6 +3275,11 @@ export default function HomePage() {
               onVerifySlip={handleVerifySlip}
               onRejectSlip={handleRejectSlip}
               onOpenInvoiceModal={(inv) => {
+                // บิลที่ชำระแล้ว → เปิดใบเสร็จรับเงิน, ยังไม่ชำระ → เปิดใบแจ้งหนี้
+                if (inv.status === "paid") {
+                  setReceiptInvoice(inv);
+                  return;
+                }
                 setActiveInvoice(inv);
                 setIsInvoiceModalOpen(true);
               }}
@@ -3267,10 +3291,7 @@ export default function HomePage() {
           {currentTab === "receipts" && (
             <ReceiptsListView
               invoices={invoices}
-              onOpenReceipt={(inv) => {
-                setActiveInvoice(inv);
-                setIsInvoiceModalOpen(true);
-              }}
+              onOpenReceipt={(inv) => setReceiptInvoice(inv)}
             />
           )}
 
@@ -3530,6 +3551,63 @@ export default function HomePage() {
         waterRate={property.waterRate}
       />
 
+      <ReceiptPreviewModal
+        invoice={receiptInvoice}
+        isOpen={Boolean(receiptInvoice)}
+        onClose={() => setReceiptInvoice(null)}
+        propertyName={property.name}
+        propertyAddress={property.address}
+        propertyPhone={property.phone}
+        taxId={branchSettings.taxId}
+        receiverName={branchSettings.ownerName}
+        receiverSignatureUrl={branchSettings.signatureUrl}
+      />
+
+      {/* เลือกวิธีชำระก่อนยืนยันรับชำระ (บันทึกลงบิล ใช้ในใบเสร็จรับเงิน) */}
+      {payMethodInvoiceId && (() => {
+        const inv = invoices.find((i) => i.id === payMethodInvoiceId);
+        const choose = (method: "cash" | "transfer") => {
+          setPayMethodInvoiceId(null);
+          handleMarkAsPaid(payMethodInvoiceId, method);
+        };
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <div className="bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-bold">ยืนยันรับชำระเงิน</h3>
+                <p className="text-xs text-[var(--muted)] mt-0.5">
+                  {inv ? `ห้อง ${inv.roomNumber} · ${inv.tenantName} · ยอด ฿${Number(inv.totalAmount || 0).toLocaleString()}` : ""}
+                </p>
+              </div>
+              <div className="text-xs font-semibold">ชำระโดย</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => choose("cash")}
+                  className="py-3 rounded-xl border border-[var(--border)] hover:border-emerald-500 hover:bg-emerald-500/10 text-sm font-bold cursor-pointer transition"
+                >
+                  💵 เงินสด
+                </button>
+                <button
+                  type="button"
+                  onClick={() => choose("transfer")}
+                  className="py-3 rounded-xl border border-[var(--border)] hover:border-emerald-500 hover:bg-emerald-500/10 text-sm font-bold cursor-pointer transition"
+                >
+                  🏦 โอนเงิน / พร้อมเพย์
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayMethodInvoiceId(null)}
+                className="w-full py-2 rounded-xl text-xs font-semibold text-[var(--muted)] hover:bg-[var(--subtle)] cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       <InvoicePreviewModal
         invoice={activeInvoice}
         isOpen={isInvoiceModalOpen}
@@ -3539,7 +3617,7 @@ export default function HomePage() {
         propertyAddress={property.address}
         propertyPhone={property.phone}
         promptpayName={property.promptpayName}
-        onMarkAsPaid={handleMarkAsPaid}
+        onMarkAsPaid={requestMarkAsPaid}
         onInvoiceSent={(invId) => {
           setInvoices((prev) =>
             prev.map((i) =>
