@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { requestContractSign } from "@/lib/payment-slips-client";
+import { requestContractAddenda, requestContractSign } from "@/lib/payment-slips-client";
 
 export interface SignedContractEntry {
   contractNumber: string;
@@ -32,6 +32,22 @@ export function useSignedContracts(propertyId: string | undefined, days = 7): Si
             tenantName: r.tenant_name || "",
             signedAt: r.signed_at,
           }));
+        // บันทึกแนบท้ายที่ผู้เช่าเซ็นแล้ว
+        try {
+          const add = await requestContractAddenda(propertyId, "list");
+          for (const a of add.addenda || []) {
+            if (a.status === "signed" && a.signed_at && new Date(a.signed_at).getTime() >= since) {
+              list.push({
+                contractNumber: `${a.contract_number} / แนบท้ายฉบับที่ ${a.addendum_no}`,
+                roomNumber: a.room_number || "-",
+                tenantName: a.tenant_name || "",
+                signedAt: a.signed_at,
+              });
+            }
+          }
+        } catch {
+          // ยังไม่ได้รัน SQL ของบันทึกแนบท้าย
+        }
         if (!cancelled) setEntries(list);
       } catch {
         // not logged in / SQL not run — no bell items

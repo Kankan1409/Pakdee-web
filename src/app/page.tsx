@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { FloatingAlert } from "@/components/ui/floating-alert";
+import { requestContractAddenda } from "@/lib/payment-slips-client";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
@@ -1373,6 +1374,14 @@ export default function HomePage() {
 
     let carriedCount = 0;
     const billedRoomNumbers: string[] = [];
+    // บันทึกแนบท้ายสัญญาที่มีผลแล้ว (เซ็นแล้ว) — โหลดไม่ได้ (ยังไม่รัน SQL / ออฟไลน์) ก็ออกบิลต่อได้ตามปกติ
+    let signedAddenda: { contract_number: string; addendum_no: number; effective_date: string; items: { title: string; amount: number; type: string }[] }[] = [];
+    try {
+      const addData = await requestContractAddenda(property.id, "list");
+      signedAddenda = (addData.addenda || []).filter((a: any) => a.status === "signed");
+    } catch {
+      signedAddenda = [];
+    }
 
     // คำนวณเฉพาะห้องที่บันทึกมิเตอร์ใหม่ (ดู splitRoomsByNewMeter) — ห้องอื่นไม่แตะ
     const [monthReadings, existingInvoices] = await Promise.all([
@@ -1447,6 +1456,22 @@ export default function HomePage() {
       if (hasFridge) {
         items.push({ name: "ค่าบริการเช่าตู้เย็น (Refrigerator)", amount: fridgeFee });
         totalAmount += fridgeFee;
+      }
+
+      // บันทึกแนบท้ายสัญญาที่ผู้เช่าเซ็นแล้ว: รายการรายเดือนคิดตั้งแต่เดือนที่มีผล, รายการครั้งเดียวคิดเฉพาะเดือนที่มีผล
+      if (tenantContract) {
+        for (const ad of signedAddenda) {
+          if (ad.contract_number !== tenantContract.contractNumber) continue;
+          const effMonth = String(ad.effective_date || "").slice(0, 7);
+          if (!effMonth || effMonth > currentMonth) continue;
+          for (const it of ad.items || []) {
+            const amt = Math.max(0, Number(it.amount) || 0);
+            if (!it.title || amt <= 0) continue;
+            if (it.type === "one_time" && effMonth !== currentMonth) continue;
+            items.push({ name: `${it.title} (แนบท้ายสัญญาฉบับที่ ${ad.addendum_no})`, amount: amt });
+            totalAmount += amt;
+          }
+        }
       }
 
       // ยกยอดค้างชำระ: บิลรายเดือนของเดือนก่อนๆ (ผู้เช่าคนเดียวกัน) ที่ยังไม่จ่าย / ขอค้างชำระ

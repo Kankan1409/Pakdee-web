@@ -75,11 +75,15 @@ export async function POST(request: NextRequest) {
       const token = request.nextUrl.searchParams.get("token") || "";
       const { db, row } = await getRequest(token);
       // ข้อมูลล่าสุดของสัญญา: ผู้ให้เช่าอาจเซ็นทีหลัง / ผู้เช่าอาจเซ็นที่หอไปแล้ว
-      const { data: contractRow } = await db
-        .from("contracts")
-        .select("tenant_signature_url,landlord_signature_url")
-        .eq("contract_number", row.contract_number)
-        .maybeSingle();
+      // บันทึกแนบท้าย (addendum_id) เป็นเอกสารแยก — ไม่ดู/ไม่แก้ลายเซ็นของสัญญาหลัก
+      const isAddendum = Boolean(row.addendum_id);
+      const { data: contractRow } = isAddendum
+        ? { data: null as { tenant_signature_url?: string; landlord_signature_url?: string } | null }
+        : await db
+            .from("contracts")
+            .select("tenant_signature_url,landlord_signature_url")
+            .eq("contract_number", row.contract_number)
+            .maybeSingle();
       if (!row.landlord_signature_url && contractRow?.landlord_signature_url) {
         row.landlord_signature_url = contractRow.landlord_signature_url;
       }
@@ -118,17 +122,31 @@ export async function POST(request: NextRequest) {
       if (updError) throw new SlipError("บันทึกลายเซ็นไม่สำเร็จ กรุณาลองใหม่", 503);
       attempts.delete(token);
 
-      // Mark the contract signed (works once docs/supabase_contract_signing.sql has been run)
-      const { error: contractError } = await db
-        .from("contracts")
-        .update({
-          status: "active",
-          signed_at: signedAt,
-          tenant_signature_url: signature,
-          ...(row.landlord_signature_url ? { landlord_signature_url: row.landlord_signature_url } : {}),
-        })
-        .eq("contract_number", row.contract_number);
-      if (contractError) console.error("[CONTRACT-SIGN] contracts update:", contractError.message);
+      if (isAddendum) {
+        // บันทึกแนบท้ายมีผลแล้ว
+        const { data: addRows, error: addError } = await db
+          .from("contract_addenda")
+          .update({ status: "signed", tenant_signature_url: signature, signed_at: signedAt })
+          .eq("id", row.addendum_id)
+          .select("id");
+        if (addError) console.error("[CONTRACT-SIGN] addendum update:", addError.message);
+        else if (!addRows || addRows.length === 0) {
+          // จะถูกซ่อมอัตโนมัติตอนเปิดรายการบันทึกแนบท้าย (action=list)
+          console.error("[CONTRACT-SIGN] addendum update matched 0 rows:", row.addendum_id);
+        }
+      } else {
+        // Mark the contract signed (works once docs/supabase_contract_signing.sql has been run)
+        const { error: contractError } = await db
+          .from("contracts")
+          .update({
+            status: "active",
+            signed_at: signedAt,
+            tenant_signature_url: signature,
+            ...(row.landlord_signature_url ? { landlord_signature_url: row.landlord_signature_url } : {}),
+          })
+          .eq("contract_number", row.contract_number);
+        if (contractError) console.error("[CONTRACT-SIGN] contracts update:", contractError.message);
+      }
 
       // Confirmation to the tenant's LINE (best effort)
       try {
@@ -142,10 +160,10 @@ export async function POST(request: NextRequest) {
             {
               type: "text",
               text: [
-                `✅ ลงนามสัญญาเช่าเรียบร้อยแล้ว`,
-                `สัญญาเลขที่ ${row.contract_number} (ห้อง ${row.room_number})`,
+                isAddendum ? `✅ ลงนามบันทึกแนบท้ายสัญญาเรียบร้อยแล้ว` : `✅ ลงนามสัญญาเช่าเรียบร้อยแล้ว`,
+                `${isAddendum ? "เอกสาร" : "สัญญาเลขที่"} ${row.contract_number} (ห้อง ${row.room_number})`,
                 `เวลา ${new Date(signedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`,
-                ...(origin ? [`ดู/บันทึกสำเนาสัญญา: ${origin}/sign/${token}`] : []),
+                ...(origin ? [`ดู/บันทึกสำเนา: ${origin}/sign/${token}`] : []),
               ].join("\n"),
             },
           ]);

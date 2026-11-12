@@ -48,3 +48,21 @@ export async function requestContractSign(propertyId: string, action: "create" |
   if (!response.ok) throw new Error(data.error || "ดำเนินการไม่สำเร็จ");
   return data;
 }
+
+/** /api/contracts/addenda (บันทึกแนบท้ายสัญญา) — owner only */
+export async function requestContractAddenda(propertyId: string, action: "list" | "create" | "cancel", body?: unknown) {
+  const user = JSON.parse(localStorage.getItem("pakdee_auth_session_v1") || "null");
+  const password = localStorage.getItem("pakdee_user_password");
+  if (!user?.id || !password) throw new Error("กรุณาเข้าสู่ระบบใหม่");
+  const encoded = btoa(Array.from(new TextEncoder().encode(`${user.id}:${password}`), b => String.fromCharCode(b)).join(""));
+  const query = new URLSearchParams({ propertyId, action });
+  const response = await fetch(`/api/contracts/addenda?${query}`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${encoded}`, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "ดำเนินการไม่สำเร็จ");
+  return data;
+}

@@ -23,7 +23,8 @@ import {
 import { formatCurrency, formatDateThai } from "@/lib/utils";
 import { isDateAfter, isValidThaiPhone, formatThaiPhone } from "@/lib/validators";
 import { numberToThaiBahtText, STANDARD_14_CLAUSES } from "@/components/contracts/contract-print-view";
-import { requestContractSign } from "@/lib/payment-slips-client";
+import { requestContractAddenda, requestContractSign } from "@/lib/payment-slips-client";
+import { ContractAddendaModal } from "@/components/contracts/contract-addenda-modal";
 
 interface ContractManagementViewProps {
   contracts: ContractItem[];
@@ -78,6 +79,17 @@ export function ContractManagementView({
       const map = new Map<string, SignRequestStatus>();
       for (const r of (data.requests || []) as SignRequestStatus[]) map.set(r.contract_number, r);
       setSignRequests(map);
+      // จำนวนบันทึกแนบท้าย (ไม่นับที่ยกเลิก) ต่อสัญญา — แสดงบนปุ่มในแถว
+      try {
+        const add = await requestContractAddenda(propertyId, "list");
+        const counts = new Map<string, number>();
+        for (const a of (add.addenda || []) as { contract_number: string; status: string }[]) {
+          if (a.status !== "cancelled") counts.set(a.contract_number, (counts.get(a.contract_number) || 0) + 1);
+        }
+        setAddendaCounts(counts);
+      } catch {
+        // ยังไม่ได้รัน SQL ของบันทึกแนบท้าย
+      }
     } catch {
       // ยังไม่ได้รัน SQL หรือออฟไลน์ — ปุ่มเซ็นที่หอยังใช้ได้ตามปกติ
     }
@@ -142,6 +154,8 @@ export function ContractManagementView({
   const [signingContract, setSigningContract] = useState<ContractItem | null>(null);
   /** who is drawing in the signature pad: the tenant (at the dorm) or the landlord */
   const [signingRole, setSigningRole] = useState<"tenant" | "landlord">("tenant");
+  const [addendaContract, setAddendaContract] = useState<ContractItem | null>(null);
+  const [addendaCounts, setAddendaCounts] = useState<Map<string, number>>(new Map());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [hasSignatureDrawn, setHasSignatureDrawn] = useState<boolean>(false);
@@ -438,7 +452,6 @@ export function ContractManagementView({
                 <th className="p-3.5">ระยะเวลาสัญญา</th>
                 <th className="p-3.5 text-right">ค่าเช่า/เดือน</th>
                 <th className="p-3.5 text-right">เงินประกัน</th>
-                <th className="p-3.5 text-center">สถานะ</th>
                 <th className="p-3.5 text-right">เอกสาร</th>
               </tr>
             </thead>
@@ -466,28 +479,6 @@ export function ContractManagementView({
                   </td>
                   <td className="p-3.5 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
                     {formatCurrency(c.depositAmount)}
-                  </td>
-                  <td className="p-3.5 text-center">
-                    {c.status === "active" && (
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20">
-                        ใช้งานอยู่
-                      </span>
-                    )}
-                    {c.status === "pending_signature" && (
-                      <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold border border-amber-500/20">
-                        รอลงนาม
-                      </span>
-                    )}
-                    {c.status === "draft" && (
-                      <span className="px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-600 dark:text-slate-400 font-semibold border border-slate-500/20">
-                        ร่าง
-                      </span>
-                    )}
-                    {c.status === "expired" && (
-                      <span className="px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-semibold border border-rose-500/20">
-                        หมดอายุ
-                      </span>
-                    )}
                   </td>
                   <td className="p-3.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
@@ -519,6 +510,15 @@ export function ContractManagementView({
                         >
                           รอเซ็นทาง LINE
                         </span>
+                      )}
+                      {c.signatureUrl && propertyId && (
+                        <button
+                          onClick={() => setAddendaContract(c)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
+                          title="บันทึกแนบท้ายสัญญา (เพิ่ม/เปลี่ยนเงื่อนไข เช่น เพิ่มเช่าตู้เย็น)"
+                        >
+                          {addendaCounts.get(c.contractNumber) ? `แนบท้าย (${addendaCounts.get(c.contractNumber)})` : "+ แนบท้าย"}
+                        </button>
                       )}
                       <button
                         onClick={() => setPreviewContract(c)}
@@ -1292,6 +1292,18 @@ export function ContractManagementView({
           </div>
         );
       })()}
+
+      {/* บันทึกแนบท้ายสัญญา */}
+      {addendaContract && propertyId && (
+        <ContractAddendaModal
+          contract={addendaContract}
+          propertyId={propertyId}
+          landlordName={landlordName}
+          landlordSignatureUrl={addendaContract.landlordSignatureUrl || landlordSignatureUrl}
+          onClose={() => setAddendaContract(null)}
+          onShowToast={onShowToast}
+        />
+      )}
 
       {/* E-Signature Drawing Modal */}
       {signingContract && (
