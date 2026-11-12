@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { authorizeSlipRequest, slipDatabase, SlipError } from "@/lib/payment-slips-server";
-import { getPublicOrigin } from "@/lib/public-origin";
+import { resolvePublicOrigin } from "@/lib/public-origin";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
 import { resolveLineUserId } from "@/lib/line/reminders";
-import { buildSignRequestCard, chunkText, contractHtmlToText } from "@/lib/line/contract-signing";
 import type { Invoice } from "@/types/dormitory";
 
 export const runtime = "nodejs";
@@ -75,7 +74,19 @@ export async function POST(request: NextRequest) {
     if (action === "get" || action === "sign") {
       const token = request.nextUrl.searchParams.get("token") || "";
       const { db, row } = await getRequest(token);
+      // ข้อมูลล่าสุดของสัญญา: ผู้ให้เช่าอาจเซ็นทีหลัง / ผู้เช่าอาจเซ็นที่หอไปแล้ว
+      const { data: contractRow } = await db
+        .from("contracts")
+        .select("tenant_signature_url,landlord_signature_url")
+        .eq("contract_number", row.contract_number)
+        .maybeSingle();
+      if (!row.landlord_signature_url && contractRow?.landlord_signature_url) {
+        row.landlord_signature_url = contractRow.landlord_signature_url;
+      }
       if (action === "get") return NextResponse.json(publicView(row), { headers: privateHeaders });
+      if (row.status === "pending" && contractRow?.tenant_signature_url) {
+        throw new SlipError("สัญญานี้ลงนามไปแล้ว (เซ็นที่หอพัก) ไม่ต้องเซ็นซ้ำ", 409);
+      }
 
       if (row.status === "signed") throw new SlipError("สัญญานี้ลงนามเรียบร้อยแล้ว", 409);
       if (row.status !== "pending") throw new SlipError("ลิงก์นี้ถูกยกเลิกแล้ว กรุณาติดต่อหอพัก", 410);
@@ -126,7 +137,7 @@ export async function POST(request: NextRequest) {
           const property = await DatabaseService.getProperty(row.property_id);
           const settings = await DatabaseService.getBranchSettings(property, row.property_id);
           const token2 = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-          const origin = getPublicOrigin(request);
+          const origin = await resolvePublicOrigin(request);
           await pushLineMessage(token2, row.line_user_id, [
             {
               type: "text",
@@ -155,14 +166,22 @@ export async function POST(request: NextRequest) {
     if (action === "status") {
       const { data, error } = await db
         .from("contract_sign_requests")
-        .select("contract_number,contract_id,status,signed_at,tenant_signature_url,landlord_signature_url,expires_at,created_at")
+        .select("contract_number,contract_id,room_number,tenant_name,status,signed_at,tenant_signature_url,landlord_signature_url,expires_at,created_at")
         .eq("property_id", propertyId)
         .order("created_at", { ascending: false })
         .limit(300);
       if (error) throw new SlipError("โหลดสถานะการเซ็นสัญญาไม่สำเร็จ (รัน docs/supabase_contract_signing.sql แล้วหรือยัง)", 503);
+      // only contracts that still exist (old test / deleted contracts are ignored)
+      const numbers = Array.from(new Set((data || []).map((r: any) => r.contract_number)));
+      const { data: existing } = numbers.length
+        ? await db.from("contracts").select("contract_number").in("contract_number", numbers)
+        : { data: [] as { contract_number: string }[] };
+      const existingSet = new Set((existing || []).map((c: any) => c.contract_number));
       // latest request per contract
       const latest = new Map<string, any>();
-      for (const r of data || []) if (!latest.has(r.contract_number)) latest.set(r.contract_number, r);
+      for (const r of data || []) {
+        if (existingSet.has(r.contract_number) && !latest.has(r.contract_number)) latest.set(r.contract_number, r);
+      }
       return NextResponse.json({ requests: Array.from(latest.values()) }, { headers: privateHeaders });
     }
 
@@ -220,27 +239,61 @@ export async function POST(request: NextRequest) {
       });
       if (insError) throw new SlipError("สร้างลิงก์เซ็นสัญญาไม่สำเร็จ (รัน docs/supabase_contract_signing.sql แล้วหรือยัง)", 503);
 
-      // ส่งเนื้อหาสัญญาเข้าแชท LINE (ไม่ต้องใช้ลิงก์) ตามด้วยการ์ดปุ่ม "ยอมรับและลงนาม" (postback → webhook)
-      const textChunks = chunkText(
-        [`📄 สัญญาเช่าห้อง ${roomNumber} (เลขที่ ${contractNumber})`, "", contractHtmlToText(html)].join("\n")
-      );
-      const messages: any[] = [
-        ...textChunks.map((t) => ({ type: "text", text: t })),
-        buildSignRequestCard(token, contractNumber, roomNumber, String(body.tenantName || "")),
-      ];
-      // LINE: at most 5 messages per push
-      for (let i = 0; i < messages.length; i += 5) {
-        const res = await pushLineMessage(lineToken, lineUserId, messages.slice(i, i + 5));
-        if (!res.success) {
-          await db.from("contract_sign_requests").update({ status: "cancelled" }).eq("token", token);
-          throw new SlipError(`ส่ง LINE ไม่สำเร็จ: ${String(res.error || "").slice(0, 200)}`, 502);
-        }
+      // ส่งปุ่มเปิดหน้าเซ็นสัญญา (ผู้เช่าอ่านสัญญา + วาดลายเซ็นด้วยนิ้วบนมือถือ)
+      // ลิงก์ = ที่อยู่ tunnel ปัจจุบัน (ถาม cloudflared ให้เองทุกครั้ง)
+      const origin = await resolvePublicOrigin(request);
+      if (!origin) {
+        await db.from("contract_sign_requests").update({ status: "cancelled" }).eq("token", token);
+        throw new SlipError(
+          "หาลิงก์ tunnel ไม่เจอ: ตรวจว่า cloudflared (npx cloudflared tunnel --url http://127.0.0.1:3000) ยังเปิดอยู่ หรือใส่ PUBLIC_APP_URL ใน .env",
+          409
+        );
+      }
+      const link = `${origin}/sign/${token}`;
+      const res = await pushLineMessage(lineToken, lineUserId, [
+        {
+          type: "flex",
+          altText: `สัญญาเช่าห้อง ${roomNumber} รอลงนาม`,
+          contents: {
+            type: "bubble",
+            body: {
+              type: "box",
+              layout: "vertical",
+              spacing: "sm",
+              contents: [
+                { type: "text", text: "📝 สัญญาเช่ารอลงนาม", weight: "bold", size: "lg" },
+                { type: "text", text: `สัญญาเลขที่ ${contractNumber}`, size: "sm", color: "#555555", wrap: true },
+                { type: "text", text: `ห้อง ${roomNumber} · ${String(body.tenantName || "ผู้เช่า")}`, size: "sm", color: "#555555", wrap: true },
+                {
+                  type: "text",
+                  text: `กดปุ่มด้านล่างเพื่ออ่านสัญญาและเซ็นชื่อบนมือถือ (ภายใน ${LINK_DAYS} วัน)`,
+                  size: "xs",
+                  color: "#888888",
+                  wrap: true,
+                  margin: "md",
+                },
+              ],
+            },
+            footer: {
+              type: "box",
+              layout: "vertical",
+              contents: [
+                { type: "button", style: "primary", color: "#06C755", action: { type: "uri", label: "อ่านและเซ็นสัญญา", uri: link } },
+              ],
+            },
+          },
+        },
+      ]);
+      if (!res.success) {
+        await db.from("contract_sign_requests").update({ status: "cancelled" }).eq("token", token);
+        throw new SlipError(`ส่ง LINE ไม่สำเร็จ: ${String(res.error || "").slice(0, 200)}`, 502);
       }
       return NextResponse.json(
         {
           success: true,
           expiresAt,
-          message: `ส่งสัญญาเข้า LINE ผู้เช่าห้อง ${roomNumber} แล้ว รอผู้เช่ากด "ยอมรับและลงนาม" ในแชท (ภายใน ${LINK_DAYS} วัน)`,
+          link,
+          message: `ส่งลิงก์เซ็นสัญญาไปที่ LINE ผู้เช่าห้อง ${roomNumber} แล้ว รอผู้เช่าเซ็น (ภายใน ${LINK_DAYS} วัน)`,
         },
         { headers: privateHeaders }
       );

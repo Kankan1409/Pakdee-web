@@ -1728,6 +1728,17 @@ export const DatabaseService = {
     return true;
   },
 
+  /** ผู้ให้เช่าลงนามในสัญญาฉบับนี้ (ไม่เปลี่ยนสถานะสัญญา) */
+  async updateContractLandlordSignature(id: string, landlordSignatureUrl: string): Promise<boolean> {
+    const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
+    setLocal(
+      KEYS.CONTRACTS,
+      all.map((c) => (c.id === id ? { ...c, landlordSignatureUrl } : c))
+    );
+    await this.logActivity("UPDATE", "CONTRACT", `ผู้ให้เช่าลงนามในสัญญาเช่าอิเล็กทรอนิกส์`);
+    return true;
+  },
+
   async terminateRoomContracts(roomNumber: string, propertyId?: string): Promise<boolean> {
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
     const targetPropId = propertyId || this.getActivePropertyId();

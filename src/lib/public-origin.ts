@@ -30,3 +30,35 @@ export function getPublicOrigin(req: Request): string {
   if (isPublic(current)) return current;
   return g.__pakdeePublicOrigin || "";
 }
+
+/**
+ * Asks the running Cloudflare quick tunnel (`cloudflared tunnel --url …`) for its current address.
+ * cloudflared serves it on its local metrics port (127.0.0.1:20241–20245) at /quicktunnel.
+ */
+async function detectQuickTunnel(): Promise<string> {
+  for (let port = 20241; port <= 20245; port++) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/quicktunnel`, { signal: AbortSignal.timeout(1500), cache: "no-store" });
+      if (!res.ok) continue;
+      const data = (await res.json().catch(() => ({}))) as { hostname?: string };
+      if (data.hostname && /^[a-z0-9.-]+$/i.test(data.hostname)) return `https://${data.hostname}`;
+    } catch {
+      // port not used by cloudflared
+    }
+  }
+  return "";
+}
+
+/** Like getPublicOrigin, and also asks cloudflared when nothing else is known (always the current tunnel). */
+export async function resolvePublicOrigin(req: Request): Promise<string> {
+  const env = (process.env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
+  if (env) return env;
+  const current = originOf(req);
+  if (isPublic(current)) return current;
+  const tunnel = await detectQuickTunnel();
+  if (tunnel) {
+    g.__pakdeePublicOrigin = tunnel;
+    return tunnel;
+  }
+  return g.__pakdeePublicOrigin || "";
+}

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Room, Invoice, RepairItem } from "@/types/dormitory";
 import { useFailedSlips } from "@/lib/use-failed-slips";
+import { useSignedContracts } from "@/lib/use-signed-contracts";
 
 export interface NotificationItem {
   id: string;
@@ -84,6 +85,7 @@ export function NotificationDropdown({
   propertyId = "",
 }: NotificationDropdownProps) {
   const { entries: failedSlipEntries } = useFailedSlips(propertyId, invoices);
+  const signedContracts = useSignedContracts(propertyId);
   const [isOpen, setIsOpen] = useState(false);
   const [readIds, setReadIds] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
@@ -132,6 +134,21 @@ export function NotificationDropdown({
         time: new Date(slip.uploaded_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }),
         isRead: readIds.includes(`slipfail-${slip.id}`),
         actionText: "ไปที่รายการใบแจ้งหนี้ & การชำระเงิน",
+      });
+    });
+
+    // 1c. ผู้เช่าเซ็นสัญญาผ่านลิงก์ LINE แล้ว (7 วันล่าสุด)
+    signedContracts.forEach((sc) => {
+      list.push({
+        id: `signed-${sc.contractNumber}`,
+        title: `ห้อง ${sc.roomNumber} เซ็นสัญญาเช่าแล้ว${sc.tenantName ? ` (${sc.tenantName})` : ""}`,
+        description: `สัญญาเลขที่ ${sc.contractNumber} ลงนามผ่าน LINE เรียบร้อย`,
+        type: "success",
+        category: "contracts",
+        targetTab: "leases",
+        time: new Date(sc.signedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }),
+        isRead: readIds.includes(`signed-${sc.contractNumber}`),
+        actionText: "ไปที่สัญญาเช่าดิจิทัล",
       });
     });
 
@@ -207,7 +224,7 @@ export function NotificationDropdown({
     }
 
     return list;
-  }, [rooms, invoices, repairs, readIds, failedSlipEntries]);
+  }, [rooms, invoices, repairs, readIds, failedSlipEntries, signedContracts]);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 

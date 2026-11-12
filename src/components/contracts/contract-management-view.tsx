@@ -39,6 +39,8 @@ interface ContractManagementViewProps {
   landlordSignatureUrl?: string;
   /** Tenant signed through the LINE link (found on the server) → save into the contract */
   onRemoteSigned?: (contractId: string, tenantSignatureUrl: string, landlordSignatureUrl: string | undefined, signedAt: string) => void;
+  /** Landlord drew a signature for this contract */
+  onUpdateLandlordSignature?: (contractId: string, signatureUrl: string) => void;
   onShowToast?: (message: string, type: "success" | "error" | "info" | "warning") => void;
 }
 
@@ -62,6 +64,7 @@ export function ContractManagementView({
   landlordSignatureUrl = "",
   onRemoteSigned,
   onShowToast,
+  onUpdateLandlordSignature,
 }: ContractManagementViewProps) {
   const landlordName = propertyName ? `หอพัก ${propertyName}` : "หอพัก";
 
@@ -82,12 +85,23 @@ export function ContractManagementView({
   useEffect(() => {
     loadSignRequests();
   }, [loadSignRequests, contracts.length]);
+  // เช็คสถานะการเซ็น: ทุก 10 วินาทีระหว่างที่มีสัญญารอเซ็น (ปกติทุก 1 นาที) + ตอนกลับมาที่หน้าต่าง
+  const hasPendingSign = Array.from(signRequests.values()).some((r) => r.status === "pending");
+  useEffect(() => {
+    const timer = setInterval(loadSignRequests, hasPendingSign ? 10000 : 60000);
+    window.addEventListener("focus", loadSignRequests);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", loadSignRequests);
+    };
+  }, [loadSignRequests, hasPendingSign]);
   useEffect(() => {
     if (!onRemoteSigned) return;
     for (const c of contracts) {
       const r = signRequests.get(c.contractNumber);
       if (r?.status === "signed" && r.tenant_signature_url && c.signatureUrl !== r.tenant_signature_url) {
         onRemoteSigned(c.id, r.tenant_signature_url, r.landlord_signature_url || undefined, r.signed_at || new Date().toISOString());
+        onShowToast?.(`ห้อง ${c.roomNumber} ผู้เช่าเซ็นสัญญา ${c.contractNumber} ผ่าน LINE แล้ว ✓`, "success");
       }
     }
   }, [signRequests, contracts, onRemoteSigned]);
@@ -111,7 +125,7 @@ export function ContractManagementView({
         landlordSignatureUrl: contract.landlordSignatureUrl || landlordSignatureUrl || "",
         contractHtml: clone.innerHTML,
       });
-      onShowToast?.(data.message || "ส่งสัญญาเข้า LINE แล้ว", "success");
+      onShowToast?.(data.message || "ส่งลิงก์เซ็นสัญญาแล้ว", "success");
       await loadSignRequests();
     } catch (e: any) {
       onShowToast?.(e?.message || String(e), "error");
@@ -126,6 +140,8 @@ export function ContractManagementView({
 
   // E-Signature Pad State
   const [signingContract, setSigningContract] = useState<ContractItem | null>(null);
+  /** who is drawing in the signature pad: the tenant (at the dorm) or the landlord */
+  const [signingRole, setSigningRole] = useState<"tenant" | "landlord">("tenant");
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [hasSignatureDrawn, setHasSignatureDrawn] = useState<boolean>(false);
@@ -287,6 +303,16 @@ export function ContractManagementView({
     const canvas = canvasRef.current;
     if (!canvas || !signingContract) return;
     const signatureUrl = canvas.toDataURL("image/png");
+    if (signingRole === "landlord") {
+      // ผู้ให้เช่าลงนามในสัญญาฉบับนี้
+      onUpdateLandlordSignature?.(signingContract.id, signatureUrl);
+      if (previewContract && previewContract.id === signingContract.id) {
+        setPreviewContract({ ...previewContract, landlordSignatureUrl: signatureUrl });
+      }
+      setSigningContract(null);
+      setSigningRole("tenant");
+      return;
+    }
     if (onUpdateSignature) {
       onUpdateSignature(signingContract.id, signatureUrl);
     }
@@ -475,6 +501,7 @@ export function ContractManagementView({
                       ) : (
                         <button
                           onClick={() => {
+                            setSigningRole("tenant");
                             setSigningContract(c);
                             setHasSignatureDrawn(false);
                           }}
@@ -488,9 +515,9 @@ export function ContractManagementView({
                       {!c.signatureUrl && signRequests.get(c.contractNumber)?.status === "pending" && (
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold text-[11px] border border-amber-500/20"
-                          title="ส่งสัญญาเข้า LINE แล้ว รอผู้เช่ากด ยอมรับและลงนาม"
+                          title="ส่งลิงก์เซ็นทาง LINE แล้ว รอผู้เช่าเซ็น"
                         >
-                          รอยืนยันทาง LINE
+                          รอเซ็นทาง LINE
                         </span>
                       )}
                       <button
@@ -1117,13 +1144,36 @@ export function ContractManagementView({
                     <div className="min-h-[64px] flex items-center justify-center border-b border-dashed border-slate-400 mb-2 pb-1">
                       {/* ลายเซ็นผู้ให้เช่า: สำเนาที่เก็บไว้ในสัญญาตอนเซ็น หรือลายเซ็นปัจจุบันจากตั้งค่าสาขา */}
                       {previewContract.landlordSignatureUrl || landlordSignatureUrl ? (
-                        <img
-                          src={previewContract.landlordSignatureUrl || landlordSignatureUrl}
-                          alt="ลายเซ็นผู้ให้เช่า"
-                          className="h-12 max-w-[180px] object-contain"
-                        />
+                        <div className="flex flex-col items-center">
+                          <img
+                            src={previewContract.landlordSignatureUrl || landlordSignatureUrl}
+                            alt="ลายเซ็นผู้ให้เช่า"
+                            className="h-12 max-w-[180px] object-contain"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSigningRole("landlord");
+                              setSigningContract(previewContract);
+                              setHasSignatureDrawn(false);
+                            }}
+                            className="text-[9px] text-purple-600 underline mt-0.5 cursor-pointer print:hidden"
+                          >
+                            เซ็นใหม่
+                          </button>
+                        </div>
                       ) : (
-                        <div className="text-[11px] text-slate-400 italic">ฝ่ายบริหารจัดการหอพัก</div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSigningRole("landlord");
+                            setSigningContract(previewContract);
+                            setHasSignatureDrawn(false);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-semibold text-[11px] cursor-pointer print:hidden"
+                        >
+                          ✍️ คลิกเพื่อเซ็น (ผู้ให้เช่า)
+                        </button>
                       )}
                     </div>
                     <div>ลงชื่อ.................................................... ผู้ให้เช่า</div>
@@ -1161,21 +1211,24 @@ export function ContractManagementView({
                     <button
                       type="button"
                       onClick={() => sendSignLink(previewContract)}
-                      disabled={sendingSignLink}
+                      disabled={sendingSignLink || !(previewContract.landlordSignatureUrl || landlordSignatureUrl)}
                       className="px-3.5 py-2 rounded-xl bg-[#06C755] hover:bg-[#05b14c] text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      title="ส่งข้อความสัญญาเข้าแชท LINE ผู้เช่า พร้อมปุ่ม ยอมรับและลงนาม (ภายใน 7 วัน)"
+                      title="ส่งลิงก์ให้ผู้เช่าอ่านสัญญาและเซ็นชื่อบนมือถือผ่าน LINE (ใช้ได้ 7 วัน)"
                     >
                       <FileSignature className="w-3.5 h-3.5" />
                       {sendingSignLink
                         ? "กำลังส่ง..."
                         : signRequests.get(previewContract.contractNumber)?.status === "pending"
-                          ? "ส่งสัญญาให้ยืนยันอีกครั้งทาง LINE"
-                          : "ส่งสัญญาให้ผู้เช่ายืนยันทาง LINE"}
+                          ? "ส่งลิงก์เซ็นอีกครั้งทาง LINE"
+                          : "ส่งให้ผู้เช่าเซ็นทาง LINE"}
                     </button>
+                  )}
+                  {!previewContract.signatureUrl && propertyId && !(previewContract.landlordSignatureUrl || landlordSignatureUrl) && (
+                    <span className="text-[11px] text-rose-600">ผู้ให้เช่าต้องเซ็นก่อน (กด &quot;คลิกเพื่อเซ็น&quot; ในช่องผู้ให้เช่า)</span>
                   )}
                   {!previewContract.signatureUrl && signRequests.get(previewContract.contractNumber)?.status === "pending" && (
                     <span className="text-[11px] text-amber-600">
-                      ส่งแล้ว รอผู้เช่ากดยืนยันใน LINE (ภายใน{" "}
+                      ส่งลิงก์แล้ว รอผู้เช่าเซ็น (ภายใน{" "}
                       {new Date(signRequests.get(previewContract.contractNumber)!.expires_at).toLocaleDateString("th-TH")})
                     </span>
                   )}
@@ -1250,7 +1303,9 @@ export function ContractManagementView({
                   <PenTool className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm">ลงลายเซ็นอิเล็กทรอนิกส์ (E-Signature)</h3>
+                  <h3 className="font-bold text-sm">
+                    {signingRole === "landlord" ? "ผู้ให้เช่าลงนาม (E-Signature)" : "ผู้เช่าลงลายเซ็นอิเล็กทรอนิกส์ (E-Signature)"}
+                  </h3>
                   <p className="text-[11px] text-slate-500">
                     สัญญาห้อง {signingContract.roomNumber} - {signingContract.tenantName}
                   </p>

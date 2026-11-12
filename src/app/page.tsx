@@ -3309,6 +3309,13 @@ export default function HomePage() {
               landlordSignatureUrl={branchSettings.signatureUrl || ""}
               onShowToast={showToast}
               onRemoteSigned={handleRemoteContractSigned}
+              onUpdateLandlordSignature={async (contractId, signatureUrl) => {
+                setContracts((prev) =>
+                  prev.map((c) => (c.id === contractId ? { ...c, landlordSignatureUrl: signatureUrl } : c))
+                );
+                await DatabaseService.updateContractLandlordSignature(contractId, signatureUrl);
+                showToast("ผู้ให้เช่าลงนามในสัญญาเรียบร้อยแล้ว ✓", "success");
+              }}
             />
           )}
 

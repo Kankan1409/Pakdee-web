@@ -1,5 +1,5 @@
 import { rememberPublicOrigin } from "@/lib/public-origin";
-import { CONTRACT_SIGN_POSTBACK, signContractFromLinePostback } from "@/lib/line/contract-signing";
+import { CONTRACT_SIGN_POSTBACK } from "@/lib/line/contract-signing";
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import { SlipError } from "@/lib/payment-slips-server";
@@ -95,16 +95,11 @@ export async function POST(req: NextRequest) {
       }
       console.log(`[LINE-WEBHOOK] >>> TRANSACTION: Type=${event.type} User=${userId} Msg=${event.message?.text || event.message?.type}`);
 
-      // Event: Postback "ยอมรับและลงนาม" สัญญาเช่า (ส่งมาจากปุ่ม ส่งสัญญาให้ผู้เช่ายืนยันทาง LINE)
+      // Event: Postback "ยอมรับและลงนาม" จากการ์ดรุ่นทดสอบเก่า — ปิดแล้ว (ให้เซ็นได้ทางเดียวคือวาดลายเซ็นผ่านลิงก์)
       if (event.type === "postback" && String(event.postback?.data || "").startsWith(CONTRACT_SIGN_POSTBACK)) {
-        let replyText = "ไม่สามารถบันทึกการลงนามได้ กรุณาติดต่อหอพัก";
-        try {
-          const profile = userId ? await getLineUserProfile(channelAccessToken, userId) : null;
-          replyText = await signContractFromLinePostback(String(event.postback.data), userId || "", profile?.displayName || "");
-        } catch (e: any) {
-          console.error("[LINE-WEBHOOK] contract sign postback failed:", e?.message || e);
-        }
-        await replyLineMessage(channelAccessToken, replyToken, [{ type: "text", text: replyText }]);
+        await replyLineMessage(channelAccessToken, replyToken, [
+          { type: "text", text: "ปุ่มนี้ยกเลิกแล้ว กรุณาเซ็นสัญญาผ่านปุ่ม \"อ่านและเซ็นสัญญา\" ในข้อความล่าสุดจากหอพัก" },
+        ]);
         continue;
       }
 

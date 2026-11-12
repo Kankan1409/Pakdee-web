@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
     "0.0.0.0",
     "0.0.0.0:3000",
     "0.0.0.0:3001",
+    // Cloudflare quick tunnel (ที่อยู่เปลี่ยนทุกครั้ง) — ให้หน้าเซ็นสัญญาที่ผู้เช่าเปิดจาก LINE โหลด JavaScript ได้ตอน npm run dev
+    "*.trycloudflare.com",
   ],
   turbopack: {
     rules: {
