@@ -10,6 +10,7 @@ import {
 import { verifyLinePayment } from "@/lib/line/verify-payment";
 import { formatReceiptNumber } from "@/lib/line/receipt-delivery";
 import {
+  attachQuickReplyToLast,
   buildInvoiceFlexMessage,
   buildReceiptFlexMessage,
   buildRepairTicketFlexMessage,
@@ -196,19 +197,19 @@ export async function POST(req: NextRequest) {
 
             if (boundTenant) {
               const invoices = await DatabaseService.getInvoices(activePropId);
+              const payableStatuses = new Set(["unpaid", "overdue", "pending_review"]);
               const unpaidForRoom = invoices.filter(
                 (i) =>
                   (i.roomNumber === boundTenant.roomNumber ||
                     DatabaseService.isRoomNumberMatch(i.roomNumber, boundTenant.roomNumber) ||
                     DatabaseService.isRoomNumberMatch(i.roomNumber, requestedRoom)) &&
-                  i.status !== "paid"
+                  payableStatuses.has(i.status)
               );
 
               const replyTexts: any[] = [
                 {
                   type: "text",
                   text: `🎉 ผูกบัญชี LINE กับห้อง ${requestedRoom} (${boundTenant.fullName}) สำเร็จเรียบร้อยแล้วครับ!\n\nจากนี้ระบบจะส่งบิลแจ้งหนี้ค่าเช่าและค่าน้ำค่าไฟเข้าไลน์นี้ทุกเดือนครับ ✨`,
-                  quickReply: getDefaultQuickReply(),
                 },
               ];
 
@@ -226,7 +227,7 @@ export async function POST(req: NextRequest) {
                 replyTexts.push(flexInvoice as any);
               }
 
-              await sendReply(replyTexts);
+              await sendReply(attachQuickReplyToLast(replyTexts));
               continue;
             } else {
               await sendReply([
@@ -255,12 +256,18 @@ export async function POST(req: NextRequest) {
             }
 
             const invoices = await DatabaseService.getInvoices(activePropId);
-            const unpaid = invoices.find(
-              (i) =>
-                (i.roomNumber === tenant.roomNumber ||
-                  DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
-                i.status !== "paid"
-            );
+            const payableStatuses = new Set(["unpaid", "overdue", "pending_review"]);
+            const unpaid =
+              invoices.find(
+                (i) =>
+                  i.roomNumber.trim().toLowerCase() === tenant.roomNumber!.trim().toLowerCase() &&
+                  payableStatuses.has(i.status)
+              ) ||
+              invoices.find(
+                (i) =>
+                  DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber) &&
+                  payableStatuses.has(i.status)
+              );
 
             if (unpaid) {
               let qrUrl = "";
@@ -363,13 +370,16 @@ export async function POST(req: NextRequest) {
           // ค้นหาบิลค้างชำระของห้องนี้ (ยึด ROOMS เป็นหลัก และเทียบเบอร์ห้องตรงตัวก่อน)
           const invoices = await DatabaseService.getInvoices(activePropId);
           const cleanTenantRoom = tenant.roomNumber.trim().toLowerCase();
+          const payableStatuses = new Set(["unpaid", "overdue", "pending_review"]);
           const unpaid =
             invoices.find(
-              (i) => i.status !== "paid" && i.roomNumber.trim().toLowerCase() === cleanTenantRoom
+              (i) =>
+                payableStatuses.has(i.status) &&
+                i.roomNumber.trim().toLowerCase() === cleanTenantRoom
             ) ||
             invoices.find(
               (i) =>
-                i.status !== "paid" &&
+                payableStatuses.has(i.status) &&
                 DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)
             );
 
@@ -397,7 +407,7 @@ export async function POST(req: NextRequest) {
 
           try {
             const result = await verifyLinePayment(activePropId, unpaid, settings, imageBuffer, "line-" + message.id);
-            const replies: any[] = [{ type: "text", text: result.message, quickReply: getDefaultQuickReply() }];
+            const replies: any[] = [{ type: "text", text: result.message }];
             if (result.amount !== undefined) {
               replies.push(
                 buildReceiptFlexMessage(
@@ -408,7 +418,7 @@ export async function POST(req: NextRequest) {
                 )
               );
             }
-            const sendRes = await sendReply(replies);
+            const sendRes = await sendReply(attachQuickReplyToLast(replies));
             console.log("[LINE-WEBHOOK] Slip verification delivery:", {
               invoiceNumber: unpaid.invoiceNumber,
               roomNumber: unpaid.roomNumber,

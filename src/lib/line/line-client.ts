@@ -168,12 +168,21 @@ export async function replyOrPushLineMessages(
   if (safeMessages.length > 1) {
     const delivered: LineSendResult[] = [];
     let firstItemError = batchPush.error;
-    for (const msg of safeMessages) {
+    for (let idx = 0; idx < safeMessages.length; idx++) {
+      const msg = safeMessages[idx];
       const singleRes = await pushLineMessage(channelAccessToken, trimmedUserId, [msg]);
       if (singleRes.success) {
         delivered.push(singleRes);
-      } else if (!firstItemError) {
-        firstItemError = singleRes.error;
+      } else {
+        console.warn("[LINE-CLIENT] Partial push item failed:", {
+          index: idx,
+          type: msg?.type,
+          statusCode: singleRes.statusCode,
+          error: singleRes.error,
+        });
+        if (!firstItemError) {
+          firstItemError = singleRes.error;
+        }
       }
     }
     if (delivered.length > 0) {

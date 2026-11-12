@@ -276,7 +276,9 @@ test('LINE webhook delivers receipt Flex via pushMessage fallback when reply fai
   assert.equal(pushedPayloads[0].to, 'U1234567890abcdef');
   assert.equal(pushedPayloads[0].messages.length, 2);
   assert.equal(pushedPayloads[0].messages[0].type, 'text');
+  assert.equal(pushedPayloads[0].messages[0].quickReply, undefined);
   assert.equal(pushedPayloads[0].messages[1].type, 'flex');
+  assert.ok(Array.isArray(pushedPayloads[0].messages[1].quickReply?.items));
   assert.match(pushedPayloads[0].messages[1].altText, /REC-202611-A1/);
   const textNodes = collectFlexTextNodes(pushedPayloads[0].messages[1].contents);
   assert.ok(textNodes.every((t) => typeof t === 'string' && t.trim().length > 0));
@@ -324,5 +326,26 @@ test('payment-slips upload notifies LINE receipt when Slip2Go passes', async () 
   assert.equal(pushed.length, 1);
   assert.equal(pushed[0].invoiceIdOrNumber, 'INV-202611-A1');
   assert.equal(pushed[0].paidAmount, 4972);
+});
+
+test('attachQuickReplyToLast puts quickReply only on the final message and mock defaults have no stale LINE secrets', () => {
+  const flexTemplates = loadTsModule('src/lib/line/flex-templates.ts', {
+    '@/lib/utils': loadTsModule('src/lib/utils.ts', {
+      clsx: (...args) => args.flat().filter(Boolean).join(' '),
+      'tailwind-merge': (s) => s,
+    }),
+  });
+  const arranged = flexTemplates.attachQuickReplyToLast([
+    { type: 'text', text: 'first', quickReply: { items: [] } },
+    { type: 'flex', altText: 'card', contents: { type: 'bubble' } },
+  ]);
+  assert.equal(arranged[0].quickReply, undefined);
+  assert.ok(Array.isArray(arranged[1].quickReply?.items) && arranged[1].quickReply.items.length > 0);
+
+  const mockData = loadTsModule('src/lib/mock-data.ts', {
+    '@/types/dormitory': {},
+  });
+  assert.equal(mockData.initialBranchSettings.lineChannelAccessToken, '');
+  assert.equal(mockData.initialBranchSettings.lineChannelSecret, '');
 });
 

@@ -9,6 +9,7 @@
  *   --target-host IP   (default: 127.0.0.1)
  *   --tunnel-only      (attach tunnel & LINE webhook to an already-running server)
  *   --no-line-sync     (skip updating LINE Developers webhook endpoint)
+ *   --restart          (terminate an existing local listener on --port before starting)
  */
 
 import fs from "node:fs";
@@ -29,6 +30,7 @@ const PORT = Number(getArg("--port", process.env.PORT || "3000"));
 const TARGET_HOST = getArg("--target-host", "127.0.0.1");
 const TUNNEL_ONLY = args.includes("--tunnel-only");
 const NO_LINE_SYNC = args.includes("--no-line-sync");
+const FORCE_RESTART = args.includes("--restart");
 
 const ROOT_DIR = process.cwd();
 
@@ -90,28 +92,32 @@ function isPortOpen(host, port, timeoutMs = 1000) {
   });
 }
 
-async function resolveLineToken() {
+async function resolveLineTokens() {
+  const tokens = new Set();
   if (envConfig.LINE_CHANNEL_ACCESS_TOKEN?.trim()) {
-    return envConfig.LINE_CHANNEL_ACCESS_TOKEN.trim();
+    tokens.add(envConfig.LINE_CHANNEL_ACCESS_TOKEN.trim());
   }
 
   const sbUrl = envConfig.NEXT_PUBLIC_SUPABASE_URL;
   const sbKey = envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY || envConfig.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (sbUrl && sbKey) {
     try {
-      const res = await fetch(`${sbUrl}/rest/v1/branch_settings?select=line_channel_access_token&limit=5`, {
+      const res = await fetch(`${sbUrl}/rest/v1/branch_settings?select=line_channel_access_token&limit=20`, {
         headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` },
       });
       if (res.ok) {
         const rows = await res.json();
-        const found = rows.find((r) => r.line_channel_access_token && r.line_channel_access_token.trim() !== "");
-        if (found) return found.line_channel_access_token.trim();
+        for (const r of Array.isArray(rows) ? rows : []) {
+          if (r.line_channel_access_token && r.line_channel_access_token.trim() !== "") {
+            tokens.add(r.line_channel_access_token.trim());
+          }
+        }
       }
     } catch {
       // Ignore Supabase network error and fall back to manual URL warning
     }
   }
-  return "";
+  return Array.from(tokens);
 }
 
 async function waitForLocalServer(url, maxAttempts = 60) {
@@ -127,22 +133,27 @@ async function waitForLocalServer(url, maxAttempts = 60) {
   return false;
 }
 
-async function syncLineWebhook(webhookUrl) {
-  if (NO_LINE_SYNC) {
-    console.log(`[AUTO-BOT] (--no-line-sync) ข้ามการอัปเดต LINE Webhook: ${webhookUrl}`);
-    return;
+async function syncSingleTokenWebhook(token, webhookUrl) {
+  const putRes = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ endpoint: webhookUrl }),
+  });
+
+  if (!putRes.ok) {
+    const errText = await putRes.text();
+    console.error(`[AUTO-BOT] ❌ อัปเดต Webhook ไปยัง LINE API ไม่สำเร็จ (${putRes.status}): ${errText}`);
+    return false;
   }
 
-  const token = await resolveLineToken();
-  if (!token) {
-    console.warn("\n[AUTO-BOT] ⚠️ ไม่พบ LINE_CHANNEL_ACCESS_TOKEN ใน .env.local กรุณานำ Webhook URL ไปวางใน LINE Developers Console เอง:");
-    console.warn(`           ${webhookUrl}\n`);
-    return;
-  }
-
-  try {
-    const putRes = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
-      method: "PUT",
+  // Retry LINE webhook verification test while trycloudflare DNS propagates
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt === 1 ? 2500 : 3000));
+    const testRes = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -150,42 +161,49 @@ async function syncLineWebhook(webhookUrl) {
       body: JSON.stringify({ endpoint: webhookUrl }),
     });
 
-    if (!putRes.ok) {
-      const errText = await putRes.text();
-      console.error(`[AUTO-BOT] ❌ อัปเดต Webhook ไปยัง LINE API ไม่สำเร็จ (${putRes.status}): ${errText}`);
-      return;
-    }
-
-    // Retry LINE webhook verification test while trycloudflare DNS propagates
-    for (let attempt = 1; attempt <= 6; attempt++) {
-      await new Promise((r) => setTimeout(r, attempt === 1 ? 2500 : 3000));
-      const testRes = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ endpoint: webhookUrl }),
-      });
-
-      if (testRes.ok) {
-        const result = await testRes.json();
-        if (result.success && result.statusCode === 200) {
-          const lanIp = getLanIp();
-          console.log("\n================================================================================");
-          console.log("  ✅ PAKDEE SERVER + CLOUDFLARE TUNNEL + LINE BOT READY!");
-          console.log("================================================================================");
-          console.log(`  🌐 Local / LAN Web : http://${lanIp}:${PORT}`);
-          console.log(`  🤖 LINE Webhook URL: ${webhookUrl}`);
-          console.log("  🔗 LINE Developers : Synced & Verified (HTTP 200 OK)");
-          console.log("================================================================================\n");
-          return;
-        }
+    if (testRes.ok) {
+      const result = await testRes.json();
+      if (result.success && result.statusCode === 200) {
+        return true;
       }
-      console.log(`[AUTO-BOT] ⏳ รอ DNS propagation เพื่อทดสอบ LINE Webhook (ครั้งที่ ${attempt}/6)...`);
+    }
+    console.log(`[AUTO-BOT] ⏳ รอ DNS propagation เพื่อทดสอบ LINE Webhook (ครั้งที่ ${attempt}/6)...`);
+  }
+  return false;
+}
+
+async function syncLineWebhook(webhookUrl) {
+  if (NO_LINE_SYNC) {
+    console.log(`[AUTO-BOT] (--no-line-sync) ข้ามการอัปเดต LINE Webhook: ${webhookUrl}`);
+    return;
+  }
+
+  const tokens = await resolveLineTokens();
+  if (tokens.length === 0) {
+    console.warn("\n[AUTO-BOT] ⚠️ ไม่พบ LINE_CHANNEL_ACCESS_TOKEN ใน .env.local กรุณานำ Webhook URL ไปวางใน LINE Developers Console เอง:");
+    console.warn(`           ${webhookUrl}\n`);
+    return;
+  }
+
+  try {
+    let allVerified = true;
+    for (const token of tokens) {
+      const verified = await syncSingleTokenWebhook(token, webhookUrl);
+      if (!verified) allVerified = false;
     }
 
-    console.warn(`[AUTO-BOT] ⚠️ อัปเดต Webhook URL ไปยัง LINE แล้ว (${webhookUrl}) แต่การทดสอบยังรอ DNS ทำงานสักครู่`);
+    const lanIp = getLanIp();
+    if (allVerified) {
+      console.log("\n================================================================================");
+      console.log("  ✅ PAKDEE SERVER + CLOUDFLARE TUNNEL + LINE BOT READY!");
+      console.log("================================================================================");
+      console.log(`  🌐 Local / LAN Web : http://${lanIp}:${PORT}`);
+      console.log(`  🤖 LINE Webhook URL: ${webhookUrl}`);
+      console.log(`  🔗 LINE Developers : Synced & Verified (${tokens.length} OA, HTTP 200 OK)`);
+      console.log("================================================================================\n");
+    } else {
+      console.warn(`[AUTO-BOT] ⚠️ อัปเดต Webhook URL ไปยัง LINE แล้ว (${webhookUrl}) แต่การทดสอบยังรอ DNS ทำงานสักครู่`);
+    }
   } catch (err) {
     console.error("[AUTO-BOT] ❌ เกิดข้อผิดพลาดในการเชื่อมต่อ LINE API:", err.message);
   }
@@ -256,11 +274,38 @@ async function main() {
   const localTarget = `http://${TARGET_HOST}:${PORT}`;
 
   if (!TUNNEL_ONLY) {
-    const portBusy = await isPortOpen(TARGET_HOST, PORT);
+    let portBusy = await isPortOpen(TARGET_HOST, PORT);
+    if (portBusy && FORCE_RESTART && (TARGET_HOST === "127.0.0.1" || TARGET_HOST === "localhost")) {
+      console.log(`[AUTO-BOT] 🔄 (--restart) กำลังปิดเซิร์ฟเวอร์เดิมบนพอร์ต ${PORT}...`);
+      try {
+        if (process.platform === "win32") {
+          const out = execSync(`netstat -ano -p tcp | findstr :${PORT}`, { encoding: "utf8" });
+          const pids = new Set(
+            out
+              .split(/\r?\n/)
+              .map((l) => l.trim().split(/\s+/))
+              .filter((parts) => parts.length >= 5 && parts[1].endsWith(`:${PORT}`) && parts[3] === "LISTENING")
+              .map((parts) => Number(parts[4]))
+              .filter((pid) => Number.isFinite(pid) && pid > 0 && pid !== process.pid)
+          );
+          for (const pid of pids) {
+            execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+          }
+        } else {
+          execSync(`fuser -k ${PORT}/tcp`, { stdio: "ignore" });
+        }
+        await new Promise((r) => setTimeout(r, 1200));
+        portBusy = await isPortOpen(TARGET_HOST, PORT);
+      } catch {
+        // Fall through to normal port-busy check
+      }
+    }
+
     if (portBusy) {
       const alreadyPakdee = await waitForLocalServer(localTarget, 2);
       if (alreadyPakdee) {
         console.log(`[AUTO-BOT] ℹ️ พอร์ต ${PORT} มีเซิร์ฟเวอร์ PAKDEE เปิดใช้งานอยู่แล้ว — กำลังเชื่อม Cloudflare Tunnel ต่อให้ทันที...`);
+        console.warn(`[AUTO-BOT] ⚠️ คำเตือน: เซิร์ฟเวอร์ Next.js เดิมยังคงทำงานอยู่ (ไม่ได้โหลดโค้ดใหม่จาก git pull) หากต้องการรีสตาร์ทโค้ดใหม่ให้ปิดหน้าต่างเซิร์ฟเวอร์เดิมก่อน หรือรันพร้อม --restart`);
       } else {
         console.error(`[AUTO-BOT] ❌ พอร์ต ${PORT} ถูกโปรแกรมอื่นใช้งานอยู่ กรุณาปิดโปรแกรมนั้นก่อนหรือใช้ --port อื่น`);
         process.exit(1);

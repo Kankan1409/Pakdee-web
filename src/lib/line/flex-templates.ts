@@ -1010,3 +1010,24 @@ export function getDefaultQuickReply() {
     ],
   };
 }
+
+/**
+ * LINE Messaging API only renders quickReply attached to the LAST message object in `messages[]`.
+ */
+export function attachQuickReplyToLast<T extends Record<string, any>>(
+  messages: T[],
+  quickReply = getDefaultQuickReply()
+): T[] {
+  const valid = (Array.isArray(messages) ? messages : []).filter(Boolean);
+  if (valid.length === 0) return [];
+  return valid.map((msg, idx) => {
+    if (idx === valid.length - 1) {
+      return { ...msg, quickReply: msg.quickReply ?? quickReply };
+    }
+    if ("quickReply" in msg) {
+      const { quickReply: _ignored, ...rest } = msg;
+      return rest as T;
+    }
+    return msg;
+  });
+}

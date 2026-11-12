@@ -1,5 +1,9 @@
 import { DatabaseService } from "@/lib/database.service";
-import { buildReceiptFlexMessage, getDefaultQuickReply } from "@/lib/line/flex-templates";
+import {
+  attachQuickReplyToLast,
+  buildReceiptFlexMessage,
+  getDefaultQuickReply,
+} from "@/lib/line/flex-templates";
 import { LineDeliveryResult, replyOrPushLineMessages } from "@/lib/line/line-client";
 import { toUuid } from "@/lib/supabase-relational";
 import { BranchSettingsDetail, Invoice, Property, Room, Tenant } from "@/types/dormitory";
@@ -44,19 +48,21 @@ export function buildReceiptMessages(
   const text =
     introText?.trim() ||
     `✅ ชำระเงินเรียบร้อยแล้ว บิล ${invoice.invoiceNumber} (ห้อง ${invoice.roomNumber})\nยอดรับชำระ ฿${Number(paidAmount || 0).toLocaleString("th-TH")} ขอบคุณครับ 🙏`;
-  return [
-    {
-      type: "text",
-      text,
-      quickReply: getDefaultQuickReply(),
-    },
-    buildReceiptFlexMessage(
-      { ...invoice, paidAmount, status: "paid" },
-      receiptNumber,
-      paidAmount,
-      branchName
-    ),
-  ];
+  return attachQuickReplyToLast(
+    [
+      {
+        type: "text",
+        text,
+      },
+      buildReceiptFlexMessage(
+        { ...invoice, paidAmount, status: "paid" },
+        receiptNumber,
+        paidAmount,
+        branchName
+      ),
+    ],
+    getDefaultQuickReply()
+  );
 }
 
 export async function pushReceiptToTenantLine(options: {

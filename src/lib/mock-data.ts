@@ -164,9 +164,9 @@ export const initialBranchSettings: BranchSettingsDetail = {
   bankAccountName: "หอพัก พักดี แมนชั่น",
   promptpayNumber: "0812345678",
   promptpayName: "หอพัก พักดี แมนชั่น",
-  lineChannelAccessToken: "qKsCOa6uRWKLAHJcrs/QljDmKls4sZgZHYrkIcXZ5LQ0CYSOpNKBxxF+aL/pIyXXrljrFz5wqZfCPhMFWTaRtIE0PXT/53dqod9MzjfS48Dx3ZH7nABvX6d/nrtcw6c1aGSWCIZoHtsRv9kcKFwCYAdB04t89/1O/w1cDnyilFU=",
-  lineChannelSecret: "5a3c837da6ba0045ed0073e06cc45de6",
-  lineWebhookUrl: "https://api.pakdee.app/webhook/line/branch-1",
+  lineChannelAccessToken: "",
+  lineChannelSecret: "",
+  lineWebhookUrl: "",
   contractTerms: "ผู้เช่าต้องชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน หากล่าช้ามีค่าปรับวันละ 50 บาท ห้ามเลี้ยงสัตว์ และห้ามส่งเสียงดังหลังเวลา 22:00 น.",
   roomTypes: defaultRoomTypes,
 };
