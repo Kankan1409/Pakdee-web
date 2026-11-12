@@ -253,7 +253,7 @@ export function Header({
         </div>
 
         {/* Building Selector Tabs */}
-        <div className="hidden sm:flex items-center bg-[var(--subtle)] border border-[var(--border)] p-1 rounded-xl text-xs">
+        {/* <div className="hidden sm:flex items-center bg-[var(--subtle)] border border-[var(--border)] p-1 rounded-xl text-xs">
           <button
             onClick={() => onBuildingChange("bldg-a")}
             className={cn(
@@ -265,18 +265,7 @@ export function Header({
           >
             {buildingName || "อาคาร 1"} ({totalRooms ?? rooms.length}{propertyPlan === "starter" ? "/30 ห้อง (Starter)" : " ห้อง"})
           </button>
-          <button
-            onClick={() => {
-              if (onShowToast) {
-                onShowToast("ระบบรองรับการเพิ่มอาคารใหม่: ติดต่อผู้ดูแลเพื่อขยายเป็นโครงการหลายอาคาร", "info");
-              }
-            }}
-            className="px-2 py-1 text-[var(--muted)] hover:text-emerald-600 dark:hover:text-emerald-400 transition font-medium"
-            title="เพิ่มอาคารใหม่"
-          >
-            + เพิ่มตึก
-          </button>
-        </div>
+        </div> */}
       </div>
 
       {/* Right: Search, Actions, Theme Toggle, Notifications */}

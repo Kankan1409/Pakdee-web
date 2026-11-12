@@ -421,6 +421,8 @@ export async function syncBranchSettingsToSupabase(
     signature_url: settings.signatureUrl || "",
     stamp_url: settings.stampUrl || "",
     contract_terms: settings.contractTerms || "",
+    // JSONB column (docs/supabase_branch_notification_settings.sql); stripped by safeUpsert if missing
+    notification_settings: settings.notificationSettings ?? null,
     updated_at: new Date().toISOString(),
   };
 
@@ -678,6 +680,10 @@ export async function syncContractsToSupabase(
       status: (c.status || "active").slice(0, 30),
       terms_text: c.terms || (c.clauses ? JSON.stringify(c.clauses) : ""),
       signed_at: toPgTimestamp(c.signedAt, false),
+      // Signatures (docs/supabase_contract_signing.sql). Only sent when present so a device
+      // without the signature in memory never erases one saved by another device / the tenant.
+      ...(c.signatureUrl ? { tenant_signature_url: c.signatureUrl } : {}),
+      ...(c.landlordSignatureUrl ? { landlord_signature_url: c.landlordSignatureUrl } : {}),
     };
   });
 
@@ -1102,6 +1108,10 @@ export async function loadFromRelationalTables(
           signatureUrl: sRow.signature_url ?? existingSetting.signatureUrl ?? "",
           stampUrl: sRow.stamp_url ?? existingSetting.stampUrl ?? "",
           contractTerms: sRow.contract_terms ?? existingSetting.contractTerms ?? "",
+          notificationSettings:
+            sRow.notification_settings && typeof sRow.notification_settings === "object"
+              ? sRow.notification_settings
+              : existingSetting.notificationSettings,
         } satisfies BranchSettingsDetail;
       }
     }
@@ -1216,6 +1226,8 @@ export async function loadFromRelationalTables(
         clauses: parsedClauses,
         createdAt: cRow.created_at ? String(cRow.created_at).slice(0, 10) : existingContract?.createdAt || new Date().toISOString().slice(0, 10),
         signedAt: cRow.signed_at || existingContract?.signedAt,
+        signatureUrl: cRow.tenant_signature_url || existingContract?.signatureUrl,
+        landlordSignatureUrl: cRow.landlord_signature_url || existingContract?.landlordSignatureUrl,
       } satisfies ContractItem;
     });
 

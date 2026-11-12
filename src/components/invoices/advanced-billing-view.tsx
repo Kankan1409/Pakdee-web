@@ -92,7 +92,7 @@ export function AdvancedBillingView({
       tenantName: targetRoom?.currentTenant?.fullName || `ผู้เช่าห้อง ${selectedRoomNumber}`,
       tenantPhone: targetRoom?.currentTenant?.phone || "",
       billingDate: new Date().toISOString().slice(0, 10),
-      dueDate: "2026-11-05",
+      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), // ครบกำหนด 7 วันหลังออกบิล (เดิมฝังวันที่ 2026-11-05)
       items: [{ name: customTitle, amount: customAmount, units: 1, rate: customAmount }],
       totalAmount: customAmount,
       status: "unpaid",
@@ -109,7 +109,7 @@ export function AdvancedBillingView({
       tenantName: targetRoom?.currentTenant?.fullName || `ผู้เช่าใหม่ห้อง ${selectedRoomNumber}`,
       tenantPhone: targetRoom?.currentTenant?.phone || "",
       billingDate: new Date().toISOString().slice(0, 10),
-      dueDate: "2026-11-05",
+      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), // ครบกำหนด 7 วันหลังออกบิล (เดิมฝังวันที่ 2026-11-05)
       items: [
         { name: "เงินประกันความเสียหาย (Deposit)", amount: depositAmount, units: 1, rate: depositAmount },
         { name: "ค่าเช่าห้องพักล่วงหน้าเดือนแรก", amount: advanceAmount, units: 1, rate: advanceAmount },

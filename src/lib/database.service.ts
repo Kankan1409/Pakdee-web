@@ -1704,7 +1704,12 @@ export const DatabaseService = {
     return true;
   },
 
-  async updateContractSignature(id: string, signatureUrl: string): Promise<boolean> {
+  async updateContractSignature(
+    id: string,
+    signatureUrl: string,
+    landlordSignatureUrl?: string,
+    signedAt?: string
+  ): Promise<boolean> {
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, initialContracts);
     const updated = all.map((c) =>
       c.id === id
@@ -1712,7 +1717,9 @@ export const DatabaseService = {
             ...c,
             signatureUrl,
             status: "active" as ContractItem["status"],
-            signedAt: new Date().toLocaleString("th-TH"),
+            signedAt: signedAt || new Date().toLocaleString("th-TH"),
+            // สำเนาลายเซ็นผู้ให้เช่า ณ วันที่เซ็น (ถ้าส่งมา)
+            ...(landlordSignatureUrl ? { landlordSignatureUrl } : {}),
           }
         : c
     );

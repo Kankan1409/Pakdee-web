@@ -1,3 +1,5 @@
+import { rememberPublicOrigin } from "@/lib/public-origin";
+import { CONTRACT_SIGN_POSTBACK, signContractFromLinePostback } from "@/lib/line/contract-signing";
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import { SlipError } from "@/lib/payment-slips-server";
@@ -36,6 +38,8 @@ export async function GET() {
  * POST: LINE Webhook Receiver (รับ Event จาก LINE Platform)
  */
 export async function POST(req: NextRequest) {
+  // จำที่อยู่ tunnel ปัจจุบันไว้ ใช้สร้างลิงก์ส่งให้ผู้เช่า (เช่น ลิงก์เซ็นสัญญา)
+  rememberPublicOrigin(req);
   let rawBody = "";
   try {
     // อ่าน Request Body ทันทีเพื่อป้องกัน Connection Timeout / ECONNRESET จาก Reverse Proxy หรือ LINE Webhook
@@ -90,6 +94,19 @@ export async function POST(req: NextRequest) {
         continue;
       }
       console.log(`[LINE-WEBHOOK] >>> TRANSACTION: Type=${event.type} User=${userId} Msg=${event.message?.text || event.message?.type}`);
+
+      // Event: Postback "ยอมรับและลงนาม" สัญญาเช่า (ส่งมาจากปุ่ม ส่งสัญญาให้ผู้เช่ายืนยันทาง LINE)
+      if (event.type === "postback" && String(event.postback?.data || "").startsWith(CONTRACT_SIGN_POSTBACK)) {
+        let replyText = "ไม่สามารถบันทึกการลงนามได้ กรุณาติดต่อหอพัก";
+        try {
+          const profile = userId ? await getLineUserProfile(channelAccessToken, userId) : null;
+          replyText = await signContractFromLinePostback(String(event.postback.data), userId || "", profile?.displayName || "");
+        } catch (e: any) {
+          console.error("[LINE-WEBHOOK] contract sign postback failed:", e?.message || e);
+        }
+        await replyLineMessage(channelAccessToken, replyToken, [{ type: "text", text: replyText }]);
+        continue;
+      }
 
       // Event: Follow (ผู้เช่าแอดไลน์เข้ามาใหม่)
       if (event.type === "follow") {

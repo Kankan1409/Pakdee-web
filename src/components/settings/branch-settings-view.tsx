@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { BranchSettingsDetail, Property,Room, RoomTypeConfig, defaultRoomTypes } from "@/types/dormitory";
+import { BranchSettingsDetail, NotificationSettings, Property,Room, RoomTypeConfig, defaultRoomTypes } from "@/types/dormitory";
+import { DEFAULT_NOTIFICATION_SETTINGS } from "@/lib/defaults";
+import { LineRemindersPanel } from "@/components/settings/line-reminders-panel";
 import { isValidPromptPayTarget } from "@/lib/promptpay";
 import { isValidHttpsUrl, isValidBankAccount } from "@/lib/validators";
 import { globalPopup } from "@/lib/popup-context";
@@ -39,6 +41,8 @@ interface BranchSettingsViewProps {
   settings: BranchSettingsDetail;
   onSaveSettings: (updated: Partial<BranchSettingsDetail>) => void;
   rooms?: Room[];
+  /** Branch id, used by the LINE reminders panel */
+  propertyId?: string;
 }
 
 // รายชื่อธนาคารพาณิชย์หลักในประเทศไทย
@@ -64,6 +68,7 @@ export function BranchSettingsView({
   settings,
   onSaveSettings,
   rooms = [],
+  propertyId,
 }: BranchSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<string>("building");
   const [formData, setFormData] = useState<BranchSettingsDetail>(settings);
@@ -1055,23 +1060,145 @@ export function BranchSettingsView({
 
         {/* Tab 8: Notifications */}
         {activeTab === "notifications" && (
-          <div className="space-y-3 max-w-2xl">
-            <h3 className="text-sm font-bold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
-              ระบบแจ้งเตือนอัตโนมัติ (Automated LINE Alerts)
-            </h3>
-            {[
-              { label: "แจ้งเตือนบิลออกใหม่ทันที (วันที่ 25)", checked: true },
-              { label: "แจ้งเตือนก่อนครบกำหนดชำระ 2 วัน (วันที่ 3)", checked: true },
-              { label: "แจ้งเตือนเกินกำหนดชำระ พร้อมค่าปรับ (วันที่ 6)", checked: true },
-              { label: "แจ้งเตือนพัสดุเข้าถึงผู้เช่าทันทีที่ลงทะเบียน", checked: true },
-              { label: "แจ้งเตือนความคืบหน้างงานซ่อม (ช่างรับงาน/ซ่อมเสร็จ)", checked: true },
-            ].map((notif, idx) => (
-              <label key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--subtle)] border border-[var(--border)] cursor-pointer text-xs">
-                <input type="checkbox" defaultChecked={notif.checked} className="rounded text-emerald-600" />
-                <span className="text-[var(--foreground)] font-medium">{notif.label}</span>
-              </label>
-            ))}
-          </div>
+          (() => {
+            const ns: NotificationSettings = { ...DEFAULT_NOTIFICATION_SETTINGS, ...(formData.notificationSettings || {}) };
+            const setNs = (patch: Partial<NotificationSettings>) =>
+              handleChange("notificationSettings", { ...ns, ...patch });
+            const dueDay = Number(formData.billDueDay) || 5;
+            const beforeOptions = [7, 5, 3, 2, 1, 0];
+            const sortedBefore = [...ns.remindBeforeDays].sort((a, b) => b - a);
+            const toggleBeforeDay = (d: number) =>
+              setNs({
+                remindBeforeDays: ns.remindBeforeDays.includes(d)
+                  ? ns.remindBeforeDays.filter((x) => x !== d)
+                  : [...ns.remindBeforeDays, d],
+              });
+            const dayLabel = (offset: number) => {
+              // ตัวอย่างวันที่จริง: นับจากวันครบกำหนด (วันที่ dueDay ของเดือนถัดไปหลังออกบิล)
+              const d = new Date(2026, 0, dueDay + offset);
+              return `${d.getDate()} ${d.toLocaleDateString("th-TH", { month: "short" })}`;
+            };
+            const rowCls = "p-3 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs space-y-2";
+            const numCls = "w-16 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] text-xs text-center";
+            const lateFee = Number(formData.lateFeePerDay) || 0;
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
+                    ระบบแจ้งเตือนอัตโนมัติ (Automated LINE Alerts)
+                  </h3>
+                  <p className="text-[11px] text-[var(--muted)]">
+                    นับวันจาก <b>วันครบกำหนดชำระ</b> ของแต่ละบิล (ตอนนี้ตั้งไว้วันที่ {dueDay} ของเดือนถัดไป — แก้ได้ที่แท็บ &quot;รอบบิล &amp; ค่าปรับ&quot;)
+                    บิลที่จ่ายแล้ว / ขอค้างชำระ / ยกยอดไปแล้ว จะหยุดเตือนเอง
+                  </p>
+
+                  <label className={`${rowCls} flex items-center gap-3 cursor-pointer`}>
+                    <input type="checkbox" checked={ns.sendNewBill} onChange={(e) => setNs({ sendNewBill: e.target.checked })} className="rounded text-emerald-600" />
+                    <span className="text-[var(--foreground)] font-medium">ส่งบิลเข้า LINE ทันทีที่ออกบิล</span>
+                  </label>
+
+                  <div className={rowCls}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={ns.remindBeforeEnabled} onChange={(e) => setNs({ remindBeforeEnabled: e.target.checked })} className="rounded text-emerald-600" />
+                      <span className="text-[var(--foreground)] font-medium">เตือนก่อนครบกำหนดชำระ</span>
+                    </label>
+                    {ns.remindBeforeEnabled && (
+                      <div className="flex flex-wrap gap-1.5 pl-7">
+                        {beforeOptions.map((d) => {
+                          const on = ns.remindBeforeDays.includes(d);
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => toggleBeforeDay(d)}
+                              className={`px-2.5 py-1 rounded-lg border font-semibold transition cursor-pointer ${
+                                on
+                                  ? "bg-emerald-600 text-white border-emerald-600"
+                                  : "bg-[var(--card)] text-[var(--muted)] border-[var(--border)] hover:border-emerald-500"
+                              }`}
+                            >
+                              {d === 0 ? "วันครบกำหนด" : `ก่อน ${d} วัน`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={rowCls}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={ns.remindOverdueEnabled} onChange={(e) => setNs({ remindOverdueEnabled: e.target.checked })} className="rounded text-emerald-600" />
+                      <span className="text-[var(--foreground)] font-medium">เตือนหลังเลยกำหนดชำระ (แจ้งค่าปรับสะสม)</span>
+                    </label>
+                    {ns.remindOverdueEnabled && (
+                      <div className="flex flex-wrap items-center gap-2 pl-7 text-[var(--foreground)]">
+                        <span>เตือนซ้ำทุก</span>
+                        <input type="number" min={1} max={30} value={ns.remindOverdueEveryDays}
+                          onChange={(e) => setNs({ remindOverdueEveryDays: Math.max(1, Number(e.target.value) || 1) })} className={numCls} />
+                        <span>วัน ไม่เกิน</span>
+                        <input type="number" min={1} max={10} value={ns.remindOverdueMaxTimes}
+                          onChange={(e) => setNs({ remindOverdueMaxTimes: Math.max(1, Number(e.target.value) || 1) })} className={numCls} />
+                        <span>ครั้ง</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={`${rowCls} flex items-center gap-3`}>
+                    <span className="text-[var(--foreground)] font-medium">เวลาส่งแจ้งเตือน</span>
+                    <input type="time" value={ns.sendTime} onChange={(e) => setNs({ sendTime: e.target.value || "09:00" })}
+                      className="px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] text-xs" />
+                  </div>
+
+                  <label className={`${rowCls} flex items-center gap-3 cursor-pointer`}>
+                    <input type="checkbox" checked={ns.notifyRepairUpdates} onChange={(e) => setNs({ notifyRepairUpdates: e.target.checked })} className="rounded text-emerald-600" />
+                    <span className="text-[var(--foreground)] font-medium">แจ้งความคืบหน้างานซ่อม (ช่างรับงาน / ซ่อมเสร็จ)</span>
+                  </label>
+
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-700 dark:text-amber-300">
+                    กด &quot;บันทึกการตั้งค่า&quot; ก่อน ระบบจะเริ่มส่งเตือนตามค่าที่บันทึก (สาขาที่ยังไม่เคยบันทึกหน้านี้จะไม่ถูกส่งเตือน)
+                  </div>
+                </div>
+
+                {/* ตัวอย่างกำหนดการแจ้งเตือน + ข้อความ */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
+                    ตัวอย่าง: บิลครบกำหนดวันที่ {dueDay}
+                  </h3>
+                  <ul className="text-xs space-y-1.5 text-[var(--foreground)]">
+                    {ns.sendNewBill && <li>📄 วันออกบิล — ส่งบิล + QR พร้อมเพย์</li>}
+                    {ns.remindBeforeEnabled &&
+                      sortedBefore.map((d) => (
+                        <li key={`b${d}`}>
+                          🔔 {dayLabel(-d)} เวลา {ns.sendTime} — {d === 0 ? "วันนี้ครบกำหนดชำระ" : `อีก ${d} วันครบกำหนดชำระ`}
+                        </li>
+                      ))}
+                    {ns.remindOverdueEnabled &&
+                      Array.from({ length: ns.remindOverdueMaxTimes }, (_, i) => (i + 1) * ns.remindOverdueEveryDays).map((late) => (
+                        <li key={`o${late}`} className="text-rose-600 dark:text-rose-400">
+                          ⚠️ {dayLabel(late)} เวลา {ns.sendTime} — เลยกำหนด {late} วัน{lateFee > 0 ? ` (ค่าปรับสะสม ฿${(late * lateFee).toLocaleString()})` : ""}
+                        </li>
+                      ))}
+                    {!ns.sendNewBill && !ns.remindBeforeEnabled && !ns.remindOverdueEnabled && (
+                      <li className="text-[var(--muted)]">ปิดการแจ้งเตือนเรื่องบิลทั้งหมด</li>
+                    )}
+                  </ul>
+                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--subtle)] p-3 max-w-xs">
+                    <div className="text-[10px] text-[var(--muted)] mb-1">ตัวอย่างข้อความใน LINE</div>
+                    <div className="rounded-xl bg-[var(--card)] border border-[var(--border)] p-3 text-xs space-y-1">
+                      <div className="font-bold text-[var(--foreground)]">🔔 แจ้งเตือนค่าเช่า {formData.branchName || "หอพัก"}</div>
+                      <div className="text-[var(--foreground)]">ห้อง A1 ยอดชำระ ฿3,500</div>
+                      <div className="text-[var(--foreground)]">
+                        ครบกำหนด {dayLabel(0)}
+                        {ns.remindBeforeEnabled && sortedBefore.length > 0 && sortedBefore[0] > 0 ? ` (อีก ${sortedBefore[0]} วัน)` : ""}
+                      </div>
+                      <div className="mt-2 text-center bg-emerald-600 text-white rounded-lg py-1 font-semibold">ชำระด้วย QR พร้อมเพย์</div>
+                    </div>
+                  </div>
+                  <LineRemindersPanel propertyId={propertyId} rooms={rooms} />
+                </div>
+              </div>
+            );
+          })()
         )}
 
         {/* Tab 9: Permissions */}

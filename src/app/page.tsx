@@ -1372,6 +1372,7 @@ export default function HomePage() {
     let successCount = 0;
 
     let carriedCount = 0;
+    const billedRoomNumbers: string[] = [];
 
     // คำนวณเฉพาะห้องที่บันทึกมิเตอร์ใหม่ (ดู splitRoomsByNewMeter) — ห้องอื่นไม่แตะ
     const [monthReadings, existingInvoices] = await Promise.all([
@@ -1510,7 +1511,15 @@ export default function HomePage() {
         tenantName: room.currentTenant?.fullName || "ผู้เช่า",
         tenantPhone: room.currentTenant?.phone || "",
         billingMonth: currentMonth,
-        dueDate: `${currentMonth}-05`,
+        // ครบกำหนดชำระ = วันที่ billDueDay (ตั้งค่าในสาขา, ค่าเริ่มต้น 5) ของ "เดือนถัดไป" หลังออกบิล
+        // (เดิมใช้วันที่ 5 ของเดือนเดียวกับบิล ซึ่งอยู่ก่อนวันออกบิลวันที่ 25 → บิลเลยกำหนดตั้งแต่ออก)
+        dueDate: (() => {
+          const [y, m] = currentMonth.split("-").map(Number);
+          const next = new Date(Date.UTC(y, m, 1)); // m เป็นเลขเดือนแบบ 1-based → UTC(y, m) = เดือนถัดไป
+          const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+          const day = Math.min(Math.max(1, Number(branchSettings.billDueDay) || 5), lastDay);
+          return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        })(),
         totalAmount,
         items,
         status: "unpaid",
@@ -1518,6 +1527,7 @@ export default function HomePage() {
 
       if (ok) {
         successCount++;
+        billedRoomNumbers.push(room.roomNumber);
         for (const oldBill of billsToCarry) {
           // คงยอดที่จ่ายไปแล้ว (กรณีจ่ายบางส่วน) ไว้ตามเดิม แค่เปลี่ยนสถานะ
           await DatabaseService.updateInvoiceStatus(oldBill.id, "carried_forward", undefined, {
@@ -1553,7 +1563,59 @@ export default function HomePage() {
     showToast(`ออกบิลรอบเดือน ${currentMonth} สำเร็จ ${successCount} ใบ${carriedText}${skippedText}`, "success");
     const updatedInvs = await DatabaseService.getInvoices(property.id);
     setInvoices(updatedInvs);
+
+    // ตั้งค่า "ส่งบิลเข้า LINE ทันทีที่ออกบิล" (ตั้งค่าหอพัก > ระบบแจ้งเตือน) — ส่งเฉพาะบิลที่เพิ่งออกรอบนี้
+    if (branchSettings.notificationSettings?.sendNewBill && billedRoomNumbers.length > 0) {
+      const monthPrefix = `INV-${currentMonth.replace("-", "")}-`;
+      const newBills = billedRoomNumbers
+        .map((roomNo) =>
+          updatedInvs
+            .filter(
+              (inv) =>
+                inv.roomNumber === roomNo &&
+                (inv.invoiceNumber === `${monthPrefix}${roomNo}` || inv.invoiceNumber.startsWith(`${monthPrefix}${roomNo}-`)) &&
+                inv.status === "unpaid"
+            )
+            .sort((a, b) => String(b.id).localeCompare(String(a.id), undefined, { numeric: true }))[0]
+        )
+        .filter((inv): inv is Invoice => Boolean(inv));
+      if (newBills.length > 0) {
+        try {
+          // ให้บิลใหม่ขึ้นฐานข้อมูลก่อน เพราะเซิร์ฟเวอร์อ่านบิลจาก Supabase
+          await DatabaseService.refreshFromServer();
+          let lineSent = 0;
+          for (const inv of newBills) {
+            const res = await fetch("/api/line/send-invoice", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ invoiceId: inv.id, propertyId: property.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success && data.hasLinkedLine) lineSent++;
+          }
+          showToast(`📱 ส่งบิลใหม่เข้า LINE ${lineSent}/${newBills.length} ห้อง (ห้องที่เหลือยังไม่ผูก LINE หรือส่งไม่สำเร็จ)`, "info");
+          setInvoices(await DatabaseService.getInvoices(property.id));
+        } catch (e: any) {
+          showToast("ส่งบิลใหม่เข้า LINE ไม่สำเร็จ: " + (e?.message || e), "error");
+        }
+      }
+    }
   };
+
+  // ผู้เช่าเซ็นสัญญาผ่านลิงก์ LINE แล้ว (พบจากเซิร์ฟเวอร์) → บันทึกลายเซ็นลงสัญญาในเครื่อง
+  const handleRemoteContractSigned = useCallback(
+    (contractId: string, tenantSig: string, landlordSig: string | undefined, signedAt: string) => {
+      setContracts((prev) =>
+        prev.map((c) =>
+          c.id === contractId
+            ? { ...c, signatureUrl: tenantSig, status: "active", signedAt, ...(landlordSig ? { landlordSignatureUrl: landlordSig } : {}) }
+            : c
+        )
+      );
+      DatabaseService.updateContractSignature(contractId, tenantSig, landlordSig, signedAt).catch(() => {});
+    },
+    []
+  );
 
   // Handler: ผู้เช่าขอค้างชำระ — เปลี่ยนสถานะบิลเป็น "deferred" (ยังจ่ายได้ตามปกติ)
   // ยอดจะถูกยกไปรวมกับบิลเดือนถัดไปตอนกด "คำนวณและออกบิลรอบเดือน" (พร้อมค่าปรับชำระล่าช้า)
@@ -3225,16 +3287,28 @@ export default function HomePage() {
                 handleTabChange("tenant-new");
               }}
               onUpdateSignature={async (contractId, signatureUrl) => {
-                await DatabaseService.updateContractSignature(contractId, signatureUrl);
+                // เซ็นที่หอ: เก็บสำเนาลายเซ็นผู้ให้เช่า (จากตั้งค่าสาขา) ไว้ในสัญญาด้วย
+                const landlordSig = branchSettings.signatureUrl || undefined;
+                await DatabaseService.updateContractSignature(contractId, signatureUrl, landlordSig);
                 setContracts((prev) =>
                   prev.map((c) =>
                     c.id === contractId
-                      ? { ...c, signatureUrl, status: "active", signedAt: new Date().toLocaleString("th-TH") }
+                      ? {
+                          ...c,
+                          signatureUrl,
+                          status: "active",
+                          signedAt: new Date().toLocaleString("th-TH"),
+                          ...(landlordSig ? { landlordSignatureUrl: landlordSig } : {}),
+                        }
                       : c
                   )
                 );
                 showToast("บันทึกลายเซ็นสัญญาอิเล็กทรอนิกส์ (E-Signature) เรียบร้อยแล้ว ✓", "success");
               }}
+              propertyId={property.id}
+              landlordSignatureUrl={branchSettings.signatureUrl || ""}
+              onShowToast={showToast}
+              onRemoteSigned={handleRemoteContractSigned}
             />
           )}
 
@@ -3322,6 +3396,7 @@ export default function HomePage() {
               settings={branchSettings}
               rooms={rooms}
               onSaveSettings={handleSaveBranchSettings}
+              propertyId={property.id}
             />
           )}
         </main>

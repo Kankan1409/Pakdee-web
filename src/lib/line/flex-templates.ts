@@ -15,10 +15,10 @@ export function buildInvoiceFlexMessage(
   branchSettings?: BranchSettingsDetail | null,
   qrCodeUrl?: string
 ) {
-  const branchName = branchSettings?.branchName || property?.name || "วิภาวรรณ 1";
+  const branchName = branchSettings?.branchName || property?.name || "หอพัก"; // LINE Flex ไม่รับ text ว่าง
   const branchAddress = branchSettings?.address || property?.address || "";
   const branchPhone = branchSettings?.phone || property?.phone || "";
-  const promptpayNumber = branchSettings?.promptpayNumber || property?.promptpayNumber || "0854625145";
+  const promptpayNumber = branchSettings?.promptpayNumber || property?.promptpayNumber || "";
   const promptpayName = branchSettings?.promptpayName || property?.promptpayName || branchName;
   const dueDateStr = invoice.dueDate || "2026-11-05";
   const billingDateStr = invoice.billingDate || "2026-11-25";

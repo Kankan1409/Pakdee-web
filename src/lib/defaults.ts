@@ -6,6 +6,7 @@
  */
 import {
   Property,
+  NotificationSettings,
   Room,
   RepairItem,
   ContractItem,
@@ -39,6 +40,17 @@ export const initialExpenses: ExpenseItem[] = [];
 export const initialBroadcasts: BroadcastItem[] = [];
 
 export const initialActivityLogs: ActivityLogItem[] = [];
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  sendNewBill: true,
+  remindBeforeEnabled: true,
+  remindBeforeDays: [3, 1],
+  remindOverdueEnabled: true,
+  remindOverdueEveryDays: 3,
+  remindOverdueMaxTimes: 3,
+  sendTime: "09:00",
+  notifyRepairUpdates: true,
+};
 
 export const initialBranchSettings: BranchSettingsDetail = {
   branchName: "",

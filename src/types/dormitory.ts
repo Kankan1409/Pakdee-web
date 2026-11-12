@@ -281,8 +281,11 @@ export interface ContractItem {
   status: "draft" | "pending_signature" | "active" | "expired" | "terminated";
   terms?: string;
   createdAt: string;
+  /** ลายเซ็นผู้เช่า (PNG data URL) */
   signatureUrl?: string;
   signedAt?: string;
+  /** สำเนาลายเซ็นผู้ให้เช่า ณ วันที่ผู้เช่าเซ็น (ถ้าไม่มี ใช้ลายเซ็นปัจจุบันในตั้งค่าสาขา) */
+  landlordSignatureUrl?: string;
 }
 
 // 3. Operating Expense
@@ -370,6 +373,28 @@ export interface BranchSettingsDetail {
   imageUrl?: string;
 // Room Types
   roomTypes?: RoomTypeConfig[];
+  // LINE automatic notifications (stored as JSON in branch_settings.notification_settings)
+  notificationSettings?: NotificationSettings;
+}
+
+/** ตั้งค่าการแจ้งเตือน LINE อัตโนมัติของสาขา — นับวันจากวันครบกำหนดชำระของแต่ละบิล */
+export interface NotificationSettings {
+  /** ส่งบิลเข้า LINE ทันทีที่ออกบิล */
+  sendNewBill: boolean;
+  /** เตือนก่อนครบกำหนด */
+  remindBeforeEnabled: boolean;
+  /** เตือนก่อนครบกำหนดกี่วัน (เลือกได้หลายค่า, 0 = วันครบกำหนด) */
+  remindBeforeDays: number[];
+  /** เตือนหลังเลยกำหนด */
+  remindOverdueEnabled: boolean;
+  /** เตือนซ้ำทุกกี่วันหลังเลยกำหนด */
+  remindOverdueEveryDays: number;
+  /** เตือนหลังเลยกำหนดไม่เกินกี่ครั้ง */
+  remindOverdueMaxTimes: number;
+  /** เวลาส่ง "HH:MM" */
+  sendTime: string;
+  /** แจ้งความคืบหน้างานซ่อม */
+  notifyRepairUpdates: boolean;
 }
 
 // 7. Room Type Configuration
