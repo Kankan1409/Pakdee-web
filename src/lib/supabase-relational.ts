@@ -132,15 +132,59 @@ export function toPgDate(val: string | undefined | null, fallbackDate: string | 
 
 /**
  * Formats a timestamp string into ISO 8601 for PostgreSQL TIMESTAMPTZ columns.
+ * Handles both Thai Buddhist Era strings (e.g. "11/11/2569 17:08:23" / "2569-11-11T...")
+ * and standard ISO/Gregorian strings cleanly.
  */
 export function toPgTimestamp(val: string | undefined | null, fallbackNow = false): string | null {
   if (!val) return fallbackNow ? new Date().toISOString() : null;
   const trimmed = String(val).trim();
+
+  // Handle ISO-like strings first (guard against Buddhist Era years > 2400)
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?/);
+  if (isoMatch) {
+    let year = parseInt(isoMatch[1], 10);
+    if (year > 2400) year -= 543;
+    const h = isoMatch[4] || "00";
+    const m = isoMatch[5] || "00";
+    const s = isoMatch[6] || "00";
+    const tz = isoMatch[7] || "+07:00";
+    const parsed = new Date(`${year}-${isoMatch[2]}-${isoMatch[3]}T${h}:${m}:${s}${tz}`);
+    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+
+  // Handle Thai D/M/YYYY [HH:mm[:ss]] strings (avoid US M/D parsing and 2569 AD bug)
+  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (slashMatch) {
+    let year = parseInt(slashMatch[3], 10);
+    if (year > 2400) year -= 543;
+    const month = slashMatch[2].padStart(2, "0");
+    const day = slashMatch[1].padStart(2, "0");
+    const h = (slashMatch[4] || "00").padStart(2, "0");
+    const m = (slashMatch[5] || "00").padStart(2, "0");
+    const s = (slashMatch[6] || "00").padStart(2, "0");
+    const parsed = new Date(`${year}-${month}-${day}T${h}:${m}:${s}+07:00`);
+    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+
   const d = new Date(trimmed);
   if (!isNaN(d.getTime())) {
+    if (d.getUTCFullYear() > 2400) {
+      d.setUTCFullYear(d.getUTCFullYear() - 543);
+    }
     return d.toISOString();
   }
   return fallbackNow ? new Date().toISOString() : null;
+}
+
+function normalizeMeterMonth(raw: any): string {
+  const str = String(raw || "").trim();
+  const match = str.match(/^(\d{4})-(\d{2})/);
+  if (match) {
+    let year = parseInt(match[1], 10);
+    if (year > 2400) year -= 543;
+    return `${year}-${match[2]}`;
+  }
+  return new Date().toISOString().slice(0, 7);
 }
 
 // Cache of columns that do not exist in the remote Supabase schema for each table (persisted across HMR)
@@ -778,17 +822,26 @@ export async function syncMeterReadingsToSupabase(
         ((r.propertyId || "prop-1") === propId && r.roomNumber === m.room_number)
     );
     const roomUuid = matchedRoom ? toUuid(matchedRoom.id) : toUuid(m.room_id || `room-${m.room_number}`);
+    const monthStr = normalizeMeterMonth(m.reading_month ?? m.billing_month).slice(0, 10);
+    const elecPrev = Number(m.electric_prev || 0);
+    const elecCurr = Number(m.electric_curr || 0);
+    const elecUnits = Number(m.electric_units ?? Math.max(0, elecCurr - elecPrev)) || Math.max(0, elecCurr - elecPrev);
+    const waterPrev = Number(m.water_prev || 0);
+    const waterCurr = Number(m.water_curr || 0);
+    const waterUnits = Number(m.water_units ?? Math.max(0, waterCurr - waterPrev)) || Math.max(0, waterCurr - waterPrev);
 
     return {
-      id: toUuid(m.id || `mtr-${roomUuid}-${m.billing_month || idx}`),
+      id: toUuid(m.id || `mtr-${roomUuid}-${monthStr}-${idx}`),
       room_id: roomUuid,
-      billing_month: String(m.billing_month || m.reading_month || new Date().toISOString().slice(0, 7)).slice(0, 10),
-      electric_prev: Number(m.electric_prev || 0),
-      electric_curr: Number(m.electric_curr || 0),
-      electric_units: Number(m.electric_units ?? Math.max(0, Number(m.electric_curr || 0) - Number(m.electric_prev || 0))),
-      water_prev: Number(m.water_prev || 0),
-      water_curr: Number(m.water_curr || 0),
-      water_units: Number(m.water_units ?? Math.max(0, Number(m.water_curr || 0) - Number(m.water_prev || 0))),
+      // Include both schemas; safeUpsert automatically strips whichever column does not exist.
+      reading_month: monthStr,
+      billing_month: monthStr,
+      electric_prev: elecPrev,
+      electric_curr: elecCurr,
+      electric_units: elecUnits,
+      water_prev: waterPrev,
+      water_curr: waterCurr,
+      water_units: waterUnits,
       recorded_at: toPgTimestamp(m.recorded_at, true)!,
     };
   });
@@ -972,13 +1025,25 @@ export async function syncAllToRelationalTables(memoryDb: Record<string, any>): 
   }
 }
 
+interface CoreEntitiesInput {
+  propRows: any[];
+  settingsRows: any[];
+  tenantRows: any[];
+  roomRows: any[];
+  existingMemoryDb: Record<string, any>;
+}
+
 /**
- * Loads data directly from the separate Supabase relational tables and merges with
- * any extended JSON fields in memoryDb.
+ * Shared mapper for core entities (properties, branch_settings, tenants, rooms)
+ * plus lookup maps needed by dependent tables.
  */
-export async function loadFromRelationalTables(
-  existingMemoryDb: Record<string, any>
-): Promise<{ hasRelationalData: boolean; data: Record<string, any> }> {
+function mapCoreEntities({
+  propRows,
+  settingsRows,
+  tenantRows,
+  roomRows,
+  existingMemoryDb,
+}: CoreEntitiesInput) {
   const result: Record<string, any> = {};
   let hasRelationalData = false;
 
@@ -1065,6 +1130,26 @@ export async function loadFromRelationalTables(
         plan: (row.plan || "pro") as PlanType,
       } satisfies Property;
     });
+  result["properties"] = propRows.map((row: any, idx: number) => {
+    const origId =
+      uuidToPropId.get(String(row.id).toLowerCase()) ||
+      existingProps.find((p) => p.name === row.name)?.id ||
+      (idx === 0 ? "prop-1" : String(row.id));
+    uuidToPropId.set(String(row.id).toLowerCase(), origId);
+    const existingMatch = existingProps.find((p) => p.id === origId);
+    return {
+      ...(existingMatch || {}),
+      id: origId,
+      name: row.name,
+      address: row.address || "",
+      phone: row.phone || "",
+      promptpayNumber: row.promptpay_number || "",
+      promptpayName: row.promptpay_name || "",
+      electricRate: Number(row.electric_rate ?? 8),
+      waterRate: Number(row.water_rate ?? 18),
+      plan: (row.plan || "pro") as PlanType,
+    } satisfies Property;
+  });
 
     // Map branch_settings
     if (settingsRes.data && settingsRes.data.length > 0) {
@@ -1115,6 +1200,46 @@ export async function loadFromRelationalTables(
         } satisfies BranchSettingsDetail;
       }
     }
+  if (settingsRows && settingsRows.length > 0) {
+    for (const sRow of settingsRows) {
+      const propId = uuidToPropId.get(String(sRow.property_id || "").toLowerCase()) || "prop-1";
+      const existingSetting = existingMemoryDb[`branch_settings_${propId}`] || {};
+      result[`branch_settings_${propId}`] = {
+        ...existingSetting,
+        id: sRow.id,
+        branchName: sRow.branch_name || existingSetting.branchName || "",
+        address: sRow.address ?? existingSetting.address ?? "",
+        phone: sRow.phone ?? existingSetting.phone ?? "",
+        ownerName: sRow.owner_name ?? existingSetting.ownerName ?? "",
+        ownerPhone: sRow.owner_phone ?? existingSetting.ownerPhone ?? "",
+        taxId: sRow.tax_id ?? existingSetting.taxId ?? "",
+        waterRate: Number(sRow.water_rate ?? existingSetting.waterRate ?? 18),
+        electricRate: Number(sRow.electric_rate ?? existingSetting.electricRate ?? 8),
+        useMinWater: Boolean(sRow.use_min_water ?? existingSetting.useMinWater),
+        minWaterUnits: Number(sRow.min_water_units ?? existingSetting.minWaterUnits ?? 5),
+        minWaterFee: Number(sRow.min_water_fee ?? existingSetting.minWaterFee ?? 100),
+        useMinElectric: Boolean(sRow.use_min_electric ?? existingSetting.useMinElectric),
+        minElectricUnits: Number(sRow.min_electric_units ?? existingSetting.minElectricUnits ?? 10),
+        minElectricFee: Number(sRow.min_electric_fee ?? existingSetting.minElectricFee ?? 150),
+        commonFee: Number(sRow.common_fee ?? existingSetting.commonFee ?? 300),
+        internetFee: Number(sRow.internet_fee ?? existingSetting.internetFee ?? 0),
+        parkingFee: Number(sRow.parking_fee ?? existingSetting.parkingFee ?? 0),
+        billCycleDay: Number(sRow.bill_cycle_day ?? existingSetting.billCycleDay ?? 25),
+        billDueDay: Number(sRow.bill_due_day ?? existingSetting.billDueDay ?? 5),
+        lateFeePerDay: Number(sRow.late_fee_per_day ?? existingSetting.lateFeePerDay ?? 50),
+        bankName: sRow.bank_name ?? existingSetting.bankName ?? "",
+        bankAccountNumber: sRow.bank_account_number ?? existingSetting.bankAccountNumber ?? "",
+        bankAccountName: sRow.bank_account_name ?? existingSetting.bankAccountName ?? "",
+        promptpayNumber: sRow.promptpay_number ?? existingSetting.promptpayNumber ?? "",
+        promptpayName: sRow.promptpay_name ?? existingSetting.promptpayName ?? "",
+        lineChannelAccessToken: sRow.line_channel_access_token ?? existingSetting.lineChannelAccessToken ?? "",
+        lineChannelSecret: sRow.line_channel_secret ?? existingSetting.lineChannelSecret ?? "",
+        signatureUrl: sRow.signature_url ?? existingSetting.signatureUrl ?? "",
+        stampUrl: sRow.stamp_url ?? existingSetting.stampUrl ?? "",
+        contractTerms: sRow.contract_terms ?? existingSetting.contractTerms ?? "",
+      } satisfies BranchSettingsDetail;
+    }
+  }
 
     // Map tenants
     const existingTenants: Tenant[] = Array.isArray(existingMemoryDb["tenants"])
@@ -1151,47 +1276,215 @@ export async function loadFromRelationalTables(
       return mapped;
     });
     result["tenants"] = mappedTenants;
+  const existingTenants: Tenant[] = Array.isArray(existingMemoryDb["tenants"])
+    ? existingMemoryDb["tenants"]
+    : [];
+  const tenantByUuid = new Map<string, Tenant>();
+  const mappedTenants: Tenant[] = tenantRows.map((tRow: any) => {
+    const rowUuid = String(tRow.id).toLowerCase();
+    const existingMatch = existingTenants.find(
+      (et) => toUuid(et.id) === rowUuid || et.fullName === tRow.full_name
+    );
+    const mapped: Tenant = {
+      ...(existingMatch || {}),
+      id: existingMatch?.id || String(tRow.id),
+      propertyId: existingMatch?.propertyId || "prop-1",
+      fullName: tRow.full_name || "ไม่ระบุชื่อ",
+      phone: tRow.phone || "-",
+      idCard: tRow.id_card || existingMatch?.idCard || "",
+      gender: (tRow.gender || existingMatch?.gender || "MALE") as "MALE" | "FEMALE" | "OTHER",
+      age: Number(tRow.age ?? existingMatch?.age ?? 25),
+      lineId: tRow.line_id ?? existingMatch?.lineId ?? "",
+      lineUserId:
+        existingMatch?.lineUserId ||
+        (typeof tRow.line_id === "string" && tRow.line_id.trim().startsWith("U")
+          ? tRow.line_id.trim()
+          : undefined),
+      Line_Acc:
+        tRow.Line_Acc ??
+        tRow.line_acc ??
+        tRow.line_Acc ??
+        tRow.LineAcc ??
+        tRow.line_id ??
+        existingMatch?.Line_Acc ??
+        existingMatch?.lineAcc ??
+        "",
+      lineAcc:
+        tRow.Line_Acc ??
+        tRow.line_acc ??
+        tRow.line_Acc ??
+        tRow.LineAcc ??
+        tRow.line_id ??
+        existingMatch?.Line_Acc ??
+        existingMatch?.lineAcc ??
+        "",
+      taxId: tRow.tax_id ?? existingMatch?.taxId ?? "",
+      email: tRow.email ?? existingMatch?.email ?? "",
+      address: tRow.address ?? existingMatch?.address ?? "",
+      emergencyContact: tRow.emergency_contact ?? existingMatch?.emergencyContact ?? "",
+      vehiclePlate: tRow.vehicle_plate ?? existingMatch?.vehiclePlate ?? "",
+      idCardImageUrl: tRow.id_card_image_url ?? existingMatch?.idCardImageUrl ?? "",
+      invoiceLang: (tRow.invoice_lang || existingMatch?.invoiceLang || "TH") as "TH" | "EN",
+      notes: tRow.notes ?? existingMatch?.notes ?? "",
+    };
+    tenantByUuid.set(rowUuid, mapped);
+    return mapped;
+  });
+  result["tenants"] = mappedTenants;
 
-    // Map rooms
-    const existingRooms: Room[] = Array.isArray(existingMemoryDb["rooms"])
-      ? existingMemoryDb["rooms"]
-      : [];
-    const uuidToRoomNumber = new Map<string, string>();
-    result["rooms"] = roomRows.filter(belongsToKnownBranch).map((rRow: any) => {
-      const rowUuid = String(rRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
-      const existingRoom = existingRooms.find(
-        (er) =>
-          toUuid(er.id).toLowerCase() === rowUuid ||
-          ((er.propertyId || defaultPropId) === propId && er.roomNumber === rRow.room_number)
-      );
-      uuidToRoomNumber.set(rowUuid, rRow.room_number);
-      const linkedTenant = rRow.current_tenant_id
-        ? tenantByUuid.get(String(rRow.current_tenant_id).toLowerCase()) || existingRoom?.currentTenant
-        : rRow.status === "occupied" || rRow.status === "overdue"
-          ? existingRoom?.currentTenant
-          : undefined;
+  const existingRooms: Room[] = Array.isArray(existingMemoryDb["rooms"])
+    ? existingMemoryDb["rooms"]
+    : [];
+  const uuidToRoomNumber = new Map<string, string>();
+  const roomInfoByUuid = new Map<string, { propertyId: string; roomNumber: string; tenantName: string }>();
+  result["rooms"] = roomRows.filter(belongsToKnownBranch).map((rRow: any) => {
+    const rowUuid = String(rRow.id).toLowerCase();
+    const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
+    const existingRoom = existingRooms.find(
+      (er) =>
+        toUuid(er.id).toLowerCase() === rowUuid ||
+        ((er.propertyId || defaultPropId) === propId && er.roomNumber === rRow.room_number)
+    );
+    uuidToRoomNumber.set(rowUuid, rRow.room_number);
+    const linkedTenant = rRow.current_tenant_id
+      ? tenantByUuid.get(String(rRow.current_tenant_id).toLowerCase()) || existingRoom?.currentTenant
+      : rRow.status === "occupied" || rRow.status === "overdue"
+        ? existingRoom?.currentTenant
+        : undefined;
       if (linkedTenant) {
         linkedTenant.propertyId = propId;
       }
-
-      return {
-        ...(existingRoom || {}),
-        id: String(rRow.id),
-        propertyId: propId,
-        buildingId: rRow.building_id ? String(rRow.building_id) : "B0001",
-        roomNumber: String(rRow.room_number),
-        floor: Number(rRow.floor || 1),
-        type: rRow.type || existingRoom?.type || "Standard",
-        monthlyRate: Number(rRow.monthly_rate ?? existingRoom?.monthlyRate ?? 4000),
-        dailyRate: Number(rRow.daily_rate ?? existingRoom?.dailyRate ?? 650),
-        status: (rRow.status || "vacant") as RoomStatus,
-        currentElectricMeter: Number(rRow.current_electric_meter ?? existingRoom?.currentElectricMeter ?? 0),
-        currentWaterMeter: Number(rRow.current_water_meter ?? existingRoom?.currentWaterMeter ?? 0),
-        currentTenant: linkedTenant,
-        leaseEndDate: rRow.lease_end_date || existingRoom?.leaseEndDate || undefined,
-      } satisfies Room;
+    roomInfoByUuid.set(rowUuid, {
+      propertyId: propId,
+      roomNumber: String(rRow.room_number),
+      tenantName: linkedTenant?.fullName || "",
     });
+
+    return {
+      ...(existingRoom || {}),
+      id: String(rRow.id),
+      propertyId: propId,
+      buildingId: rRow.building_id ? String(rRow.building_id) : "B0001",
+      roomNumber: String(rRow.room_number),
+      floor: Number(rRow.floor || 1),
+      type: rRow.type || existingRoom?.type || "Standard",
+      monthlyRate: Number(rRow.monthly_rate ?? existingRoom?.monthlyRate ?? 4000),
+      dailyRate: Number(rRow.daily_rate ?? existingRoom?.dailyRate ?? 650),
+      status: (rRow.status || "vacant") as RoomStatus,
+      currentElectricMeter: Number(rRow.current_electric_meter ?? existingRoom?.currentElectricMeter ?? 0),
+      currentWaterMeter: Number(rRow.current_water_meter ?? existingRoom?.currentWaterMeter ?? 0),
+      currentTenant: linkedTenant,
+      leaseEndDate: rRow.lease_end_date || existingRoom?.leaseEndDate || undefined,
+    } satisfies Room;
+  });
+
+  return { result, uuidToPropId, uuidToRoomNumber, roomInfoByUuid, tenantByUuid };
+}
+
+/**
+ * Lightweight loader fetching ONLY properties, branch_settings, tenants, and rooms.
+ * Used by fast server endpoints (such as /api/line/broadcast) instead of pulling all 12 tables.
+ */
+export async function loadCoreContextFromSupabase(
+  existingMemoryDb: Record<string, any> = {}
+): Promise<{ hasCoreData: boolean; data: Record<string, any> }> {
+  const [propsRes, settingsRes, tenantsRes, roomsRes] = await Promise.all([
+    supabase.from("properties").select("*"),
+    supabase.from("branch_settings").select("*"),
+    supabase.from("tenants").select("*"),
+    supabase.from("rooms").select("*"),
+  ]);
+
+  const responses = {
+    properties: propsRes,
+    branch_settings: settingsRes,
+    tenants: tenantsRes,
+    rooms: roomsRes,
+  };
+  for (const [table, response] of Object.entries(responses)) {
+    if (response.error) throw new Error(`[Supabase ${table}] ${response.error.message}`, { cause: response.error });
+  }
+
+  const propRows = propsRes.data || [];
+  const roomRows = roomsRes.data || [];
+  const tenantRows = tenantsRes.data || [];
+  const hasCoreData = propRows.length > 0 || roomRows.length > 0 || tenantRows.length > 0;
+  const { result } = mapCoreEntities({
+    propRows,
+    settingsRows: settingsRes.data || [],
+    tenantRows,
+    roomRows,
+    existingMemoryDb,
+  });
+
+  return { hasCoreData, data: result };
+}
+
+/**
+ * Loads data directly from the separate Supabase relational tables and merges with
+ * any extended JSON fields in memoryDb.
+ */
+export async function loadFromRelationalTables(
+  existingMemoryDb: Record<string, any>
+): Promise<{ hasRelationalData: boolean; data: Record<string, any> }> {
+  let result: Record<string, any> = {};
+  let hasRelationalData = false;
+
+  try {
+    const [
+      propsRes,
+      settingsRes,
+      tenantsRes,
+      roomsRes,
+      contractsRes,
+      invoicesRes,
+      invoiceItemsRes,
+      metersRes,
+      repairsRes,
+      expensesRes,
+      dailyRes,
+      logsRes,
+    ] = await Promise.all([
+      supabase.from("properties").select("*"),
+      supabase.from("branch_settings").select("*"),
+      supabase.from("tenants").select("*"),
+      supabase.from("rooms").select("*"),
+      supabase.from("contracts").select("*"),
+      supabase.from("invoices").select("*"),
+      supabase.from("invoice_items").select("*"),
+      supabase.from("meter_readings").select("*").order("recorded_at", { ascending: false }),
+      supabase.from("repairs").select("*"),
+      supabase.from("expenses").select("*"),
+      supabase.from("daily_bookings").select("*"),
+      supabase.from("activity_logs").select("*").order("created_at", { ascending: false }).limit(50),
+    ]);
+
+    const responses = { properties: propsRes, branch_settings: settingsRes,
+      tenants: tenantsRes, rooms: roomsRes, contracts: contractsRes,
+      invoices: invoicesRes, invoice_items: invoiceItemsRes, meter_readings: metersRes,
+      repairs: repairsRes, expenses: expensesRes, daily_bookings: dailyRes, activity_logs: logsRes };
+    for (const [table, response] of Object.entries(responses)) {
+      if (response.error) throw new Error(`[Supabase ${table}] ${response.error.message}`, { cause: response.error });
+    }
+
+    const propRows = propsRes.data || [];
+    const roomRows = roomsRes.data || [];
+    const tenantRows = tenantsRes.data || [];
+    const contractRows = contractsRes.data || [];
+
+    if (propRows.length > 0 || roomRows.length > 0 || tenantRows.length > 0 || contractRows.length > 0) {
+      hasRelationalData = true;
+    }
+
+    const core = mapCoreEntities({
+      propRows,
+      settingsRows: settingsRes.data || [],
+      tenantRows,
+      roomRows,
+      existingMemoryDb,
+    });
+    result = core.result;
+    const { uuidToPropId, uuidToRoomNumber, roomInfoByUuid, tenantByUuid } = core;
 
     // Map contracts
     const existingContracts: ContractItem[] = Array.isArray(existingMemoryDb["contracts"])
@@ -1297,6 +1590,39 @@ export async function loadFromRelationalTables(
         water_units: Number(mRow.water_units || 0),
         recorded_at: mRow.recorded_at,
       }));
+      const existingMeters: any[] = Array.isArray(existingMemoryDb["meter_readings"])
+        ? existingMemoryDb["meter_readings"]
+        : [];
+      result["meter_readings"] = metersRes.data.map((mRow: any) => {
+        const rowUuid = String(mRow.id || "").toLowerCase();
+        const rUuid = String(mRow.room_id || "").toLowerCase();
+        const roomInfo = roomInfoByUuid.get(rUuid);
+        const existingMeter = existingMeters.find((em) => toUuid(em.id) === rowUuid);
+        const elecPrev = Number(mRow.electric_prev ?? existingMeter?.electric_prev ?? 0);
+        const elecCurr = Number(mRow.electric_curr ?? existingMeter?.electric_curr ?? 0);
+        const waterPrev = Number(mRow.water_prev ?? existingMeter?.water_prev ?? 0);
+        const waterCurr = Number(mRow.water_curr ?? existingMeter?.water_curr ?? 0);
+        const elecUnits = Number(mRow.electric_units ?? 0) || Math.max(0, elecCurr - elecPrev);
+        const waterUnits = Number(mRow.water_units ?? 0) || Math.max(0, waterCurr - waterPrev);
+        const rawRecordedAt = mRow.recorded_at || existingMeter?.recorded_at || "";
+        const normalizedRecordedAt = toPgTimestamp(rawRecordedAt, false) || rawRecordedAt;
+
+        return {
+          id: existingMeter?.id || String(mRow.id),
+          property_id: roomInfo?.propertyId || existingMeter?.property_id || "prop-1",
+          room_id: existingMeter?.room_id || String(mRow.room_id || ""),
+          room_number: roomInfo?.roomNumber || mRow.room_number || existingMeter?.room_number || "",
+          tenant_name: mRow.tenant_name || roomInfo?.tenantName || existingMeter?.tenant_name || "",
+          billing_month: normalizeMeterMonth(mRow.reading_month ?? mRow.billing_month ?? existingMeter?.billing_month),
+          electric_prev: elecPrev,
+          electric_curr: elecCurr,
+          electric_units: elecUnits,
+          water_prev: waterPrev,
+          water_curr: waterCurr,
+          water_units: waterUnits,
+          recorded_at: normalizedRecordedAt,
+        };
+      });
     }
 
     // Map repairs

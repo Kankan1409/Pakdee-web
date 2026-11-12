@@ -8,7 +8,6 @@ import {
   Save,
   RefreshCw,
   History,
-  Camera,
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
@@ -21,7 +20,13 @@ import {
   ArrowRight,
   Filter,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import {
+  buildYearMonthsList,
+  formatCurrency,
+  formatMeterTimestampThai,
+  formatMonthThai,
+  normalizeYearMonth,
+} from "@/lib/utils";
 import { DatabaseService } from "@/lib/database.service";
 import { globalPopup } from "@/lib/popup-context";
 
@@ -44,6 +49,7 @@ export interface MeterReadingRecord {
 }
 
 interface MeterSpreadsheetViewProps {
+  propertyId?: string;
   rooms: Room[];
   dailyBookings?: DailyBooking[];
   electricRate: number;
@@ -57,17 +63,18 @@ interface MeterSpreadsheetViewProps {
       electricPrev: number;
       waterPrev: number;
     }[]
-  ) => void;
+  ) => Promise<void> | void;
 }
 
 export function MeterSpreadsheetView({
+  propertyId,
   rooms,
   dailyBookings = [],
   electricRate,
   waterRate,
   onSaveMeters,
 }: MeterSpreadsheetViewProps) {
-  const [activeTab, setActiveTab] = useState<"entry" | "history" | "photos">("entry");
+  const [activeTab, setActiveTab] = useState<"entry" | "history">("entry");
   const [rows, setRows] = useState<
     {
       roomId: string;
@@ -119,13 +126,38 @@ export function MeterSpreadsheetView({
   const loadHistory = async () => {
     setIsLoadingHistory(true);
     try {
-      const records = await DatabaseService.getMeterReadings();
-      if (records && records.length > 0) {
-        setHistoryRecords(records);
-      } else {
-        // No history yet: show an empty list (no generated sample readings)
-        setHistoryRecords([]);
-      }
+      await DatabaseService.init();
+      const targetPropId = propertyId || DatabaseService.getActivePropertyId();
+      const records = await DatabaseService.getMeterReadings(targetPropId);
+      const enriched: MeterReadingRecord[] = (records || []).map((rec: any) => {
+        const matchedRoom = rooms.find(
+          (rm) => rm.id === rec.room_id || rm.roomNumber === rec.room_number
+        );
+        const elecPrev = Number(rec.electric_prev || 0);
+        const elecCurr = Number(rec.electric_curr || 0);
+        const waterPrev = Number(rec.water_prev || 0);
+        const waterCurr = Number(rec.water_curr || 0);
+        const elecUnits = Number(rec.electric_units ?? 0) || Math.max(0, elecCurr - elecPrev);
+        const waterUnits = Number(rec.water_units ?? 0) || Math.max(0, waterCurr - waterPrev);
+        const tenantName =
+          rec.tenant_name && rec.tenant_name !== "(ห้องว่าง)"
+            ? rec.tenant_name
+            : matchedRoom?.currentTenant?.fullName || "(ห้องว่าง)";
+        return {
+          ...rec,
+          room_number: rec.room_number || matchedRoom?.roomNumber || "",
+          tenant_name: tenantName,
+          billing_month: normalizeYearMonth(rec.billing_month || rec.reading_month) || new Date().toISOString().slice(0, 7),
+          electric_prev: elecPrev,
+          electric_curr: elecCurr,
+          electric_units: elecUnits,
+          water_prev: waterPrev,
+          water_curr: waterCurr,
+          water_units: waterUnits,
+          total_cost: elecUnits * electricRate + waterUnits * waterRate,
+        };
+      });
+      setHistoryRecords(enriched);
     } catch (e) {
       console.warn("Failed to load meter history:", e);
     } finally {
@@ -135,7 +167,7 @@ export function MeterSpreadsheetView({
 
   useEffect(() => {
     loadHistory();
-  }, [rooms, electricRate, waterRate]);
+  }, [propertyId, rooms, electricRate, waterRate, activeTab]);
 
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -188,7 +220,7 @@ export function MeterSpreadsheetView({
   }, [rows]);
   const hasDecreasedMeters = decreasedRows.length > 0;
 
-  const executeSave = () => {
+  const executeSave = async () => {
     const readingsPayload = rows.map((r) => ({
       roomId: r.roomId,
       roomNumber: r.roomNumber,
@@ -198,37 +230,9 @@ export function MeterSpreadsheetView({
       waterPrev: r.waterPrev,
     }));
 
-    // Trigger parent save
-    onSaveMeters(readingsPayload);
-
-    // Also update history records locally immediately
-    const currentMonthStr = new Date().toISOString().slice(0, 7);
-    const nowRecordedAt = new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) + " น.";
-    const newHistoryItems: MeterReadingRecord[] = readingsPayload.map((rp) => {
-      const elecUnits = Math.max(0, rp.electricCurr - rp.electricPrev);
-      const waterUnits = Math.max(0, rp.waterCurr - rp.waterPrev);
-      const totalCost = elecUnits * electricRate + waterUnits * waterRate;
-      const targetRoom = rooms.find((rm) => rm.id === rp.roomId);
-      return {
-        id: `mtr-${Date.now()}-${rp.roomId}`,
-        property_id: targetRoom?.propertyId,
-        room_id: rp.roomId,
-        room_number: rp.roomNumber,
-        tenant_name: targetRoom?.currentTenant?.fullName || "(ห้องว่าง)",
-        billing_month: currentMonthStr,
-        electric_prev: rp.electricPrev,
-        electric_curr: rp.electricCurr,
-        electric_units: elecUnits,
-        water_prev: rp.waterPrev,
-        water_curr: rp.waterCurr,
-        water_units: waterUnits,
-        recorded_at: nowRecordedAt,
-        total_cost: totalCost,
-        is_invoiced: false,
-      };
-    });
-
-    setHistoryRecords((prev) => [...newHistoryItems, ...prev]);
+    // Trigger parent save (persists batch to DatabaseService & Supabase immediately) and reload authoritative history
+    await Promise.resolve(onSaveMeters(readingsPayload));
+    await loadHistory();
   };
 
   // Available unique months from history
@@ -245,16 +249,16 @@ export function MeterSpreadsheetView({
     executeSave();
   };
 
-  // Available unique months from history
+  // Pre-populate all 12 months (January - December) + any historical months
   const availableMonths = useMemo(() => {
-    const months = Array.from(new Set(historyRecords.map((h) => h.billing_month || "2026-10"))).sort().reverse();
-    return months;
+    return buildYearMonthsList(historyRecords.map((h) => h.billing_month));
   }, [historyRecords]);
 
   // Filtered History
   const filteredHistory = useMemo(() => {
     return historyRecords.filter((item) => {
-      const matchMonth = selectedMonth === "all" || item.billing_month === selectedMonth;
+      const itemMonth = normalizeYearMonth(item.billing_month) || item.billing_month;
+      const matchMonth = selectedMonth === "all" || itemMonth === selectedMonth;
       const q = historySearchQuery.trim().toLowerCase();
       const matchQuery =
         !q ||
@@ -268,7 +272,7 @@ export function MeterSpreadsheetView({
   const historyTotalElec = filteredHistory.reduce((acc, h) => acc + (h.electric_units || 0), 0);
   const historyTotalWater = filteredHistory.reduce((acc, h) => acc + (h.water_units || 0), 0);
   const historyTotalCost = filteredHistory.reduce(
-    (acc, h) => acc + (h.total_cost || (h.electric_units * electricRate + h.water_units * waterRate)),
+    (acc, h) => acc + (h.electric_units * electricRate + h.water_units * waterRate),
     0
   );
 
@@ -371,17 +375,6 @@ export function MeterSpreadsheetView({
         >
           <Zap className="w-3.5 h-3.5" />
           <span>บันทึกเลขมิเตอร์ประจำรอบ</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("photos")}
-          className={`px-4 py-2 rounded-xl font-medium transition cursor-pointer flex items-center gap-1.5 ${
-            activeTab === "photos"
-              ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/30 shadow-2xs"
-              : "text-[var(--muted)] hover:text-[var(--foreground)]"
-          }`}
-        >
-          <Camera className="w-3.5 h-3.5" />
-          <span>รูปมิเตอร์ที่ผู้เช่าส่งมาผ่าน LINE (0)</span>
         </button>
         <button
           onClick={() => setActiveTab("history")}
@@ -758,18 +751,7 @@ export function MeterSpreadsheetView({
         </>
       )}
 
-      {/* TAB 2: LINE OCR PHOTOS */}
-      {activeTab === "photos" && (
-        <div className="p-12 text-center bg-[var(--card)] rounded-2xl border border-[var(--border)] shadow-xs">
-          <Camera className="w-12 h-12 text-blue-500 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-[var(--foreground)]">ยังไม่มีภาพถ่ายมิเตอร์ใหม่จากผู้เช่า</h3>
-          <p className="text-xs text-[var(--muted)] mt-1 max-w-md mx-auto">
-            เมื่อผู้เช่าส่งภาพถ่ายมิเตอร์เข้ามาใน LINE OA ระบบจะใช้ Vision OCR อ่านตัวเลขและนำมาแสดงที่นี่เพื่อให้ตรวจสอบและอนุมัติในคลิกเดียว
-          </p>
-        </div>
-      )}
-
-      {/* TAB 3: METER READING HISTORY (เต็มรูปแบบ) */}
+      {/* TAB 2: METER READING HISTORY (เต็มรูปแบบ) */}
       {activeTab === "history" && (
         <div className="space-y-4">
           {/* History Bento Summary Cards */}
@@ -780,7 +762,7 @@ export function MeterSpreadsheetView({
                   <Calendar className="w-3.5 h-3.5 text-purple-500" /> รอบบิลที่เลือก
                 </span>
                 <span className="text-[10px] bg-purple-500/15 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-bold">
-                  {selectedMonth === "all" ? "ทั้งหมด" : selectedMonth}
+                  {selectedMonth === "all" ? "ทั้งหมด" : formatMonthThai(selectedMonth)}
                 </span>
               </div>
               <div className="text-2xl font-bold text-[var(--foreground)] mt-1.5 font-mono">
@@ -851,11 +833,17 @@ export function MeterSpreadsheetView({
                   className="bg-[var(--subtle)] border border-[var(--border)] rounded-xl px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] focus:outline-none focus:border-purple-500 cursor-pointer"
                 >
                   <option value="all">ทุกรอบบิล ({historyRecords.length} รายการ)</option>
-                  {availableMonths.map((m) => (
-                    <option key={m} value={m}>
-                      รอบเดือน {m}
-                    </option>
-                  ))}
+                  {availableMonths.map((m) => {
+                    const count = historyRecords.filter(
+                      (h) => (normalizeYearMonth(h.billing_month) || h.billing_month) === m
+                    ).length;
+                    const isCurrent = m === new Date().toISOString().slice(0, 7);
+                    return (
+                      <option key={m} value={m}>
+                        {formatMonthThai(m)} {count > 0 ? `(${count} รายการ)` : ""} {isCurrent ? "★ เดือนปัจจุบัน" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -930,10 +918,12 @@ export function MeterSpreadsheetView({
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition">
                           <td className="p-3.5 whitespace-nowrap">
-                            <div className="font-semibold text-purple-700 dark:text-purple-300 font-mono text-xs">
-                              {item.billing_month}
+                            <div className="font-semibold text-purple-700 dark:text-purple-300 text-xs">
+                              {formatMonthThai(item.billing_month)}
                             </div>
-                            <div className="text-[11px] text-[var(--muted)]">{item.recorded_at}</div>
+                            <div className="text-[11px] text-[var(--muted)]">
+                              {formatMeterTimestampThai(item.recorded_at)}
+                            </div>
                           </td>
                           <td className="p-3.5">
                             <span className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs shadow-2xs">
