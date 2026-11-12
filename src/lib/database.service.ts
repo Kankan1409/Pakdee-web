@@ -1000,8 +1000,6 @@ export const DatabaseService = {
     try {
       const propId = target.propertyId || "prop-1";
       const roomUuid = toUuid(target.id, `room-${propId}-${target.roomNumber}`);
-      const bldgId = target.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`);
-      const bldgUuid = toUuid(bldgId);
 
       // Unlink any invoices referencing this room to prevent FK restrict violations
       await supabase
@@ -1009,11 +1007,11 @@ export const DatabaseService = {
         .update({ room_id: null })
         .or(`room_id.eq.${roomUuid},room_id.eq.${target.id}`);
 
-      // Match either exact UUID or target.id, or building_id + room_number
+      // Match either exact UUID or target.id, or branch + room_number (buildings table removed)
       const { error: delErr, count } = await supabase
         .from("rooms")
         .delete({ count: "exact" })
-        .or(`id.eq.${roomUuid},id.eq.${target.id},and(building_id.eq.${bldgUuid},room_number.eq.${target.roomNumber})`);
+        .or(`id.eq.${roomUuid},id.eq.${target.id},and(property_id.eq.${toUuid(propId)},room_number.eq.${target.roomNumber})`);
 
       if (delErr) {
         console.warn(`[Supabase Relational] Delete room ${target.roomNumber} warning:`, delErr.message);
@@ -1579,7 +1577,14 @@ export const DatabaseService = {
     if (existingIdx >= 0) {
       const existing = allInvoices[existingIdx];
       // กฎการเงิน: หากบิลเดิมชำระแล้ว หรือเป็นของผู้เช่าคนละคน ให้เก็บรักษาไว้ (LOG) ไม่ลบ/ไม่ทับเด็ดขาด
-      if (existing.status === "paid" || existing.status === "partial" || existing.tenantName !== invoiceData.tenantName) {
+      // บิลที่ขอค้างชำระ / ยกยอดไปแล้ว ก็ห้ามทับ เพราะต้องถูกยกเข้าบิลใหม่ (ทับแล้วยอดค้างจะหาย)
+      if (
+        existing.status === "paid" ||
+        existing.status === "partial" ||
+        existing.status === "deferred" ||
+        existing.status === "carried_forward" ||
+        existing.tenantName !== invoiceData.tenantName
+      ) {
         finalInvoiceNumber = `INV-${invoiceData.billingMonth.replace("-", "")}-${invoiceData.roomNumber}-${Date.now().toString().slice(-4)}`;
         isOverwrite = false;
       } else {
@@ -1879,9 +1884,13 @@ export const DatabaseService = {
    */
   async createContractRevision(base: ContractItem, changes: Partial<ContractItem>): Promise<ContractItem> {
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
-    const root = base.rootContractNumber || base.contractNumber;
-    const family = all.filter((c) => (c.rootContractNumber || c.contractNumber) === root);
-    const revision = Math.max(0, ...family.map((c) => Number(c.revision || 0))) + 1;
+    // เลขฉบับแรก/ครั้งที่แก้ อ่านจากเลขสัญญาด้วย (…-R1, …-R2) เผื่อคอลัมน์ revision/root_contract_number
+    // ยังไม่มีในฐานข้อมูล (ยังไม่รัน supabase_contract_revisions.sql) ซึ่งทำให้ค่าหายหลังโหลดใหม่ → เคยได้เลข -R1-R1
+    const stripRev = (no: string) => (no || "").replace(/(-R\d+)+$/, "");
+    const revOf = (c: ContractItem) => Number(c.revision || 0) || Number((c.contractNumber || "").match(/-R(\d+)$/)?.[1] || 0);
+    const root = base.rootContractNumber || stripRev(base.contractNumber);
+    const family = all.filter((c) => (c.rootContractNumber || stripRev(c.contractNumber)) === root);
+    const revision = Math.max(0, ...family.map(revOf)) + 1;
     const revised: ContractItem = {
       ...base,
       ...changes,

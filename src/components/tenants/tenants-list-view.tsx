@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import { Room, Tenant, ContractItem, Invoice, DailyBooking } from "@/types/dormitory";
-import { Users, Plus, Search, X } from "lucide-react";
+import { Users, Plus, Search, X, Eye } from "lucide-react";
+import { TenantDetailModal, TenantDetailTarget } from "@/components/tenants/tenant-detail-modal";
 
 /** Normalize a date string to YYYY-MM-DD (converts พ.ศ. years) for filtering/sorting. */
 const toDateKey = (v?: string): string => {
@@ -29,6 +30,8 @@ interface TenantsListViewProps {
   invoices: Invoice[];
   dailyBookings: DailyBooking[];
   onOpenNewTenant: () => void;
+  /** ปุ่ม "ดูสัญญา" ในรายละเอียดผู้เช่า: ไปหน้าสัญญาเช่าแล้วเปิดสัญญานี้ */
+  onViewContract?: (contract: ContractItem) => void;
 }
 
 export function TenantsListView({
@@ -38,12 +41,14 @@ export function TenantsListView({
   invoices,
   dailyBookings,
   onOpenNewTenant,
+  onViewContract,
 }: TenantsListViewProps) {
   const [filterTab, setFilterTab] = useState<"all" | "monthly" | "daily">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [detailTarget, setDetailTarget] = useState<TenantDetailTarget | null>(null);
 
   const { combinedList, filteredList, monthlyCount, dailyCount } = useMemo(() => {
     // Map room numbers and room statuses to tenants (Multi-source: rooms, contracts, invoices)
@@ -110,6 +115,9 @@ export function TenantsListView({
       moveInDate?: string;
       moveOutDate?: string;
       isActive: boolean;
+      /** Source records for the detail dialog */
+      tenant?: Tenant;
+      booking?: DailyBooking;
     }> = [];
 
     // Daily booking: active while confirmed / checked in; inactive once checked out or cancelled.
@@ -233,6 +241,8 @@ export function TenantsListView({
             ? bookingIsActive(matchingBooking)
             : dailyStillStaying
           : monthlyActive,
+        tenant: t,
+        booking: matchingBooking,
       });
     });
 
@@ -261,6 +271,7 @@ export function TenantsListView({
         existingItem.moveInDate = b.checkInDate;
         existingItem.moveOutDate = b.checkOutDate;
         existingItem.isActive = bookingIsActive(b);
+        existingItem.booking = b;
       } else {
         combined.push({
           id: b.id,
@@ -276,6 +287,7 @@ export function TenantsListView({
           moveInDate: b.checkInDate,
           moveOutDate: b.checkOutDate,
           isActive: bookingIsActive(b),
+          booking: b,
         });
       }
     });
@@ -441,18 +453,24 @@ export function TenantsListView({
               <th className="py-3 px-3">วันที่เข้า</th>
               <th className="py-3 px-3">วันที่ออก</th>
               <th className="py-3 px-3">สถานะ</th>
+              <th className="py-3 px-3 text-right">รายละเอียด</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
             {filteredList.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-8 text-center text-[var(--muted)]">
+                <td colSpan={11} className="py-8 text-center text-[var(--muted)]">
                   ไม่พบข้อมูลผู้เช่าตามตัวกรองที่เลือก
                 </td>
               </tr>
             ) : (
               filteredList.map((t) => (
-                <tr key={t.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition">
+                <tr
+                  key={t.id}
+                  onClick={() => setDetailTarget(t)}
+                  className="hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
+                  title="กดเพื่อดูรายละเอียดผู้เช่า"
+                >
                   <td className="py-3 px-3">
                     {t.type === "monthly" ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25">
@@ -502,12 +520,40 @@ export function TenantsListView({
                       </span>
                     )}
                   </td>
+                  <td className="py-3 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDetailTarget(t);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--border)] hover:bg-[var(--subtle)] text-[11px] font-semibold cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                      ดูข้อมูล
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      <TenantDetailModal
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
+        rooms={rooms}
+        contracts={contracts}
+        onViewContract={
+          onViewContract
+            ? (c) => {
+                setDetailTarget(null);
+                onViewContract(c);
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

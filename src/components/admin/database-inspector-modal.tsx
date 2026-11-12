@@ -8,7 +8,6 @@ import {
   RefreshCw,
   Search,
   ExternalLink,
-  Layers,
   Home,
   Users,
   Building,
@@ -32,7 +31,6 @@ type TableName =
   | "rooms"
   | "tenants"
   | "properties"
-  | "buildings"
   | "invoices"
   | "meter_readings"
   | "contracts"
@@ -51,7 +49,6 @@ const TABLES: TableMeta[] = [
   { key: "rooms", label: "ห้องพัก (rooms)", icon: Home, description: "ข้อมูลห้องพักทั้งหมด ชั้น ค่าเช่า และสถานะห้อง (แยกตามสาขา)" },
   { key: "tenants", label: "ผู้เช่า (tenants)", icon: Users, description: "ข้อมูลผู้เช่า 14 ฟิลด์ เบอร์โทร บัตร ปชช." },
   { key: "properties", label: "สาขาหอพัก (properties)", icon: Building, description: "รายชื่อสาขา อัตราค่าน้ำ-ไฟ เลขพร้อมเพย์" },
-  { key: "buildings", label: "อาคาร (buildings)", icon: Layers, description: "รายชื่อตึกและอาคารในแต่ละสาขา" },
   { key: "invoices", label: "ใบแจ้งหนี้ (invoices)", icon: Receipt, description: "หัวบิล ยอดเงินรวม วันครบกำหนด และสถานะชำระ" },
   { key: "meter_readings", label: "ประวัติมิเตอร์ (meter_readings)", icon: Zap, description: "ประวัติการจดเลขมิเตอร์น้ำ-ไฟทุกงวด" },
   { key: "contracts", label: "สัญญาเช่า (contracts)", icon: FileSignature, description: "สัญญาเช่าดิจิทัล เงินประกัน และวันหมดสัญญา" },
@@ -68,7 +65,6 @@ export function DatabaseInspectorModal({ isOpen, onClose }: DatabaseInspectorMod
     rooms: 0,
     tenants: 0,
     properties: 0,
-    buildings: 0,
     invoices: 0,
     meter_readings: 0,
     contracts: 0,

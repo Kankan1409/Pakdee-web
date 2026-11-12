@@ -45,6 +45,10 @@ interface ContractManagementViewProps {
   /** Create a revised version of a signed contract (returns the new contract) */
   onCreateRevision?: (base: ContractItem, changes: Partial<ContractItem>) => Promise<ContractItem | null>;
   onShowToast?: (message: string, type: "success" | "error" | "info" | "warning") => void;
+  /** เปิดหน้าดูสัญญาฉบับนี้ทันที (มาจากปุ่ม "ดูสัญญา" ในรายละเอียดผู้เช่า) */
+  openContractId?: string | null;
+  /** เรียกหลังเปิดสัญญาตาม openContractId แล้ว */
+  onOpenedContract?: () => void;
 }
 
 interface SignRequestStatus {
@@ -69,6 +73,8 @@ export function ContractManagementView({
   onShowToast,
   onUpdateLandlordSignature,
   onCreateRevision,
+  openContractId,
+  onOpenedContract,
 }: ContractManagementViewProps) {
   const landlordName = propertyName ? `หอพัก ${propertyName}` : "หอพัก";
 
@@ -149,6 +155,15 @@ export function ContractManagementView({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [previewContract, setPreviewContract] = useState<ContractItem | null>(null);
+
+  // เปิดสัญญาที่ถูกขอจากหน้าอื่น (รายละเอียดผู้เช่า → ดูสัญญา)
+  useEffect(() => {
+    if (!openContractId) return;
+    const target = contracts.find((c) => c.id === openContractId);
+    if (target) setPreviewContract(target);
+    onOpenedContract?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openContractId]);
 
   // E-Signature Pad State
   const [signingContract, setSigningContract] = useState<ContractItem | null>(null);

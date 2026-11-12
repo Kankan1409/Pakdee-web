@@ -6,9 +6,9 @@ const slipFailureMessages: Record<string, string> = {
   "200402": "❌ ยอดโอนไม่ตรงกับยอดบิล กรุณาตรวจสอบจำนวนเงินที่โอนจริง",
   "200403": "❌ วันที่โอนไม่ตรงตามเงื่อนไข กรุณาตรวจสอบวันที่ในสลิป",
   "200404": "⚠️ ไม่พบข้อมูลธุรกรรม หรือสลิปหมดอายุ กรุณาส่งสลิปต้นฉบับจากแอปธนาคาร",
-  "200500": "❌ Slip2Go ตรวจพบสลิปปลอม ไม่สามารถใช้ยืนยันการชำระเงินได้",
+  "200500": "❌ ตรวจพบว่าสลิปนี้ไม่ใช่สลิปจริงจากธนาคาร ไม่สามารถใช้ยืนยันการชำระเงินได้ กรุณาส่งสลิปต้นฉบับจากแอปธนาคาร",
   "200501": "⚠️ ตรวจพบสลิปซ้ำ ธุรกรรมนี้เคยถูกส่งตรวจแล้ว จึงไม่รับชำระซ้ำ หากยังไม่ได้รับการยืนยัน กรุณาติดต่อเจ้าหน้าที่",
-  "200202": "⏳ Slip2Go ยังประมวลผลไม่เสร็จ กรุณาตรวจสอบอีกครั้งภายหลัง",
+  "200202": "⏳ ระบบยังตรวจสลิปไม่เสร็จ กรุณาส่งสลิปอีกครั้งในอีกสักครู่",
   "200000": "⚠️ พบข้อมูลสลิป แต่ยังไม่มีผลยืนยันว่าผ่านเงื่อนไขการรับชำระ",
 };
 
@@ -47,13 +47,13 @@ export async function verifyWithSlip2Go(secretKey: string, options: {
   const key = secretKey?.trim();
   const baseUrl = (process.env.SLIP2GO_API_URL?.trim() || "https://connect.slip2go.com").replace(/\/+$/, "");
   const checkReceiver = buildCheckReceiver(options.receiverAccount, options.receiverAccounts, options.receiverAccountType);
-  if (!key) return { success: false, error: "ยังไม่ได้ตั้งค่า Slip2Go จึงยังยืนยันการชำระเงินไม่ได้" };
-  if (!baseUrl) return { success: false, error: "ยังไม่ได้ตั้งค่า API URL ของ Slip2Go กรุณาติดต่อเจ้าหน้าที่" };
+  if (!key) return { success: false, error: "⚠️ ระบบตรวจสลิปของหอพักยังไม่พร้อมใช้งาน จึงยังยืนยันการชำระเงินอัตโนมัติไม่ได้ กรุณาติดต่อเจ้าหน้าที่" };
+  if (!baseUrl) return { success: false, error: "⚠️ ระบบตรวจสลิปของหอพักยังตั้งค่าไม่ครบ กรุณาติดต่อเจ้าหน้าที่" };
   try {
     const url = new URL(baseUrl);
     if (url.protocol !== "https:" || !(url.hostname === "slip2go.com" || url.hostname.endsWith(".slip2go.com")) ||
         url.username || url.password || url.search || url.hash) throw new Error("Invalid provider URL");
-  } catch { return { success: false, error: "API URL ของ Slip2Go ไม่ถูกต้อง" }; }
+  } catch { return { success: false, error: "⚠️ ระบบตรวจสลิปของหอพักยังตั้งค่าไม่ครบ กรุณาติดต่อเจ้าหน้าที่" }; }
   if (!checkReceiver.length || !Number.isFinite(options.expectedAmount) || Number(options.expectedAmount) <= 0) {
     return { success: false, error: "ข้อมูลบัญชีผู้รับหรือยอดบิลไม่ครบ กรุณาติดต่อเจ้าหน้าที่" };
   }
@@ -96,13 +96,13 @@ export async function verifyWithSlip2Go(secretKey: string, options: {
         Math.round(data.amount * 100) !== Math.round(Number(options.expectedAmount) * 100) ||
         typeof data.transRef !== "string" || !data.transRef.trim() || data.isDuplicate === true ||
         !data.receiver?.account || !data.dateTime || !Number.isFinite(Date.parse(data.dateTime))) {
-      return { success: false, error: "ข้อมูลยืนยันจาก Slip2Go ไม่ครบหรือยอดไม่ตรง บิลยังไม่ถูกตัดชำระ" };
+      return { success: false, error: "⚠️ ข้อมูลยืนยันการโอนจากธนาคารไม่ครบหรือยอดไม่ตรง บิลยังไม่ถูกตัดชำระ กรุณาติดต่อเจ้าหน้าที่" };
     }
     return { success: true, amount: data.amount, transRef: data.transRef.trim(), date: data.dateTime,
       senderBank: data.sender?.bank?.name, receiverBank: data.receiver?.bank?.name,
       receiverName: data.receiver.account.name,
       receiverAccount: data.receiver.account.bank?.account || data.receiver.account.proxy?.account };
   } catch {
-    return { success: false, error: "ติดต่อ Slip2Go ไม่สำเร็จ บิลยังไม่ถูกตัดชำระ กรุณาลองใหม่ภายหลัง" };
+    return { success: false, error: "⚠️ ตรวจสลิปไม่สำเร็จในขณะนี้ บิลยังไม่ถูกตัดชำระ กรุณาส่งสลิปอีกครั้งภายหลัง" };
   }
 }

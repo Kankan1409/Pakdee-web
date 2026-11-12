@@ -12,16 +12,15 @@ import {
   Plus,
   ChevronRight,
   Search,
-  Sparkles,
   Check,
   QrCode,
   Eye,
   X,
-  ShieldCheck,
   FileText,
   Image as ImageIcon,
 } from "lucide-react";
 import { buildYearMonthsList, formatCurrency, formatMonthThai, normalizeYearMonth } from "@/lib/utils";
+import { shortSlipReason } from "@/lib/slip-reason";
 
 interface InvoicesBillingViewProps {
   invoices: Invoice[];
@@ -321,17 +320,18 @@ export function InvoicesBillingView({
                       title={`สลิปไม่ผ่าน: ${failedSlipByInvoice.get(inv.invoiceNumber)!.slip.rejection_reason}`}
                     >
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {/* chip สั้น ๆ — ข้อความเต็มอยู่ใน tooltip (ผู้เช่าได้ข้อความเต็มทาง LINE) */}
                       <span className="truncate">
-                        สลิปไม่ผ่าน: {failedSlipByInvoice.get(inv.invoiceNumber)!.slip.rejection_reason?.replace(/^[❌⚠️\s]+/u, "")}
+                        สลิปไม่ผ่าน: {shortSlipReason(failedSlipByInvoice.get(inv.invoiceNumber)!.slip.rejection_reason)}
                       </span>
                     </span>
                   )}
                   {inv.status === "paid" ? (
-                    inv.slipStatus === "passed" || inv.slipUrl ? (
+                    // มีสลิปจริง (ส่งทาง LINE / Slip2Go ตรวจ) → ชำระแล้ว + ปุ่มดูสลิป · ยืนยันด้วยมือ → ชำระแล้วอย่างเดียว
+                    inv.slipUrl || inv.slipVerifiedBy === "ai" ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 border border-emerald-500/30">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                          <span>✓ AI ตรวจสลิปแล้ว</span>
+                        <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> ชำระแล้ว
                         </span>
                         <button
                           type="button"
@@ -376,36 +376,21 @@ export function InvoicesBillingView({
                         >
                           ขอค้างชำระ · รอยกไปบิลถัดไป
                         </span>
+                      ) : onDeferInvoice && /^INV-\d{6}-/.test(inv.invoiceNumber) ? (
+                        // ค้างชำระ + ปุ่มขอค้างชำระ รวมเป็นอันเดียว: กดเพื่อยกยอดไปรวมกับบิลถัดไป
+                        <button
+                          type="button"
+                          onClick={() => onDeferInvoice(inv.id)}
+                          className="bg-rose-500/15 hover:bg-amber-500/20 text-rose-600 dark:text-rose-400 hover:text-amber-700 dark:hover:text-amber-300 font-semibold px-2.5 py-1 rounded-lg border border-rose-500/25 hover:border-amber-500/40 transition cursor-pointer"
+                          title="กดเมื่อผู้เช่าขอค้างชำระ ยอดจะถูกยกไปรวมกับบิลถัดไป (คิดค่าปรับชำระล่าช้า)"
+                        >
+                          ค้างชำระ
+                        </button>
                       ) : (
                         <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold px-2.5 py-1 rounded-lg">
                           ค้างชำระ
                         </span>
                       )}
-                      {onDeferInvoice && inv.status !== "deferred" && /^INV-\d{6}-/.test(inv.invoiceNumber) && (
-                        <button
-                          type="button"
-                          onClick={() => onDeferInvoice(inv.id)}
-                          className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2.5 py-1 rounded-lg font-semibold border border-amber-500/30 transition cursor-pointer"
-                          title="ผู้เช่าขอค้างชำระเดือนนี้ ยอดจะถูกยกไปรวมกับบิลเดือนถัดไป"
-                        >
-                          ขอค้างชำระ
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onMarkAsPaid(inv.id);
-                          onShowToast(
-                            `🤖 AI ตรวจสลิปโอนเงินห้อง ${inv.roomNumber} (${formatCurrency(inv.totalAmount)}) ผ่าน 100%! บันทึกชำระและอัปเดตสลิปเรียบร้อย ✓`,
-                            "success"
-                          );
-                        }}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                        title="จำลองผู้เช่าส่งสลิปผ่าน LINE ให้ AI ตรวจจับคู่ยอดเงินอัตโนมัติ"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                        <span>AI ตรวจสลิป</span>
-                      </button>
                       <button
                         type="button"
                         onClick={() => onMarkAsPaid(inv.id)}
@@ -497,50 +482,25 @@ export function InvoicesBillingView({
                 </div>
               </div>
             ) : (
-            <div className="bg-gradient-to-b from-emerald-600 via-teal-700 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3 font-sans relative overflow-hidden">
-              <div className="flex items-center justify-between border-b border-white/20 pb-2">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-6 h-6 rounded-full bg-white text-emerald-700 font-bold flex items-center justify-center text-xs">
-                    K
-                  </div>
-                  <span className="font-bold text-xs tracking-tight">K PLUS • {selectedSlipInvoice.slipBank || "ธ.กสิกรไทย"}</span>
-                </div>
-                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-                  โอนเงินสำเร็จ
-                </span>
-              </div>
-
-              <div className="text-center py-2">
-                <div className="text-[11px] text-emerald-100">จำนวนเงินโอน</div>
-                <div className="text-2xl font-black font-mono tracking-tight mt-0.5">
-                  ฿{(selectedSlipInvoice.paidAmount || selectedSlipInvoice.totalAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-
-              <div className="space-y-2 text-xs bg-black/20 p-3 rounded-xl border border-white/10">
+            <div className="bg-[var(--subtle)] border border-[var(--border)] p-5 rounded-2xl space-y-3 text-xs">
+              <div className="font-bold text-[var(--foreground)]">ไม่มีรูปสลิปแนบในบิลนี้</div>
+              <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-emerald-100 text-[10px]">ผู้โอน:</span>
-                  <span className="font-bold">{selectedSlipInvoice.tenantName}</span>
+                  <span className="text-[var(--muted)]">ยอดชำระ:</span>
+                  <span className="font-bold">฿{(selectedSlipInvoice.paidAmount || selectedSlipInvoice.totalAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-emerald-100 text-[10px]">ผู้รับโอน:</span>
-                  <span className="font-bold">{propertyName || "-"} (PromptPay)</span>
+                  <span className="text-[var(--muted)]">ธนาคาร:</span>
+                  <span className="font-semibold">{selectedSlipInvoice.slipBank || "-"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>
+                  <span className="text-[var(--muted)]">วันเวลาที่ชำระ:</span>
                   <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "-"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-emerald-100 text-[10px]">รหัสอ้างอิง:</span>
-                  <span className="font-mono text-[10px] text-amber-200">
-                    {selectedSlipInvoice.slipTransRef || "-"}
-                  </span>
+                  <span className="text-[var(--muted)]">รหัสอ้างอิง:</span>
+                  <span className="font-mono text-[11px]">{selectedSlipInvoice.slipTransRef || "-"}</span>
                 </div>
-              </div>
-
-              <div className="text-[10px] text-center text-white/80 flex items-center justify-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                <span>AI ตรวจสอบความถูกต้องและจับคู่ยอดเงินบิลสำเร็จ 100%</span>
               </div>
             </div>
             )}

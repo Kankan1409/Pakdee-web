@@ -191,18 +191,11 @@ const globalCacheKey = "__PAKDEE_MISSING_COLUMNS__";
 const missingColumnsCache: Record<string, Set<string>> =
   (globalThis as any)[globalCacheKey] ||
   ((globalThis as any)[globalCacheKey] = {
-    tenants: new Set([
-      "gender",
-      "age",
-      "tax_id",
-      "email",
-      "address",
-      "id_card_image_url",
-      "invoice_lang",
-      // "notes" exists in the tenants table (checked 2026-11-12) and carries the daily-guest
-      // marker "[ผู้เข้าพักรายวัน] ห้อง X" — it must be sent, or daily guests lose room/type on reload.
-      "updated_at",
-    ]),
+    // All tenant columns (gender, age, tax_id, email, address, id_card_image_url, invoice_lang,
+    // notes, updated_at) exist in the tenants table (checked 2026-11-12). They used to be
+    // pre-marked as missing, so registration data never reached the database. safeUpsert
+    // still strips any column that is really missing.
+    tenants: new Set<string>(),
   });
 
 function stripMissingColumns(table: string, rows: Record<string, any>[]): Record<string, any>[] {
@@ -267,16 +260,19 @@ export async function safeUpsert(
 
     // 3. Retry supported alternate unique keys
     if (msg.includes("duplicate key value violates unique constraint")) {
-      if (table === "rooms" && currentConflict !== "building_id,room_number") {
-        currentConflict = "building_id,room_number";
+      if (table === "rooms" && currentConflict !== "property_id,room_number") {
+        currentConflict = "property_id,room_number";
         continue;
       }
-      if (table === "contracts" && currentConflict !== "contract_number") {
-        currentConflict = "contract_number";
+      // Bill/contract numbers are unique per branch only (both branches can have INV-202611-A1).
+      // Falling back to the bare number used to overwrite the OTHER branch's row (2026-11-12 bug);
+      // the per-branch keys come from docs/supabase_branch_isolation.sql.
+      if (table === "contracts" && currentConflict !== "property_id,contract_number") {
+        currentConflict = "property_id,contract_number";
         continue;
       }
-      if (table === "invoices" && currentConflict !== "invoice_number") {
-        currentConflict = "invoice_number";
+      if (table === "invoices" && currentConflict !== "property_id,invoice_number") {
+        currentConflict = "property_id,invoice_number";
         continue;
       }
       if (table === "branch_settings" && currentConflict !== "property_id") {
@@ -337,8 +333,11 @@ const BRANCH_CHILD_TABLES = [
   "contracts",
   "repairs",
   "expenses",
+  // property_id on these three comes from docs/supabase_branch_isolation.sql (warn only if missing)
+  "daily_bookings",
+  "meter_readings",
   "rooms",
-  "buildings",
+  "tenants",
   "branch_settings",
 ] as const;
 
@@ -358,12 +357,36 @@ export async function deletePropertiesCascade(propertyIds: string[]): Promise<vo
   if (error) console.warn("[Supabase Relational] Delete properties failed:", error.message);
 }
 
-export async function pruneOrphanRows(table: string, keepIds: string[]): Promise<void> {
+/**
+ * Deletes rows that no longer exist locally.
+ * Safety rules (2026-11-12 — bills/tenants of a new branch were disappearing):
+ *  - Browser only. Server routes (LINE webhook, send-invoice, reminders) load their own copy of the
+ *    data, which can be older than what the browser just saved; pruning from there deleted new rows.
+ *  - Branch-scoped: when `scopePropertyIds` is given, only rows whose property_id is one of those
+ *    branches can be deleted. Rows of other branches/accounts and rows without a branch are kept.
+ */
+export async function pruneOrphanRows(table: string, keepIds: string[], scopePropertyIds?: string[]): Promise<void> {
+  if (typeof window === "undefined") return;
   try {
-    const { data: existing, error } = await supabase.from(table).select("id");
-    if (error || !existing || existing.length === 0) return;
+    let existing: any[] | null = null;
+    let scoped = false;
+    if (scopePropertyIds) {
+      const res = await supabase.from(table).select("id,property_id");
+      if (!res.error) {
+        existing = res.data || [];
+        scoped = true;
+      }
+    }
+    if (!existing) {
+      const { data, error } = await supabase.from(table).select("id");
+      if (error) return;
+      existing = data || [];
+    }
+    if (existing.length === 0) return;
     const keepSet = new Set(keepIds.map((id) => id.toLowerCase()));
+    const scopeSet = new Set((scopePropertyIds || []).map((id) => id.toLowerCase()));
     let toDelete = existing
+      .filter((row: any) => !scoped || scopeSet.has(String(row.property_id || "").toLowerCase()))
       .map((row: any) => String(row.id))
       .filter((id) => !keepSet.has(id.toLowerCase()));
 
@@ -411,19 +434,7 @@ export async function syncPropertiesToSupabase(properties: Property[]): Promise<
   }));
 
   await safeUpsert("properties", rows, "id");
-
-  // Also ensure a default building exists for each property
-  const buildingRows = properties.map((p) => {
-    const propId = p.id || "prop-1";
-    const bldgId = propId === "prop-1" ? "bldg-a" : `bldg-${propId}`;
-    return {
-      id: toUuid(bldgId),
-      property_id: toUuid(propId),
-      name: "อาคาร A",
-      total_floors: 4,
-    };
-  });
-  await safeUpsert("buildings", buildingRows, "id");
+  // (buildings table removed 2026-11-12 — rooms belong to a branch directly via rooms.property_id)
 }
 
 export async function syncBranchSettingsToSupabase(
@@ -522,8 +533,11 @@ export function collectUnifiedTenants(
     if (r?.currentTenant?.fullName) {
       const ct = r.currentTenant;
       const uuid = toUuid(ct.id || `tenant-${r.propertyId || "prop-1"}-${r.roomNumber}-${ct.fullName}`);
+      // Same name only counts as the same person within the same branch (branches are separate)
       const existing = byKey.get(uuid) || Array.from(byKey.values()).find(
-        (x) => x.fullName.trim() === ct.fullName.trim()
+        (x) =>
+          x.fullName.trim() === ct.fullName.trim() &&
+          (x.propertyId || "prop-1") === (ct.propertyId || r.propertyId || "prop-1")
       );
       if (existing) {
         byKey.set(toUuid(existing.id), {
@@ -598,6 +612,9 @@ export async function syncTenantsToSupabase(
   const unified = collectUnifiedTenants(tenants, rooms, contracts);
   const rows = unified.map((t) => ({
     id: toUuid(t.id, `tenant-${t.fullName}-${t.phone}`),
+    // Branch of this tenant (docs/supabase_branch_isolation.sql; stripped by safeUpsert if missing).
+    // Placeholder "prop-1" is not a real branch, so it is not sent.
+    ...(t.propertyId && t.propertyId !== "prop-1" ? { property_id: toUuid(t.propertyId) } : {}),
     full_name: t.fullName || "ไม่ระบุชื่อ",
     phone: t.phone || "-",
     id_card: (t.idCard || "").slice(0, 20),
@@ -618,7 +635,8 @@ export async function syncTenantsToSupabase(
   }));
 
   await safeUpsert("tenants", rows, "id");
-  await pruneOrphanRows("tenants", rows.map((r) => r.id));
+  // Pruning is done once by syncKeyToRelationalTable("tenants") (branch-scoped). It used to run
+  // here as well, i.e. on every rooms sync too, unscoped.
 }
 
 export async function syncRoomsToSupabase(
@@ -626,24 +644,7 @@ export async function syncRoomsToSupabase(
   tenants: Tenant[] = [],
   contracts: ContractItem[] = []
 ): Promise<void> {
-  // 1. Ensure buildings referenced by rooms exist first
-  const buildingMap = new Map<string, { id: string; property_id: string; name: string; total_floors: number }>();
-  for (const r of rooms) {
-    const propId = r.propertyId || "prop-1";
-    const bldgId = r.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`);
-    const bldgUuid = toUuid(bldgId);
-    if (!buildingMap.has(bldgUuid)) {
-      buildingMap.set(bldgUuid, {
-        id: bldgUuid,
-        property_id: toUuid(propId),
-        name: "อาคาร A",
-        total_floors: Math.max(4, r.floor || 1),
-      });
-    }
-  }
-  if (buildingMap.size > 0) {
-    await safeUpsert("buildings", Array.from(buildingMap.values()), "id");
-  }
+  // (buildings table removed 2026-11-12 — no building rows / building_id any more)
 
   // 2. Ensure tenants referenced by rooms exist in public.tenants first
   const unifiedTenants = collectUnifiedTenants(tenants, rooms, contracts);
@@ -654,7 +655,6 @@ export async function syncRoomsToSupabase(
   // 3. Map rooms to public.rooms schema
   const rows = rooms.map((r) => {
     const propId = r.propertyId || "prop-1";
-    const bldgId = r.buildingId || (propId === "prop-1" ? "bldg-a" : `bldg-${propId}`);
     let tenantUuid: string | null = null;
     if (r.currentTenant?.fullName) {
       const matched = unifiedTenants.find(
@@ -670,7 +670,6 @@ export async function syncRoomsToSupabase(
     return {
       id: toUuid(r.id, `room-${propId}-${r.roomNumber}`),
       property_id: toUuid(propId),
-      building_id: toUuid(bldgId),
       room_number: String(r.roomNumber),
       floor: Number(r.floor || 1),
       type: (r.type || "Standard").slice(0, 50),
@@ -868,6 +867,10 @@ export async function syncMeterReadingsToSupabase(
     return {
       id: toUuid(m.id || `mtr-${roomUuid}-${monthStr}-${idx}`),
       room_id: roomUuid,
+      // Branch (docs/supabase_branch_isolation.sql; stripped by safeUpsert if missing)
+      ...((matchedRoom?.propertyId || m.property_id) && (matchedRoom?.propertyId || m.property_id) !== "prop-1"
+        ? { property_id: toUuid(matchedRoom?.propertyId || m.property_id) }
+        : {}),
       // Include both schemas; safeUpsert automatically strips whichever column does not exist.
       reading_month: monthStr,
       billing_month: monthStr,
@@ -924,6 +927,8 @@ export async function syncDailyBookingsToSupabase(bookings: DailyBooking[]): Pro
 
   const rows = (bookings || []).map((b) => ({
     id: toUuid(b.id, `daily-${b.roomNumber}-${b.checkInDate}`),
+    // Branch (docs/supabase_branch_isolation.sql; stripped by safeUpsert if missing)
+    ...(b.propertyId && b.propertyId !== "prop-1" ? { property_id: toUuid(b.propertyId) } : {}),
     room_number: String(b.roomNumber || ""),
     guest_name: b.guestName || "ผู้เข้าพักรายวัน",
     guest_phone: b.guestPhone || "-",
@@ -965,6 +970,10 @@ export async function syncKeyToRelationalTable(
     const rooms: Room[] = Array.isArray(memoryDb["rooms"]) ? memoryDb["rooms"] : [];
     const tenants: Tenant[] = Array.isArray(memoryDb["tenants"]) ? memoryDb["tenants"] : [];
     const contracts: ContractItem[] = Array.isArray(memoryDb["contracts"]) ? memoryDb["contracts"] : [];
+    // Branches this user has loaded: deletions (prune) never touch rows of any other branch
+    const scope: string[] = (Array.isArray(memoryDb["properties"]) ? memoryDb["properties"] : [])
+      .map((p: Property) => toUuid(p.id))
+      .filter(Boolean);
 
     if (normKey === "properties" && Array.isArray(value)) {
       // No auto-prune here: another device/account may have created branches this device
@@ -976,27 +985,27 @@ export async function syncKeyToRelationalTable(
     } else if (normKey === "tenants" && Array.isArray(value)) {
       await syncTenantsToSupabase(value, rooms, contracts);
       const unified = collectUnifiedTenants(value, rooms, contracts);
-      await pruneOrphanRows("tenants", unified.map((t) => toUuid(t.id, `tenant-${t.fullName}-${t.phone}`)));
+      await pruneOrphanRows("tenants", unified.map((t) => toUuid(t.id, `tenant-${t.fullName}-${t.phone}`)), scope);
     } else if (normKey === "rooms" && Array.isArray(value)) {
       await syncRoomsToSupabase(value, tenants, contracts);
-      await pruneOrphanRows("rooms", value.map((r: any) => toUuid(r.id, `room-${r.propertyId || "prop-1"}-${r.roomNumber}`)));
+      await pruneOrphanRows("rooms", value.map((r: any) => toUuid(r.id, `room-${r.propertyId || "prop-1"}-${r.roomNumber}`)), scope);
     } else if (normKey === "contracts" && Array.isArray(value)) {
       await syncContractsToSupabase(value, rooms, tenants);
-      await pruneOrphanRows("contracts", value.map((c: any) => toUuid(c.id, `contract-${c.contractNumber}`)));
+      await pruneOrphanRows("contracts", value.map((c: any) => toUuid(c.id, `contract-${c.contractNumber}`)), scope);
     } else if (normKey === "invoices" && Array.isArray(value)) {
       await syncInvoicesToSupabase(value, rooms, tenants);
-      await pruneOrphanRows("invoices", value.map((inv: any) => toUuid(inv.id, `inv-${inv.invoiceNumber}`)));
+      await pruneOrphanRows("invoices", value.map((inv: any) => toUuid(inv.id, `inv-${inv.invoiceNumber}`)), scope);
     } else if (normKey === "meter_readings" && Array.isArray(value)) {
       await syncMeterReadingsToSupabase(value, rooms);
     } else if (normKey === "repairs" && Array.isArray(value)) {
       await syncRepairsToSupabase(value);
-      await pruneOrphanRows("repairs", value.map((r: any) => toUuid(r.id, `repair-${r.roomNumber}-${r.title}`)));
+      await pruneOrphanRows("repairs", value.map((r: any) => toUuid(r.id, `repair-${r.roomNumber}-${r.title}`)), scope);
     } else if (normKey === "expenses" && Array.isArray(value)) {
       await syncExpensesToSupabase(value);
-      await pruneOrphanRows("expenses", value.map((e: any) => toUuid(e.id, `exp-${e.title}-${e.date}`)));
+      await pruneOrphanRows("expenses", value.map((e: any) => toUuid(e.id, `exp-${e.title}-${e.date}`)), scope);
     } else if (normKey === "daily_bookings" && Array.isArray(value)) {
       await syncDailyBookingsToSupabase(value);
-      await pruneOrphanRows("daily_bookings", value.map((b: any) => toUuid(b.id, `daily-${b.roomNumber}-${b.checkInDate}`)));
+      await pruneOrphanRows("daily_bookings", value.map((b: any) => toUuid(b.id, `daily-${b.roomNumber}-${b.checkInDate}`)), scope);
     } else if (normKey === "activity_logs" && Array.isArray(value)) {
       await syncActivityLogsToSupabase(value);
     }
@@ -1149,6 +1158,12 @@ export async function loadFromRelationalTables(
     for (const ep of existingProps) {
       uuidToPropId.set(toUuid(ep.id).toLowerCase(), ep.id);
     }
+    /** Local branch id for a row's property_id, or undefined when empty/unknown. */
+    const branchOf = (rawPropertyId: unknown): string | undefined => {
+      const key = String(rawPropertyId || "").toLowerCase();
+      if (!key || !knownBranchIds.has(key)) return undefined;
+      return uuidToPropId.get(key) || String(rawPropertyId);
+    };
 
     result["properties"] = propRows.map((row: any) => {
       const origId = String(row.id);
@@ -1237,7 +1252,12 @@ export async function loadFromRelationalTables(
       const mapped: Tenant = {
         ...(existingMatch || {}),
         id: String(tRow.id),
-        propertyId: existingMatch?.propertyId && /^[A-Z]\d{4}$/i.test(existingMatch.propertyId) ? existingMatch.propertyId : defaultPropId,
+        // Branch: tenants.property_id (docs/supabase_branch_isolation.sql) → branch of the room the
+        // tenant lives in → value on this device → first branch (legacy rows only)
+        propertyId:
+          branchOf(tRow.property_id) ||
+          branchOf(roomRows.find((r: any) => String(r.current_tenant_id || "").toLowerCase() === rowUuid)?.property_id) ||
+          (existingMatch?.propertyId && /^[A-Z]\d{4}$/i.test(existingMatch.propertyId) ? existingMatch.propertyId : defaultPropId),
         fullName: tRow.full_name || "ไม่ระบุชื่อ",
         phone: tRow.phone || "-",
         idCard: tRow.id_card || existingMatch?.idCard || "",
@@ -1246,12 +1266,12 @@ export async function loadFromRelationalTables(
         lineId: tRow.line_id ?? existingMatch?.lineId ?? "",
         Line_Acc: tRow.Line_Acc ?? tRow.line_acc ?? tRow.line_Acc ?? tRow.LineAcc ?? existingMatch?.Line_Acc ?? existingMatch?.lineAcc ?? "",
         lineAcc: tRow.Line_Acc ?? tRow.line_acc ?? tRow.line_Acc ?? tRow.LineAcc ?? existingMatch?.Line_Acc ?? existingMatch?.lineAcc ?? "",
-        taxId: tRow.tax_id ?? existingMatch?.taxId ?? "",
-        email: tRow.email ?? existingMatch?.email ?? "",
-        address: tRow.address ?? existingMatch?.address ?? "",
-        emergencyContact: tRow.emergency_contact ?? existingMatch?.emergencyContact ?? "",
-        vehiclePlate: tRow.vehicle_plate ?? existingMatch?.vehiclePlate ?? "",
-        idCardImageUrl: tRow.id_card_image_url ?? existingMatch?.idCardImageUrl ?? "",
+        taxId: tRow.tax_id || existingMatch?.taxId || "",
+        email: tRow.email || existingMatch?.email || "",
+        address: tRow.address || existingMatch?.address || "",
+        emergencyContact: tRow.emergency_contact || existingMatch?.emergencyContact || "",
+        vehiclePlate: tRow.vehicle_plate || existingMatch?.vehiclePlate || "",
+        idCardImageUrl: tRow.id_card_image_url || existingMatch?.idCardImageUrl || "",
         invoiceLang: (tRow.invoice_lang || existingMatch?.invoiceLang || "TH") as "TH" | "EN",
         // An empty DB value must not wipe a local note that has not been uploaded yet.
         notes: tRow.notes || existingMatch?.notes || "",
@@ -1310,7 +1330,7 @@ export async function loadFromRelationalTables(
       const rowUuid = String(cRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || String(cRow.property_id || defaultPropId);
       const existingContract = existingContracts.find(
-        (ec) => toUuid(ec.id).toLowerCase() === rowUuid || ec.contractNumber === cRow.contract_number
+        (ec) => toUuid(ec.id).toLowerCase() === rowUuid || (ec.contractNumber === cRow.contract_number && (ec.propertyId || defaultPropId) === propId)
       );
       let parsedClauses = existingContract?.clauses;
       if (!parsedClauses && cRow.terms_text && String(cRow.terms_text).trim().startsWith("[")) {
@@ -1362,7 +1382,7 @@ export async function loadFromRelationalTables(
       const rowUuid = String(iRow.id).toLowerCase();
       const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || String(iRow.property_id || defaultPropId);
       const existingInv = existingInvoices.find(
-        (ei) => toUuid(ei.id).toLowerCase() === rowUuid || ei.invoiceNumber === iRow.invoice_number
+        (ei) => toUuid(ei.id).toLowerCase() === rowUuid || (ei.invoiceNumber === iRow.invoice_number && (ei.propertyId || defaultPropId) === propId)
       );
       const relItems = itemRows
         .filter((it: any) => String(it.invoice_id).toLowerCase() === rowUuid)
@@ -1504,7 +1524,10 @@ export async function loadFromRelationalTables(
         return {
           ...(existingDb || {}),
           id: String(dRow.id),
-          propertyId: existingDb?.propertyId && /^[A-Z]\d{4}$/i.test(existingDb.propertyId) ? existingDb.propertyId : defaultPropId,
+          // Branch: daily_bookings.property_id (docs/supabase_branch_isolation.sql) → this device → first branch
+          propertyId:
+            branchOf(dRow.property_id) ||
+            (existingDb?.propertyId && /^[A-Z]\d{4}$/i.test(existingDb.propertyId) ? existingDb.propertyId : defaultPropId),
           roomNumber: String(dRow.room_number),
           guestName: dRow.guest_name,
           guestPhone: dRow.guest_phone,

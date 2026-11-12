@@ -12,7 +12,6 @@ import {
   Search,
   X,
   Eye,
-  UploadCloud,
   Check,
   RefreshCw,
   ShieldCheck,
@@ -150,16 +149,6 @@ export function SlipVerificationView({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [viewingStoredSlip, propertyId]);
-  const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [scanningTargetId, setScanningTargetId] = useState<string | null>(null);
-
-  // Manual Upload Simulation State
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
-  const [uploadedRoom, setUploadedRoom] = useState<string>("");
-  const [uploadedAmount, setUploadedAmount] = useState<number | "">("");
-  const [uploadedBank, setUploadedBank] = useState<string>("ธนาคารกสิกรไทย (KBank)");
-  const [uploadedRef, setUploadedRef] = useState<string>(`014310${Date.now().toString().slice(-8)}`);
-  const [testMode, setTestMode] = useState<"valid" | "duplicate" | "fake">("valid");
 
   // Compute Metrics
   const paidInvoices = useMemo(
@@ -201,93 +190,6 @@ export function SlipVerificationView({
     });
   }, [invoices, activeTab, searchQuery]);
 
-  // Handler: Run AI Verification on a specific invoice
-  const handleRunAiVerify = async (inv: Invoice) => {
-    setScanningTargetId(inv.id);
-    setIsScanning(true);
-    try {
-      // Simulate high-speed AI OCR Vision Processing (400ms)
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const transRef = `014310${Math.floor(10000000 + Math.random() * 90000000)}`;
-      const bankName = "ธนาคารกสิกรไทย (KBank PromptPay)";
-      const slipUrl = `/slips/slip_${inv.roomNumber}.png`;
-
-      await onVerifySlip(inv.id, {
-        transRef,
-        bankName,
-        senderName: inv.tenantName,
-        transferTime: new Date().toLocaleString("th-TH"),
-        amount: inv.totalAmount,
-        slipUrl,
-      });
-    } finally {
-      setIsScanning(false);
-      setScanningTargetId(null);
-    }
-  };
-
-  // Helper: List all invoices that already have a slipTransRef for duplicate testing
-  const invoicesWithRef = useMemo(
-    () => invoices.filter((i) => i.slipTransRef && i.slipTransRef.trim() !== ""),
-    [invoices]
-  );
-
-  // Handler: Submit uploaded slip test (Anti-Fake & Anti-Duplicate Verified)
-  const handleUploadAndScan = async () => {
-    if (!uploadedRoom) {
-      onShowToast("กรุณาเลือกหรือระบุหมายเลขห้องพัก", "warning");
-      return;
-    }
-    const targetInv = invoices.find(
-      (i) => i.roomNumber.toLowerCase() === uploadedRoom.trim().toLowerCase()
-    );
-    if (!targetInv) {
-      onShowToast(`ไม่พบบิลของห้อง ${uploadedRoom}`, "error");
-      return;
-    }
-
-    setIsUploadModalOpen(false);
-    setScanningTargetId(targetInv.id);
-    setIsScanning(true);
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      if (testMode === "fake") {
-        await onVerifySlip(targetInv.id, {
-          isFake: true,
-          amount: uploadedAmount !== "" ? Number(uploadedAmount) : targetInv.totalAmount,
-          bankName: uploadedBank,
-          slipUrl: `/slips/slip_${targetInv.roomNumber}.png`,
-        });
-      } else if (testMode === "duplicate") {
-        const refToUse = uploadedRef.trim() || (invoicesWithRef[0]?.slipTransRef || "0143105829104829");
-        await onVerifySlip(targetInv.id, {
-          transRef: refToUse,
-          isFake: false,
-          amount: uploadedAmount !== "" ? Number(uploadedAmount) : targetInv.totalAmount,
-          bankName: uploadedBank,
-          senderName: targetInv.tenantName,
-          transferTime: new Date().toLocaleString("th-TH"),
-          slipUrl: `/slips/slip_${targetInv.roomNumber}.png`,
-        });
-      } else {
-        const freshRef = `014310${Math.floor(10000000 + Math.random() * 90000000)}`;
-        await onVerifySlip(targetInv.id, {
-          transRef: freshRef,
-          isFake: false,
-          amount: uploadedAmount !== "" ? Number(uploadedAmount) : targetInv.totalAmount,
-          bankName: uploadedBank,
-          senderName: targetInv.tenantName,
-          transferTime: new Date().toLocaleString("th-TH"),
-          slipUrl: `/slips/slip_${targetInv.roomNumber}.png`,
-        });
-      }
-    } finally {
-      setIsScanning(false);
-      setScanningTargetId(null);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -310,24 +212,6 @@ export function SlipVerificationView({
               ระบบตรวจสอบสลิปจาก LINE OA อัตโนมัติ ป้องกันสลิปซ้ำ สลิปปลอม และอัปเดตสถานะการชำระเงินเรียลไทม์
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              const pendingRooms = invoices.filter((i) => i.status !== "paid" && i.status !== "carried_forward");
-              if (pendingRooms.length > 0) {
-                setUploadedRoom(pendingRooms[0].roomNumber);
-                setUploadedAmount(pendingRooms[0].totalAmount);
-              }
-              setIsUploadModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>📤 อัปโหลดสลิปให้ AI ตรวจ (ทดสอบ/นำเข้า)</span>
-          </button>
         </div>
       </div>
 
@@ -488,7 +372,6 @@ export function SlipVerificationView({
               {filteredList.length > 0 ? (
                 filteredList.map((inv) => {
                   const isPaid = inv.status === "paid" || inv.slipStatus === "passed";
-                  const isThisScanning = isScanning && scanningTargetId === inv.id;
 
                   return (
                     <tr
@@ -617,18 +500,7 @@ export function SlipVerificationView({
                       {/* Action Buttons */}
                       <td className="p-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {!isPaid ? (
-                            <button
-                              type="button"
-                              onClick={() => handleRunAiVerify(inv)}
-                              disabled={isThisScanning}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-sm transition cursor-pointer disabled:opacity-50"
-                              title="รัน AI Vision เพื่ออ่านสลิปและจับคู่ยอดชำระทันที"
-                            >
-                              <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isThisScanning ? "animate-spin" : ""}`} />
-                              <span>{isThisScanning ? "กำลังสแกน..." : "AI ตรวจสลิป"}</span>
-                            </button>
-                          ) : (
+                          {isPaid && (
                             <button
                               type="button"
                               onClick={() => onOpenInvoiceModal?.(inv)}
@@ -783,50 +655,25 @@ export function SlipVerificationView({
                   </div>
                 </div>
               ) : (
-                <div className="bg-gradient-to-b from-emerald-600 via-teal-700 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3 font-sans relative overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-white/20 pb-2">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-6 h-6 rounded-full bg-white text-emerald-700 font-bold flex items-center justify-center text-xs">
-                        K
-                      </div>
-                      <span className="font-bold text-xs tracking-tight">K PLUS • ธ.กสิกรไทย</span>
-                    </div>
-                    <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-                      โอนเงินสำเร็จ
-                    </span>
-                  </div>
-
-                  <div className="text-center py-2">
-                    <div className="text-[11px] text-emerald-100">จำนวนเงินโอน</div>
-                    <div className="text-2xl font-black font-mono tracking-tight mt-0.5">
-                      ฿{(selectedSlipInvoice.paidAmount || selectedSlipInvoice.totalAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-xs bg-black/20 p-3 rounded-xl border border-white/10">
+                <div className="bg-[var(--subtle)] border border-[var(--border)] p-5 rounded-2xl space-y-3 text-xs">
+                  <div className="font-bold text-[var(--foreground)]">ไม่มีรูปสลิปแนบในบิลนี้</div>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-emerald-100 text-[10px]">ผู้โอน:</span>
-                      <span className="font-bold">{selectedSlipInvoice.tenantName}</span>
+                      <span className="text-[var(--muted)]">ยอดชำระ:</span>
+                      <span className="font-bold">฿{(selectedSlipInvoice.paidAmount || selectedSlipInvoice.totalAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-emerald-100 text-[10px]">ผู้รับโอน:</span>
-                      <span className="font-bold">{propertyName || "-"} (PromptPay)</span>
+                      <span className="text-[var(--muted)]">ธนาคาร:</span>
+                      <span className="font-semibold">{selectedSlipInvoice.slipBank || "-"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-emerald-100 text-[10px]">วันเวลาที่โอน:</span>
+                      <span className="text-[var(--muted)]">วันเวลาที่ชำระ:</span>
                       <span className="font-mono text-[11px]">{selectedSlipInvoice.paidAt || "-"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-emerald-100 text-[10px]">รหัสอ้างอิง:</span>
-                      <span className="font-mono text-[10px] text-amber-200">
-                        {selectedSlipInvoice.slipTransRef || storedSlipByInvoice.get(selectedSlipInvoice.invoiceNumber)?.transaction_ref || "-"}
-                      </span>
+                      <span className="text-[var(--muted)]">รหัสอ้างอิง:</span>
+                      <span className="font-mono text-[11px]">{selectedSlipInvoice.slipTransRef || storedSlipByInvoice.get(selectedSlipInvoice.invoiceNumber)?.transaction_ref || "-"}</span>
                     </div>
-                  </div>
-
-                  <div className="text-[10px] text-center text-white/70 flex items-center justify-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                    <span>สแกนตรวจสอบลายเซ็นดิจิทัล BScanC ผ่าน 100%</span>
                   </div>
                 </div>
               )}
@@ -904,212 +751,6 @@ export function SlipVerificationView({
         </div>
       )}
 
-      {/* 5. Modal: Upload & Test AI Verification */}
-      {isUploadModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsUploadModalOpen(false)}
-          />
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl z-10 animate-in zoom-in-95 fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
-              <div className="flex items-center gap-2">
-                <UploadCloud className="w-5 h-5 text-blue-500" />
-                <h3 className="text-base font-bold text-[var(--foreground)]">
-                  อัปโหลดสลิปโอนเงินให้ AI ตรวจ
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsUploadModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 my-4">
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  เลือกห้องพักที่ต้องการตรวจสลิป *
-                </label>
-                <select
-                  value={uploadedRoom}
-                  onChange={(e) => {
-                    const r = e.target.value;
-                    setUploadedRoom(r);
-                    const match = invoices.find((i) => i.roomNumber === r);
-                    if (match) setUploadedAmount(match.totalAmount);
-                  }}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-semibold focus:outline-none focus:border-blue-500"
-                >
-                  <option value="">-- กรุณาเลือกห้องพัก --</option>
-                  {invoices.map((inv) => (
-                    <option key={inv.id} value={inv.roomNumber}>
-                      ห้อง {inv.roomNumber} ({inv.tenantName}) - ยอดบิล ฿{inv.totalAmount.toLocaleString()} ({inv.status === "paid" ? "ชำระแล้ว" : "ค้างชำระ"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  ธนาคารผู้โอน
-                </label>
-                <select
-                  value={uploadedBank}
-                  onChange={(e) => setUploadedBank(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs focus:outline-none"
-                >
-                  <option value="ธนาคารกสิกรไทย (KBank)">ธนาคารกสิกรไทย (KBank)</option>
-                  <option value="ธนาคารไทยพาณิชย์ (SCB)">ธนาคารไทยพาณิชย์ (SCB)</option>
-                  <option value="ธนาคารกรุงเทพ (BBL)">ธนาคารกรุงเทพ (BBL)</option>
-                  <option value="ธนาคารกรุงไทย (KTB)">ธนาคารกรุงไทย (KTB)</option>
-                  <option value="ธนาคารทหารไทยธนชาต (TTB)">ธนาคารทหารไทยธนชาต (TTB)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1">
-                  ยอดเงินในสลิป (บาท)
-                </label>
-                <input
-                  type="number"
-                  value={uploadedAmount}
-                  onChange={(e) => setUploadedAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="0.00"
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono font-bold text-emerald-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--foreground)] mb-1.5">
-                  เลือกโหมดการทดสอบตรวจสลิป
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTestMode("valid");
-                      const match = invoices.find((i) => i.roomNumber === uploadedRoom);
-                      if (match) setUploadedAmount(match.totalAmount);
-                      setUploadedRef(`014310${Date.now().toString().slice(-8)}`);
-                    }}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${testMode === "valid"
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs"
-                        : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
-                      }`}
-                  >
-                    ✓ สลิปปกติ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTestMode("duplicate");
-                      if (invoicesWithRef.length > 0) {
-                        setUploadedRef(invoicesWithRef[0].slipTransRef || "0143105829104829");
-                      }
-                    }}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${testMode === "duplicate"
-                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500 shadow-xs"
-                        : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
-                      }`}
-                  >
-                    ⚠️ ทดสอบสลิปซ้ำ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTestMode("fake");
-                      setUploadedAmount(500);
-                    }}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${testMode === "fake"
-                        ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs"
-                        : "bg-[var(--subtle)] text-[var(--muted)] border-[var(--border)] hover:bg-[var(--border)]"
-                      }`}
-                  >
-                    ❌ ทดสอบสลิปปลอม
-                  </button>
-                </div>
-              </div>
-
-              {testMode === "duplicate" && (
-                <div className="space-y-1.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs">
-                  <div className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                    <span>รหัสธุรกรรมที่จะทดสอบส่งซ้ำ</span>
-                  </div>
-                  {invoicesWithRef.length > 0 ? (
-                    <select
-                      value={uploadedRef}
-                      onChange={(e) => setUploadedRef(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono font-bold"
-                    >
-                      {invoicesWithRef.map((inv) => (
-                        <option key={inv.id} value={inv.slipTransRef}>
-                          Ref: {inv.slipTransRef} (ห้อง {inv.roomNumber})
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={uploadedRef}
-                      onChange={(e) => setUploadedRef(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--subtle)] border border-[var(--border)] text-xs font-mono font-bold"
-                    />
-                  )}
-                  <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                    เมื่อกดตรวจ AI จะสกัดกั้นการใช้รหัสซ้ำ และปฏิเสธการตัดยอดทันที
-                  </p>
-                </div>
-              )}
-
-              {testMode === "fake" && (
-                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-xs space-y-1">
-                  <div className="font-bold text-rose-900 dark:text-rose-200 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>จำลองสลิปปลอม (ไม่มี QR ธนาคาร หรือยอดไม่ครบ)</span>
-                  </div>
-                  <p className="text-[11px] text-rose-800 dark:text-rose-300">
-                    AI จะปฏิเสธสลิปนี้ทันที บิลห้อง {uploadedRoom || "..."} จะไม่ถูกตัดเป็นชำระแล้ว และจะถูกขึ้นสถานะเตือนสีแดงให้เจ้าหน้าที่ตรวจสอบ
-                  </p>
-                </div>
-              )}
-
-              {testMode === "valid" && (
-                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
-                  <div className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>จำลองสลิปถูกต้อง 100%</span>
-                  </div>
-                  <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
-                    AI จะจับคู่ยอดเงิน ตรวจสอบรหัสธุรกรรม และตัดยอดบิลห้อง {uploadedRoom || "..."} เป็น &quot;ชำระแล้ว&quot; ทันที
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
-              <button
-                type="button"
-                onClick={() => setIsUploadModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-[var(--border)] text-xs font-semibold hover:bg-[var(--subtle)] transition cursor-pointer"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleUploadAndScan}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>ให้ AI ตรวจและตัดยอดบิล</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

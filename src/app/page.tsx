@@ -135,6 +135,8 @@ export default function HomePage() {
   const [receiptInvoice, setReceiptInvoice] = useState<Invoice | null>(null);
   // บิลที่กำลังรอเลือกวิธีชำระก่อนยืนยันรับชำระ
   const [payMethodInvoiceId, setPayMethodInvoiceId] = useState<string | null>(null);
+  // สัญญาที่จะเปิดดูทันทีเมื่อไปหน้าสัญญาเช่า (จากปุ่ม "ดูสัญญา" ในรายละเอียดผู้เช่า)
+  const [contractToOpen, setContractToOpen] = useState<string | null>(null);
   const [selectedLeaseRoom, setSelectedLeaseRoom] = useState<Room | null>(null);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   // First screen on entry/login: Always open Branch Selector Screen
@@ -1456,7 +1458,9 @@ export default function HomePage() {
           inv.roomNumber === room.roomNumber &&
           inv.tenantName === tenantNameForBill &&
           isMonthlyBillNo(inv.invoiceNumber) &&
-          (inv.billingDate || "").slice(0, 7) < currentMonth &&
+          // ขอค้างชำระ (deferred) = ผู้เช่าขอให้ยกไปบิลถัดไป → ยกเสมอ แม้อยู่เดือนเดียวกัน
+          // ค้างชำระธรรมดา → ยกเฉพาะบิลของเดือนก่อน ๆ
+          (inv.status === "deferred" || (inv.billingDate || "").slice(0, 7) < currentMonth) &&
           ["unpaid", "overdue", "deferred", "partial"].includes(inv.status)
       );
       // ถ้าคำนวณบิลเดือนนี้ซ้ำ (บันทึกมิเตอร์ใหม่) ให้คงรายการยกยอดเดิมไว้ ไม่ให้หายตอนเขียนทับ
@@ -1465,7 +1469,10 @@ export default function HomePage() {
           inv.invoiceNumber === `INV-${currentMonth.replace("-", "")}-${room.roomNumber}` &&
           inv.tenantName === tenantNameForBill &&
           inv.status !== "paid" &&
-          inv.status !== "partial"
+          inv.status !== "partial" &&
+          // บิลที่ขอค้างชำระ/ยกยอดแล้วไม่ถูกเขียนทับ (createInvoice) จึงไม่ต้องคงรายการยกยอดของมัน
+          inv.status !== "deferred" &&
+          inv.status !== "carried_forward"
       );
       const keptCarryItems = (sameMonthBill?.items || []).filter(
         (it) => it.name.startsWith("ยอดค้างชำระยกมา") || it.name.startsWith("ค่าปรับชำระล่าช้า")
@@ -1649,7 +1656,83 @@ export default function HomePage() {
       remainingAmount: target.remainingAmount,
     });
     setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: "deferred" } : inv)));
-    showToast(`บันทึกแล้ว: ห้อง ${target.roomNumber} ขอค้างชำระ — จะยกยอดไปรวมกับบิลเดือนถัดไป`, "info");
+
+    // ถ้ามีบิลใหม่กว่าที่ยังไม่จ่ายอยู่แล้ว (ห้อง+ผู้เช่าเดียวกัน) → รวมยอดเข้าบิลนั้นทันที
+    // ถ้ายังไม่มี → รอยกตอนกดคำนวณบิลครั้งถัดไป (handleGenerateMonthlyInvoices)
+    const isMonthlyBillNo = (no: string) => /^INV-\d{6}-/.test(no || "");
+    const isNewer = (inv: Invoice) =>
+      (inv.billingDate || "") > (target.billingDate || "") ||
+      ((inv.billingDate || "") === (target.billingDate || "") && inv.id > target.id);
+    const nextBill = invoices
+      .filter(
+        (inv) =>
+          inv.id !== target.id &&
+          inv.roomNumber === target.roomNumber &&
+          inv.tenantName === target.tenantName &&
+          isMonthlyBillNo(inv.invoiceNumber) &&
+          (inv.status === "unpaid" || inv.status === "overdue") &&
+          isNewer(inv) &&
+          !(inv.items || []).some((it) => it.name.includes(`(${target.invoiceNumber})`))
+      )
+      .sort((a, b) => ((a.billingDate || "") + a.id < (b.billingDate || "") + b.id ? 1 : -1))[0];
+
+    const owed =
+      target.status === "partial"
+        ? Number(target.remainingAmount ?? target.totalAmount - (target.paidAmount || 0))
+        : Number(target.totalAmount) || 0;
+    const roomContract = contracts.find((c) => c.roomNumber === target.roomNumber && c.status === "active");
+    const lateFeeRate = Number(roomContract?.lateFeePerDay ?? branchSettings.lateFeePerDay ?? 0) || 0;
+    const dueTime = new Date(target.dueDate).getTime();
+    const daysLate = Number.isFinite(dueTime) ? Math.max(0, Math.floor((Date.now() - dueTime) / 86400000)) : 0;
+    const lateFee = daysLate * lateFeeRate;
+
+    const addedItems: InvoiceItem[] = [];
+    if (owed > 0) addedItems.push({ name: `ยอดค้างชำระยกมา (${target.invoiceNumber})`, amount: owed });
+    if (lateFee > 0) {
+      addedItems.push({
+        name: `ค่าปรับชำระล่าช้า ${daysLate} วัน (${target.invoiceNumber})`,
+        units: daysLate,
+        rate: lateFeeRate,
+        amount: lateFee,
+      });
+    }
+
+    if (!nextBill) {
+      // ยังไม่มีบิลถัดไป → ไม่ออกบิลใหม่เอง (ผู้ใช้ 2026-11-12: ต้องกดคำนวณก่อน)
+      // ยอดจะถูกยกเข้าบิลตอนกด "คำนวณและออกบิลรอบเดือน" ครั้งถัดไป (handleGenerateMonthlyInvoices)
+      showToast(`บันทึกแล้ว: ห้อง ${target.roomNumber} ขอค้างชำระ — ยอดจะรวมเข้าบิลถัดไปตอนกดคำนวณบิล`, "info");
+      return;
+    }
+
+    const newItems = [...(nextBill.items || []), ...addedItems];
+    const newTotal = (Number(nextBill.totalAmount) || 0) + owed + lateFee;
+    const newRemaining = Math.max(0, newTotal - (Number(nextBill.paidAmount) || 0));
+
+    await DatabaseService.updateInvoiceStatus(nextBill.id, nextBill.status as "unpaid" | "overdue", undefined, {
+      status: nextBill.status,
+      items: newItems,
+      totalAmount: newTotal,
+      paidAmount: nextBill.paidAmount,
+      remainingAmount: newRemaining,
+    });
+    await DatabaseService.updateInvoiceStatus(target.id, "carried_forward", undefined, {
+      status: "carried_forward",
+      paidAmount: target.paidAmount,
+      remainingAmount: target.remainingAmount,
+    });
+    setInvoices((prev) =>
+      prev.map((inv) =>
+        inv.id === nextBill.id
+          ? { ...inv, items: newItems, totalAmount: newTotal, remainingAmount: newRemaining }
+          : inv.id === target.id
+            ? { ...inv, status: "carried_forward" }
+            : inv
+      )
+    );
+    showToast(
+      `ห้อง ${target.roomNumber}: ยกยอดค้าง ฿${(owed + lateFee).toLocaleString()} ไปรวมกับบิล ${nextBill.invoiceNumber} แล้ว (ยอดใหม่ ฿${newTotal.toLocaleString()})${nextBill.lineDeliveryStatus === "sent" ? " — บิลนี้เคยส่ง LINE ไปแล้ว ควรส่งใหม่" : ""}`,
+      "success"
+    );
   };
 
   // Handler: Batch Send LINE Invoices
@@ -1696,7 +1779,7 @@ export default function HomePage() {
       isFake?: boolean;
     }
   ) => {
-    showToast("การตรวจสลิปต้องใช้ผลจาก Slip2Go ฝั่งเซิร์ฟเวอร์ กรุณาส่งรูปผ่าน LINE", "warning");
+    showToast("การตรวจสลิปทำอัตโนมัติเมื่อผู้เช่าส่งรูปสลิปผ่าน LINE", "warning");
   };
 
   const handleRejectSlip = async (invoiceId: string, reason?: string) => {
@@ -3308,6 +3391,10 @@ export default function HomePage() {
                 setInitialAddTenantRoomId(undefined);
                 handleTabChange("tenant-new");
               }}
+              onViewContract={(c) => {
+                setContractToOpen(c.id);
+                handleTabChange("leases");
+              }}
             />
           )}
 
@@ -3327,6 +3414,8 @@ export default function HomePage() {
           {currentTab === "leases" && (
             <ContractManagementView
               contracts={contracts}
+              openContractId={contractToOpen}
+              onOpenedContract={() => setContractToOpen(null)}
               propertyName={property.name}
               rooms={rooms}
               onAddContract={handleAddContract}

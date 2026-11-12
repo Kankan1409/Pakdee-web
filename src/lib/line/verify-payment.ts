@@ -64,7 +64,7 @@ export async function verifyLinePayment(propertyId: string, invoice: Invoice, se
     receiverAccountType,
   });
   if (!result.success) {
-    await recordSlipFailure(db, propertyId, id, result.error || "Slip2Go ตรวจสลิปไม่ผ่าน");
+    await recordSlipFailure(db, propertyId, id, result.error || "สลิปไม่ผ่านการตรวจสอบ");
     return { message: `${result.error}\n\nบิล ${invoice.invoiceNumber} ห้อง ${invoice.roomNumber}: ยังไม่ยืนยันการชำระเงินจากสลิปนี้ครับ` };
   }
   const { data: duplicates, error: duplicateError } = await db.from("payment_slips").select("id")
@@ -84,9 +84,17 @@ export async function verifyLinePayment(propertyId: string, invoice: Invoice, se
     slipTransRef: result.transRef, slipBank: result.senderBank || result.receiverBank,
     slipHash: slip.image_sha256,
   });
-  if (!updated) return { message: "Slip2Go ตรวจผ่าน แต่บันทึกรับชำระไม่สำเร็จ กรุณาติดต่อเจ้าหน้าที่" };
+  if (!updated) return { message: "สลิปถูกต้อง แต่บันทึกรับชำระไม่สำเร็จ กรุณาติดต่อเจ้าหน้าที่" };
   const { error: auditError } = await db.from("payment_slips").update({ verification_status: "passed",
     verified_at: new Date().toISOString(), transaction_ref: result.transRef }).eq("id", id).eq("property_id", toUuid(propertyId));
   if (auditError) console.error("[SLIP2GO] Failed to persist slip audit status", { code: auditError.code });
-  return { amount: result.amount, message: `✅ สลิปผ่านการตรวจสอบจาก Slip2Go\nบิล ${invoice.invoiceNumber} ห้อง ${invoice.roomNumber}\nรับชำระ ฿${result.amount!.toLocaleString()} แล้วครับ\nรหัสอ้างอิง: ${result.transRef}` };
+  // ข้อความแจ้งผู้เช่าทาง LINE (ยาวได้) — ไม่บอกชื่อผู้ให้บริการตรวจสลิป
+  const paidWhen = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
+  return { amount: result.amount, message:
+    `✅ ได้รับชำระเงินเรียบร้อยแล้ว\n\n` +
+    `ห้อง ${invoice.roomNumber} · บิล ${invoice.invoiceNumber}\n` +
+    `ยอดชำระ ฿${result.amount!.toLocaleString()}\n` +
+    `วันที่รับชำระ ${paidWhen} น.\n` +
+    `เลขอ้างอิงการโอน ${result.transRef}\n\n` +
+    `ระบบตรวจสอบสลิปกับธนาคารเรียบร้อย บิลนี้ถูกบันทึกเป็น "ชำระแล้ว" ขอบคุณที่ชำระค่าเช่าครับ 🙏` };
 }

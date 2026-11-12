@@ -65,27 +65,15 @@ export async function savePaymentSlip(propertyId: string, invoiceNumber: string,
   if (!signature.isValid || !signature.format) throw new SlipError(signature.error || "รูปสลิปไม่ถูกต้อง");
   const db = slipDatabase();
   const propertyUuid = toUuid(propertyId);
-  // Branch ownership is stored on the building, not on invoices or rooms.
-  const { data: linkedInvoice, error } = await db.from("invoices")
-    .select("id,rooms!inner(buildings!inner(property_id))")
+  // Branch ownership: invoices.property_id (buildings table removed 2026-11-12).
+  // Invoice numbers repeat between branches (both can have INV-202611-A1), so filter by branch too.
+  const { data: branchInvoice, error } = await db.from("invoices")
+    .select("id")
     .eq("invoice_number", invoiceNumber)
-    .eq("rooms.buildings.property_id", propertyUuid).maybeSingle();
+    .eq("property_id", propertyUuid)
+    .limit(1);
   if (error) throw new SlipError("โหลดข้อมูลบิลจากฐานข้อมูลไม่สำเร็จ", 503);
-  let invoice: { id: string } | null = linkedInvoice;
-  if (!invoice) {
-    // Older relational rows may lack building links. Resolve directly from invoices table.
-    const { data: directInvoice, error: directError } = await db.from("invoices")
-      .select("id,room_id,rooms(buildings(property_id))")
-      .eq("invoice_number", invoiceNumber).maybeSingle();
-    if (directError) throw new SlipError("โหลดข้อมูลสาขาของบิลไม่สำเร็จ", 503);
-    if (directInvoice) {
-      const room = Array.isArray(directInvoice?.rooms) ? directInvoice.rooms[0] : directInvoice?.rooms;
-      const building = Array.isArray(room?.buildings) ? room.buildings[0] : room?.buildings;
-      if (!building?.property_id || building.property_id === propertyUuid) {
-        invoice = { id: directInvoice.id };
-      }
-    }
-  }
+  const invoice: { id: string } | null = branchInvoice?.[0] ? { id: String(branchInvoice[0].id) } : null;
   if (!invoice) throw new SlipError("ยังไม่พบบิลนี้ในฐานข้อมูลของสาขา กรุณาซิงก์บิลก่อนส่งสลิป", 404);
   const hex = `\\x${image.toString("hex")}`;
   // A retry of the same image for the same invoice reuses the stored submission.

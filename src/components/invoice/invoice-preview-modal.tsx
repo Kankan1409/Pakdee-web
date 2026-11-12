@@ -33,7 +33,6 @@ export function InvoicePreviewModal({
   onInvoiceSent,
 }: InvoicePreviewModalProps) {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
-  const [isScanning, setIsScanning] = useState<boolean>(false);
   const [isSendingLine, setIsSendingLine] = useState<boolean>(false);
 
   useEffect(() => {
@@ -256,40 +255,8 @@ export function InvoicePreviewModal({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                {/* AI Slip Scan Simulation */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsScanning(true);
-                    setTimeout(() => {
-                      setIsScanning(false);
-                      if (onMarkAsPaid && invoice) {
-                        onMarkAsPaid(invoice.id);
-                      }
-                      globalPopup.info(
-                        "AI ตรวจสลิปโอนเงินสำเร็จ",
-                        `🤖 AI ตรวจสลิปโอนเงินสำเร็จ 100%!\n- ธนาคาร: ธ.กสิกรไทย\n- เลขอ้างอิง: SLIP-${Date.now().toString().slice(-8)}\n- ยอดเงิน: ${formatCurrency(invoice.totalAmount)} (ตรงกับบิลพอดี)\n- ปลายทาง: ${promptpayNumber}\n\nระบบได้เปลี่ยนสถานะบิลห้อง ${invoice.roomNumber} เป็น "ชำระแล้ว" เรียบร้อยแล้ว!`
-                      );
-                    }, 1200);
-                  }}
-                  disabled={isScanning}
-                  className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer disabled:opacity-50"
-                >
-                  {isScanning ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>AI กำลังอ่านและตรวจสอบสลิป...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 text-amber-300" />
-                      <span>🤖 ลูกค้าแนบสลิป (AI ตรวจสอบและตัดจ่าย)</span>
-                    </>
-                  )}
-                </button>
-
-                {/* Direct Mark Paid */}
+              <div className="grid grid-cols-1 gap-2.5 pt-1">
+                {/* Direct Mark Paid (ระบบจะถามวิธีชำระก่อนบันทึก) */}
                 {onMarkAsPaid && (
                   <button
                     type="button"
