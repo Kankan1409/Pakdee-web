@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeSlipRequest, decodeSlipImage, savePaymentSlip, SlipError } from "@/lib/payment-slips-server";
 import { validateImageSignature } from "@/lib/slip-verification";
 import { verifyStoredPayment } from "@/lib/line/verify-payment";
+import { pushReceiptToTenantLine } from "@/lib/line/receipt-delivery";
+
+async function notifyReceiptIfPassed(
+  propertyId: string,
+  result: { status?: string; amount?: number; message: string },
+  invoiceIdOrNumber?: string
+) {
+  if (result.status !== "passed" || result.amount === undefined || !invoiceIdOrNumber) {
+    return { ...result };
+  }
+  try {
+    const lineResult = await pushReceiptToTenantLine({
+      propertyId,
+      invoiceIdOrNumber,
+      paidAmount: result.amount,
+      introText: result.message,
+    });
+    return { ...result, lineNotified: lineResult.notified, lineError: lineResult.error };
+  } catch (err: any) {
+    console.warn("[PAYMENT-SLIPS] Receipt push failed:", err?.message);
+    return { ...result, lineNotified: false, lineError: err?.message || "LINE push failed" };
+  }
+}
 
 export const runtime = "nodejs";
 const privateHeaders = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
@@ -19,7 +42,10 @@ export async function POST(request: NextRequest) {
       if (file.size > 10 * 1024 * 1024) throw new SlipError("รูปสลิปต้องมีขนาดไม่เกิน 10 MB", 413);
       const id = await savePaymentSlip(propertyId, invoiceNumber, Buffer.from(await file.arrayBuffer()), file.name);
       const result = await verifyStoredPayment(propertyId, id);
-      return NextResponse.json({ id, ...result }, { headers: privateHeaders });
+      return NextResponse.json(
+        { id, ...(await notifyReceiptIfPassed(propertyId, result, invoiceNumber)) },
+        { headers: privateHeaders }
+      );
     }
     if (action === "list") {
       const { data, error } = await db.from("payment_slips")
@@ -48,7 +74,11 @@ export async function POST(request: NextRequest) {
     if (duplicateError) throw new SlipError("ตรวจรูปซ้ำไม่สำเร็จ", 503);
     if (duplicates?.length) return NextResponse.json({ status: slip.verification_status, duplicate: true,
       message: "พบรูปเดียวกันในบิลอื่นของสาขา จึงยังไม่รับชำระอัตโนมัติ" }, { headers: privateHeaders });
-    return NextResponse.json(await verifyStoredPayment(propertyId, id), { headers: privateHeaders });
+    const verifyResult = await verifyStoredPayment(propertyId, id);
+    return NextResponse.json(
+      await notifyReceiptIfPassed(propertyId, verifyResult, slip.invoice_id),
+      { headers: privateHeaders }
+    );
   } catch (error) {
     return NextResponse.json({ error: error instanceof SlipError ? error.message : "ดำเนินการกับสลิปไม่สำเร็จ" },
       { status: error instanceof SlipError ? error.status : 500, headers: privateHeaders });

@@ -55,7 +55,9 @@ export async function verifyLinePayment(propertyId: string, invoice: Invoice, se
   if (duplicates?.length) return { message: "⚠️ ตรวจพบสลิปซ้ำ ธุรกรรมนี้มีอยู่ในระบบแล้ว จึงไม่รับชำระซ้ำครับ" };
   // No fallback to an invoice amount, guessed bank or manufactured reference.
   const latest = (await DatabaseService.getInvoices(propertyId)).find(i => i.id === invoice.id);
-  if (!latest || !["unpaid", "overdue", "pending_review"].includes(latest.status) || latest.totalAmount !== result.amount) {
+  const expectedSatang = latest ? Math.round(Number(latest.totalAmount) * 100) : NaN;
+  const paidSatang = Math.round(Number(result.amount) * 100);
+  if (!latest || !["unpaid", "overdue", "pending_review"].includes(latest.status) || expectedSatang !== paidSatang) {
     return { message: "สถานะหรือยอดบิลเปลี่ยนไป กรุณาให้เจ้าหน้าที่ตรวจสอบก่อนรับชำระ" };
   }
   const updated = await DatabaseService.updateInvoiceStatus(invoice.id, "paid", result.amount!, {

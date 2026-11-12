@@ -3,11 +3,12 @@ import { DatabaseService } from "@/lib/database.service";
 import { SlipError } from "@/lib/payment-slips-server";
 import {
   verifyLineSignature,
-  replyLineMessage,
+  replyOrPushLineMessages,
   getLineMessageContent,
   getLineUserProfile,
 } from "@/lib/line/line-client";
 import { verifyLinePayment } from "@/lib/line/verify-payment";
+import { formatReceiptNumber } from "@/lib/line/receipt-delivery";
 import {
   buildInvoiceFlexMessage,
   buildReceiptFlexMessage,
@@ -16,6 +17,66 @@ import {
   getDefaultQuickReply,
 } from "@/lib/line/flex-templates";
 import { generatePromptPayQRCodeUrl } from "@/lib/promptpay";
+import type { BranchSettingsDetail, Property } from "@/types/dormitory";
+
+interface WebhookBranchContext {
+  propId: string;
+  property: Property | null;
+  settings: BranchSettingsDetail;
+  channelSecret: string;
+  channelAccessToken: string;
+  branchName: string;
+  promptpayNumber: string;
+}
+
+async function resolveWebhookBranchContext(
+  rawBody: string,
+  signature: string
+): Promise<
+  | { ok: true; contexts: WebhookBranchContext[] }
+  | { ok: false; status: number; error: string }
+> {
+  const defaultPropId = DatabaseService.getActivePropertyId() || "prop-1";
+  const allProps = await DatabaseService.getAllProperties();
+  const candidateIds = Array.from(
+    new Set([defaultPropId, ...allProps.map((p) => p.id).filter(Boolean)])
+  );
+
+  let hasConfiguredSecret = false;
+  const matched: WebhookBranchContext[] = [];
+
+  for (const propId of candidateIds) {
+    const property = await DatabaseService.getProperty(propId);
+    const settings = await DatabaseService.getBranchSettings(property, propId);
+    const channelSecret = settings?.lineChannelSecret || process.env.LINE_CHANNEL_SECRET || "";
+    const channelAccessToken =
+      settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+
+    if (channelSecret.trim()) {
+      hasConfiguredSecret = true;
+      if (verifyLineSignature(rawBody, signature, channelSecret)) {
+        matched.push({
+          propId,
+          property,
+          settings,
+          channelSecret,
+          channelAccessToken,
+          branchName: settings?.branchName || property?.name || "พักดี แมนชั่น",
+          promptpayNumber: settings?.promptpayNumber || property?.promptpayNumber || "0812345678",
+        });
+      }
+    }
+  }
+
+  if (!hasConfiguredSecret) {
+    return { ok: false, status: 503, error: "Webhook secret not configured" };
+  }
+  if (matched.length === 0) {
+    console.warn("[LINE-WEBHOOK] Unauthorized: Invalid HMAC-SHA256 signature");
+    return { ok: false, status: 401, error: "Invalid webhook signature" };
+  }
+  return { ok: true, contexts: matched };
+}
 
 // Force Node.js runtime for crypto & buffer compatibility
 export const runtime = "nodejs";
@@ -54,28 +115,31 @@ export async function POST(req: NextRequest) {
     await DatabaseService.init();
     const signature = req.headers.get("x-line-signature") || "";
 
-    // 1. ดึงการตั้งค่าของสาขาปัจจุบัน (รวม Token และ Secret)
-    const activePropId = DatabaseService.getActivePropertyId() || "prop-1";
-    const property = await DatabaseService.getProperty(activePropId);
-    const settings = await DatabaseService.getBranchSettings(property, activePropId);
-
-    const channelSecret = settings?.lineChannelSecret || process.env.LINE_CHANNEL_SECRET || "";
-    const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-    const branchName = settings?.branchName || property?.name || "พักดี แมนชั่น";
-    const promptpayNumber = settings?.promptpayNumber || property?.promptpayNumber || "0812345678";
-
-    // 2. ตรวจสอบ Signature เมื่อมีการตั้งค่า Channel Secret (ป้องกัน Spoofing)
-    if (!channelSecret.trim()) return NextResponse.json({ error: "Webhook secret not configured" }, { status: 503 });
-    if (channelSecret && channelSecret.trim() !== "") {
-      const isValid = verifyLineSignature(rawBody, signature, channelSecret);
-      if (!isValid) {
-        console.warn("[LINE-WEBHOOK] Unauthorized: Invalid HMAC-SHA256 signature");
-        return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
-      }
+    // 1-2. ตรวจสอบ Signature และเลือกสาขาที่ตรงกับ LINE OA Secret
+    const resolved = await resolveWebhookBranchContext(rawBody, signature);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
     }
 
     const payload = JSON.parse(rawBody || "{}");
     const events: any[] = payload.events || [];
+
+    let selectedCtx = resolved.contexts[0];
+    if (resolved.contexts.length > 1) {
+      const firstUserId = events.find((e) => e?.source?.userId)?.source?.userId;
+      if (firstUserId) {
+        for (const ctx of resolved.contexts) {
+          const tenantMatch = await DatabaseService.getTenantByLineUser(firstUserId, ctx.propId);
+          if (tenantMatch) {
+            selectedCtx = ctx;
+            break;
+          }
+        }
+      }
+    }
+
+    const { propId: activePropId, property, settings, channelAccessToken, branchName, promptpayNumber } =
+      selectedCtx;
 
     console.log(`[LINE-WEBHOOK] Received ${events.length} event(s) for branch: ${branchName} (${activePropId})`);
 
@@ -83,6 +147,8 @@ export async function POST(req: NextRequest) {
     for (const event of events) {
       const replyToken = event.replyToken;
       const userId = event.source?.userId;
+      const sendReply = (messages: any[]) =>
+        replyOrPushLineMessages(channelAccessToken, replyToken, userId, messages);
 
       // Ignore verify probes without replyToken
       if (!replyToken || /^[0f]+$/i.test(replyToken)) {
@@ -94,7 +160,7 @@ export async function POST(req: NextRequest) {
       // Event: Follow (ผู้เช่าแอดไลน์เข้ามาใหม่)
       if (event.type === "follow") {
         const welcomeFlex = buildWelcomeFlexMessage(branchName);
-        await replyLineMessage(channelAccessToken, replyToken, [welcomeFlex]);
+        await sendReply([welcomeFlex]);
         continue;
       }
 
@@ -160,10 +226,10 @@ export async function POST(req: NextRequest) {
                 replyTexts.push(flexInvoice as any);
               }
 
-              await replyLineMessage(channelAccessToken, replyToken, replyTexts);
+              await sendReply(replyTexts);
               continue;
             } else {
-              await replyLineMessage(channelAccessToken, replyToken, [
+              await sendReply([
                 {
                   type: "text",
                   text: `⚠️ ไม่พบข้อมูลห้องพัก "${requestedRoom}" หรือห้องนี้ยังไม่มีผู้เข้าพักลงทะเบียนในหน้าแผนผังครับ\n\nหากคุณเป็นผู้เช่ารายเดือนที่เพิ่งย้ายเข้าใหม่ กรุณาติดต่อผู้จัดการหอพักเพื่อลงทะเบียนเข้าพักในระบบก่อนครับ 🏢`,
@@ -178,7 +244,7 @@ export async function POST(req: NextRequest) {
           if (/ขอบิล|เช็คยอด|ยอดค้าง|บิล|ค่าน้ำค่าไฟ|ชำระเงิน/i.test(userText)) {
             const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
             if (!tenant || !tenant.roomNumber) {
-              await replyLineMessage(channelAccessToken, replyToken, [
+              await sendReply([
                 {
                   type: "text",
                   text: "🏢 คุณยังไม่ได้ผูกห้องพักกับระบบครับ\nกรุณาพิมพ์หมายเลขห้องพัก เช่น 'ห้อง 101' หรือ '101' เพื่อผูกข้อมูลก่อนครับ",
@@ -203,9 +269,9 @@ export async function POST(req: NextRequest) {
               } catch (e) { }
 
               const invFlex = buildInvoiceFlexMessage(unpaid, property, settings, qrUrl);
-              await replyLineMessage(channelAccessToken, replyToken, [invFlex]);
+              await sendReply([invFlex]);
             } else {
-              await replyLineMessage(channelAccessToken, replyToken, [
+              await sendReply([
                 {
                   type: "text",
                   text: `✨ ยอดเยี่ยมครับ! ห้อง ${tenant.roomNumber} (${tenant.fullName}) ไม่มีบิลค้างชำระในระบบแล้วครับ ขอบคุณครับ`,
@@ -240,13 +306,13 @@ export async function POST(req: NextRequest) {
             });
 
             const repairFlex = buildRepairTicketFlexMessage(newRepair, branchName);
-            await replyLineMessage(channelAccessToken, replyToken, [repairFlex]);
+            await sendReply([repairFlex]);
             continue;
           }
 
           // 4. คำสั่ง: ข้อมูลติดต่อ / สำนักงาน
           if (/ติดต่อ|นิติ|เบอร์โทร|โทร|สอบถาม|สำนักงาน|ออฟฟิศ/i.test(userText)) {
-            await replyLineMessage(channelAccessToken, replyToken, [
+            await sendReply([
               {
                 type: "text",
                 text: `🏢 ${branchName}\n📍 ที่อยู่: ${settings?.address || property?.address || "ที่อยู่หอพัก"}\n📞 เบอร์ติดต่อ: ${settings?.phone || property?.phone || "081-234-5678"}\n⏰ เวลาทำการ: 08:30 - 20:00 น. ทุกวันครับ`,
@@ -258,7 +324,7 @@ export async function POST(req: NextRequest) {
 
           // 5. คำสั่ง: กฎระเบียบหอพัก
           if (/กฎ|ระเบียบ|ข้อห้าม|สัญญา/i.test(userText)) {
-            await replyLineMessage(channelAccessToken, replyToken, [
+            await sendReply([
               {
                 type: "text",
                 text: `📜 กฎระเบียบและข้อปฏิบัติ ${branchName}:\n\n${settings?.contractTerms || "1. ห้ามส่งเสียงดังหลัง 22:00 น.\n2. ชำระค่าเช่าภายในวันที่ 5 ของทุกเดือน\n3. ห้ามเลี้ยงสัตว์ทุกชนิด\n4. ช่วยกันรักษาความสะอาดพื้นที่ส่วนกลาง"}`,
@@ -269,7 +335,7 @@ export async function POST(req: NextRequest) {
           }
 
           // 6. Default Fallback Help Menu
-          await replyLineMessage(channelAccessToken, replyToken, [
+          await sendReply([
             {
               type: "text",
               text: `สวัสดีครับ 🙏 ${branchName} ยินดีให้บริการครับ\n\nคำสั่งที่สามารถเลือกหรือพิมพ์ได้ 24 ชม.:\n• พิมพ์เลขห้อง (เช่น '101' หรือ 'ห้อง 101') เพื่อผูกข้อมูลห้อง\n• แตะปุ่ม 'ขอบิล' เพื่อดูยอดค่าใช้จ่ายและ QR สแกนจ่าย\n• แตะปุ่ม 'แจ้งซ่อม' เพื่อแจ้งปัญหาห้องพัก\n• ส่งรูปภาพสลิปโอนเงิน เพื่อส่งให้เจ้าหน้าที่ตรวจสอบ`,
@@ -285,7 +351,7 @@ export async function POST(req: NextRequest) {
         if (message.type === "image") {
           const tenant = await DatabaseService.getTenantByLineUser(userId, activePropId);
           if (!tenant || !tenant.roomNumber) {
-            await replyLineMessage(channelAccessToken, replyToken, [
+            await sendReply([
               {
                 type: "text",
                 text: "⚠️ ได้รับรูปภาพสลิปแล้ว แต่บัญชี LINE ของคุณยังไม่ได้ผูกกับห้องพัก\nกรุณาพิมพ์หมายเลขห้อง เช่น 'ห้อง 101' เพื่อให้ระบบตัดยอดบิลได้ถูกต้องครับ",
@@ -294,17 +360,21 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // ค้นหาบิลค้างชำระของห้องนี้ (ยึด ROOMS เป็นหลัก และเทียบเบอร์ห้องอย่างยืดหยุ่น)
+          // ค้นหาบิลค้างชำระของห้องนี้ (ยึด ROOMS เป็นหลัก และเทียบเบอร์ห้องตรงตัวก่อน)
           const invoices = await DatabaseService.getInvoices(activePropId);
-          const unpaid = invoices.find(
-            (i) =>
-              (i.roomNumber === tenant.roomNumber ||
-                DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)) &&
-              i.status !== "paid"
-          );
+          const cleanTenantRoom = tenant.roomNumber.trim().toLowerCase();
+          const unpaid =
+            invoices.find(
+              (i) => i.status !== "paid" && i.roomNumber.trim().toLowerCase() === cleanTenantRoom
+            ) ||
+            invoices.find(
+              (i) =>
+                i.status !== "paid" &&
+                DatabaseService.isRoomNumberMatch(i.roomNumber, tenant.roomNumber)
+            );
 
           if (!unpaid) {
-            await replyLineMessage(channelAccessToken, replyToken, [
+            await sendReply([
               {
                 type: "text",
                 text: `ขอบคุณครับ ห้อง ${tenant.roomNumber} ไม่มีบิลค้างชำระในระบบขณะนี้ หากต้องการติดต่อเจ้าหน้าที่กรุณาโทร ${settings?.phone || "เบอร์สำนักงานหอพัก"} ครับ`,
@@ -316,7 +386,7 @@ export async function POST(req: NextRequest) {
           // 1. ดาวน์โหลดรูปภาพสลิปจริงจาก LINE Content API
           const imageBuffer = await getLineMessageContent(channelAccessToken, message.id);
           if (!imageBuffer) {
-            await replyLineMessage(channelAccessToken, replyToken, [
+            await sendReply([
               {
                 type: "text",
                 text: "⚠️ ไม่สามารถดาวน์โหลดรูปภาพจากเซิร์ฟเวอร์ LINE ได้ กรุณาลองส่งใหม่อีกครั้งครับ",
@@ -327,13 +397,30 @@ export async function POST(req: NextRequest) {
 
           try {
             const result = await verifyLinePayment(activePropId, unpaid, settings, imageBuffer, "line-" + message.id);
-            const replies: any[] = [{ type: "text", text: result.message }];
-            if (result.amount !== undefined) replies.push(buildReceiptFlexMessage(
-              { ...unpaid, paidAmount: result.amount, status: "paid" },
-              "REC-" + unpaid.invoiceNumber, result.amount, branchName));
-            await replyLineMessage(channelAccessToken, replyToken, replies);
+            const replies: any[] = [{ type: "text", text: result.message, quickReply: getDefaultQuickReply() }];
+            if (result.amount !== undefined) {
+              replies.push(
+                buildReceiptFlexMessage(
+                  { ...unpaid, paidAmount: result.amount, status: "paid" },
+                  formatReceiptNumber(unpaid.invoiceNumber),
+                  result.amount,
+                  branchName
+                )
+              );
+            }
+            const sendRes = await sendReply(replies);
+            console.log("[LINE-WEBHOOK] Slip verification delivery:", {
+              invoiceNumber: unpaid.invoiceNumber,
+              roomNumber: unpaid.roomNumber,
+              userId,
+              hasReceipt: result.amount !== undefined,
+              success: sendRes.success,
+              method: sendRes.method,
+              statusCode: sendRes.statusCode,
+              error: sendRes.error,
+            });
           } catch (error) {
-            await replyLineMessage(channelAccessToken, replyToken, [{ type: "text",
+            await sendReply([{ type: "text",
               text: error instanceof SlipError ? error.message : "ยังยืนยันการชำระเงินไม่ได้ กรุณาติดต่อเจ้าหน้าที่" }]);
           }
           continue;

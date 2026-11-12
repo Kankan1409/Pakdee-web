@@ -119,6 +119,81 @@ export async function pushLineMessage(
   }
 }
 
+export interface LineDeliveryResult extends LineSendResult {
+  method: "reply" | "push" | "partial-push" | "none";
+}
+
+/**
+ * Reply first while replyToken is fresh, then automatically fall back to pushMessage
+ * (and single-message push retries) so expired tokens or multi-message errors never drop receipts.
+ */
+export async function replyOrPushLineMessages(
+  channelAccessToken: string,
+  replyToken: string | undefined,
+  toUserId: string | undefined,
+  messages: any[]
+): Promise<LineDeliveryResult> {
+  const safeMessages = (Array.isArray(messages) ? messages : [messages]).filter(Boolean).slice(0, 5);
+  if (safeMessages.length === 0) {
+    return { success: false, error: "No messages to deliver", method: "none" };
+  }
+
+  let replyError: LineSendResult | null = null;
+  if (replyToken && replyToken.trim() && !/^[0f]+$/i.test(replyToken.trim())) {
+    replyError = await replyLineMessage(channelAccessToken, replyToken.trim(), safeMessages);
+    if (replyError.success) {
+      return { ...replyError, method: "reply" };
+    }
+    console.warn("[LINE-CLIENT] Reply failed, falling back to pushMessage:", {
+      statusCode: replyError.statusCode,
+      error: replyError.error,
+      hasUserId: Boolean(toUserId),
+    });
+  }
+
+  const trimmedUserId = toUserId?.trim();
+  if (!trimmedUserId) {
+    return {
+      ...(replyError || { success: false, error: "Missing replyToken and recipient LINE userId" }),
+      method: "none",
+    };
+  }
+
+  const batchPush = await pushLineMessage(channelAccessToken, trimmedUserId, safeMessages);
+  if (batchPush.success) {
+    return { ...batchPush, method: "push" };
+  }
+
+  // If a combined array (e.g., [text, flex]) failed validation on one item, deliver the valid messages individually.
+  if (safeMessages.length > 1) {
+    const delivered: LineSendResult[] = [];
+    let firstItemError = batchPush.error;
+    for (const msg of safeMessages) {
+      const singleRes = await pushLineMessage(channelAccessToken, trimmedUserId, [msg]);
+      if (singleRes.success) {
+        delivered.push(singleRes);
+      } else if (!firstItemError) {
+        firstItemError = singleRes.error;
+      }
+    }
+    if (delivered.length > 0) {
+      return {
+        success: true,
+        statusCode: delivered[0].statusCode || 200,
+        data: delivered,
+        error: firstItemError,
+        method: "partial-push",
+      };
+    }
+  }
+
+  return {
+    ...batchPush,
+    error: batchPush.error || replyError?.error,
+    method: "push",
+  };
+}
+
 /**
  * 4. ส่งข้อความแบบ Multicast Message ไปยังผู้ใช้กลุ่มที่ระบุ (สูงสุด 500 คนต่อครั้ง)
  */
