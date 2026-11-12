@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await DatabaseService.init();
+    await DatabaseService.initCoreOnly();
     const activePropId = propertyId || DatabaseService.getActivePropertyId() || "prop-1";
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
@@ -62,7 +62,12 @@ export async function POST(req: NextRequest) {
     const linkedLineUserIds = [...new Set(targetRooms
       .map((r) => {
         const tenant = allTenants.find((t) => t.id === r.currentTenant!.id);
-        return (tenant ? tenant.lineUserId : r.currentTenant!.lineUserId)?.trim();
+        return (
+          tenant?.lineUserId ||
+          r.currentTenant?.lineUserId ||
+          tenant?.lineId ||
+          r.currentTenant?.lineId
+        )?.trim();
       })
       .filter((uid): uid is string => Boolean(uid && uid.startsWith("U"))))];
 
@@ -108,7 +113,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. บันทึกลงฐานข้อมูล DatabaseService
+    // 4. บันทึกลงฐานข้อมูล DatabaseService (sendBroadcast บันทึก activity log ให้แล้ว)
     const recipientCount =
       linkedLineUserIds.length;
     const broadcastRecord = await DatabaseService.sendBroadcast({
@@ -120,13 +125,6 @@ export async function POST(req: NextRequest) {
       targetValue,
       recipientCount,
     });
-
-    await DatabaseService.logActivity(
-      "SEND",
-      "ROOM",
-      `ส่งประกาศ LINE: "${title.trim()}" ถึง ${targetInfo} (${liveSendType})`,
-      activePropId
-    );
 
     return NextResponse.json({
       success: true,

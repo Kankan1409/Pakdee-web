@@ -1223,15 +1223,7 @@ export default function HomePage() {
   ) => {
     try {
       showToast("กำลังบันทึกเลขมิเตอร์ทั้งหมด...", "info");
-      for (const r of readings) {
-        await DatabaseService.saveMeterReading(
-          r.roomId,
-          r.electricCurr,
-          r.waterCurr,
-          r.electricPrev,
-          r.waterPrev
-        );
-      }
+      await DatabaseService.saveMeterReadingsBatch(readings, property.id);
       setRooms((prev) =>
         prev.map((room) => {
           const match = readings.find((rd) => rd.roomId === room.id);
@@ -1495,6 +1487,17 @@ export default function HomePage() {
           paidAt: nowFormatted,
         });
       }
+
+      // 5. ส่ง Digital Receipt เข้า LINE ผู้เช่าอัตโนมัติ (ถ้าผู้เช่าผูกบัญชี LINE ไว้แล้ว)
+      fetch("/api/line/notify-slip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceId,
+          action: "approve",
+          propertyId: property.id,
+        }),
+      }).catch((err) => console.warn("[NOTIFY-SLIP] Notify approve failed:", err));
 
       showToast(
         `✓ รับชำระเงิน${paymentMethod === "cash" ? "สด" : ""} ห้อง ${targetInv.roomNumber} (฿${totalAmount.toLocaleString()}) เรียบร้อยแล้ว`,
@@ -2910,6 +2913,7 @@ export default function HomePage() {
           {/* VIEW: Meter Reading (Spreadsheet Fast Entry & Top Summary Banner) */}
           {currentTab === "meter" && (
             <MeterSpreadsheetView
+              propertyId={property.id}
               rooms={rooms}
               dailyBookings={dailyBookings}
               electricRate={property.electricRate}

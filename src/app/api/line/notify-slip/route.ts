@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
 import { buildReceiptFlexMessage, getDefaultQuickReply } from "@/lib/line/flex-templates";
+import { toUuid } from "@/lib/supabase-relational";
 
 export const runtime = "nodejs";
 
@@ -31,21 +32,35 @@ export async function POST(req: NextRequest) {
     const branchName = settings?.branchName || property?.name || "พักดี แมนชั่น";
 
     const allInvoices = await DatabaseService.getInvoices(activePropId);
-    const invoice = allInvoices.find((i) => i.id === invoiceId);
+    const invoice = allInvoices.find(
+      (i) => i.id === invoiceId || toUuid(i.id) === toUuid(invoiceId)
+    );
 
     if (!invoice) {
       return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
     }
 
-    // ค้นหาผู้เช่าของห้องนี้
+    // ค้นหาผู้เช่าของห้องนี้ (รองรับทั้งจากทะเบียนผู้เช่าและห้องพักปัจจุบัน)
     const allTenants = await DatabaseService.getTenants(activePropId);
+    const allRooms = await DatabaseService.getRooms(activePropId);
+    const room = allRooms.find(
+      (r) =>
+        r.roomNumber === invoice.roomNumber ||
+        DatabaseService.isRoomNumberMatch(r.roomNumber, invoice.roomNumber)
+    );
     const tenant = allTenants.find(
       (t) =>
+        (room?.currentTenant?.id && t.id === room.currentTenant.id) ||
         t.roomNumber === invoice.roomNumber ||
         DatabaseService.isRoomNumberMatch(t.roomNumber || "", invoice.roomNumber)
     );
 
-    const recipientUserId = tenant?.lineUserId;
+    const candidateLineId =
+      tenant?.lineUserId ||
+      room?.currentTenant?.lineUserId ||
+      tenant?.lineId ||
+      room?.currentTenant?.lineId;
+    const recipientUserId = candidateLineId?.trim();
 
     if (!recipientUserId || !recipientUserId.startsWith("U")) {
       console.log(`[NOTIFY-SLIP] Tenant in room ${invoice.roomNumber} has not linked LINE (lineUserId missing)`);

@@ -29,6 +29,9 @@ import {
   syncKeyToRelationalTable,
   syncAllToRelationalTables,
   loadFromRelationalTables,
+  loadCoreContextFromSupabase,
+  syncMeterReadingsToSupabase,
+  syncRoomsToSupabase,
   toUuid,
 } from "@/lib/supabase-relational";
 
@@ -206,7 +209,53 @@ function setupRealtimeSync(): void {
   }
 }
 
+function cacheRelationalEntries(entries: Record<string, any>): void {
+  Object.entries(entries).forEach(([key, value]) => {
+    memoryDb[key] = value;
+    const canonicalKey = `pakdee_dev_${key}`;
+    memoryDb[canonicalKey] = value;
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(canonicalKey, JSON.stringify(value));
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch {}
+    }
+  });
+}
+
+let activeCoreInitPromise: Promise<boolean> | null = null;
+
 export const DatabaseService = {
+  /**
+   * Initialize ONLY core context (properties, branch_settings, tenants, rooms) for fast API routes
+   * such as /api/line/broadcast so they do not wait on heavy historical tables.
+   */
+  async initCoreOnly(): Promise<boolean> {
+    if (activeCoreInitPromise) return activeCoreInitPromise;
+    activeCoreInitPromise = (async () => {
+      try {
+        const timeoutPromise = new Promise<{ hasCoreData: boolean; data: Record<string, any> }>((resolve) =>
+          setTimeout(() => resolve({ hasCoreData: false, data: {} }), 2500)
+        );
+        const { hasCoreData, data } = await Promise.race([
+          loadCoreContextFromSupabase(memoryDb),
+          timeoutPromise,
+        ]);
+        if (hasCoreData && data) {
+          cacheRelationalEntries(data);
+          return true;
+        }
+        return false;
+      } catch (err: any) {
+        console.warn("[Supabase Core Init] warning:", err?.message);
+        return false;
+      } finally {
+        activeCoreInitPromise = null;
+      }
+    })();
+    return activeCoreInitPromise;
+  },
+
   /**
    * Initialize and synchronize directly with Supabase Cloud (qygelgekosmklwrgnaxq)
    * Local file data/db_port3000.json is completely disabled.
@@ -234,18 +283,7 @@ export const DatabaseService = {
           ]);
 
           if (hasRelationalData && relationalData) {
-            Object.entries(relationalData).forEach(([key, value]) => {
-              memoryDb[key] = value;
-              const canonicalKey = `pakdee_dev_${key}`;
-              memoryDb[canonicalKey] = value;
-              if (typeof window !== "undefined") {
-                try {
-                  localStorage.setItem(canonicalKey, JSON.stringify(value));
-                  localStorage.setItem(key, JSON.stringify(value));
-                } catch {}
-              }
-            });
-
+            cacheRelationalEntries(relationalData);
             isServerSynced = true;
             console.log(`[Supabase Relational Direct] Successfully loaded ${Object.keys(relationalData).length} entities directly from Supabase Relational Tables`);
             return true;
@@ -998,45 +1036,135 @@ export const DatabaseService = {
     billingMonth: string = new Date().toISOString().slice(0, 7),
     propertyId?: string
   ): Promise<boolean> {
-    const allRooms = this.getAllRawRooms();
-    const targetRoom = allRooms.find((r) => r.id === roomId);
-    const targetPropId = propertyId || targetRoom?.propertyId || this.getActivePropertyId();
-
-    const updatedRooms = allRooms.map((r) =>
-      r.id === roomId ? { ...r, currentElectricMeter: electricCurr, currentWaterMeter: waterCurr } : r
+    await this.saveMeterReadingsBatch(
+      [
+        {
+          roomId,
+          electricCurr,
+          waterCurr,
+          electricPrev,
+          waterPrev,
+          billingMonth,
+        },
+      ],
+      propertyId
     );
+    return true;
+  },
+
+  async saveMeterReadingsBatch(
+    readings: {
+      roomId: string;
+      roomNumber?: string;
+      electricCurr: number;
+      waterCurr: number;
+      electricPrev: number;
+      waterPrev: number;
+      billingMonth?: string;
+    }[],
+    propertyId?: string
+  ): Promise<any[]> {
+    if (!readings || readings.length === 0) return [];
+    const allRooms = this.getAllRawRooms();
+    const defaultPropId = propertyId || this.getActivePropertyId();
+    const nowIso = new Date().toISOString();
+    const defaultMonth = nowIso.slice(0, 7);
+
+    const readingByRoomId = new Map(readings.map((rd) => [rd.roomId, rd]));
+    const updatedRooms = allRooms.map((r) => {
+      const match = readingByRoomId.get(r.id);
+      return match
+        ? { ...r, currentElectricMeter: match.electricCurr, currentWaterMeter: match.waterCurr }
+        : r;
+    });
     setLocal(KEYS.ROOMS, updatedRooms);
 
     const history = getLocal<any[]>(KEYS.METER_READINGS, []);
-    const newRecord = {
-      id: `mtr-${Date.now()}-${roomId}`,
-      property_id: targetPropId,
-      room_id: roomId,
-      room_number: targetRoom?.roomNumber || "",
-      billing_month: billingMonth,
-      electric_prev: electricPrev,
-      electric_curr: electricCurr,
-      electric_units: Math.max(0, electricCurr - electricPrev),
-      water_prev: waterPrev,
-      water_curr: waterCurr,
-      water_units: Math.max(0, waterCurr - waterPrev),
-      recorded_at: new Date().toLocaleString("th-TH"),
-    };
-    setLocal(KEYS.METER_READINGS, [newRecord, ...history]);
+    const newRecords = readings.map((rd, idx) => {
+      const targetRoom = allRooms.find((r) => r.id === rd.roomId);
+      const targetPropId = propertyId || targetRoom?.propertyId || defaultPropId;
+      return {
+        id: `mtr-${Date.now()}-${idx}-${rd.roomId}`,
+        property_id: targetPropId,
+        room_id: rd.roomId,
+        room_number: rd.roomNumber || targetRoom?.roomNumber || "",
+        tenant_name: targetRoom?.currentTenant?.fullName || "",
+        billing_month: rd.billingMonth || defaultMonth,
+        electric_prev: rd.electricPrev,
+        electric_curr: rd.electricCurr,
+        electric_units: Math.max(0, rd.electricCurr - rd.electricPrev),
+        water_prev: rd.waterPrev,
+        water_curr: rd.waterCurr,
+        water_units: Math.max(0, rd.waterCurr - rd.waterPrev),
+        recorded_at: nowIso,
+      };
+    });
 
-    await this.logActivity(
-      "UPDATE",
-      "METER",
-      `จดมิเตอร์ห้อง ${targetRoom?.roomNumber}: ไฟ ${electricCurr}, น้ำ ${waterCurr}`,
-      targetPropId
-    );
-    return true;
+    const nextHistory = [...newRecords, ...history];
+    setLocal(KEYS.METER_READINGS, nextHistory);
+
+    // Flush relational sync immediately so refreshing the browser preserves all new readings
+    try {
+      await syncRoomsToSupabase(updatedRooms);
+      await syncMeterReadingsToSupabase(nextHistory, updatedRooms);
+    } catch (err) {
+      console.warn("[MeterBatch] Direct Supabase flush warning:", err);
+    }
+
+    const logDesc =
+      readings.length === 1
+        ? `จดมิเตอร์ห้อง ${newRecords[0].room_number}: ไฟ ${newRecords[0].electric_curr}, น้ำ ${newRecords[0].water_curr}`
+        : `บันทึกเลขมิเตอร์ประจำรอบจำนวน ${readings.length} ห้อง`;
+    await this.logActivity("UPDATE", "METER", logDesc, newRecords[0]?.property_id || defaultPropId);
+    return newRecords;
   },
 
   async getMeterReadings(propertyId?: string): Promise<any[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
     const history = getLocal<any[]>(KEYS.METER_READINGS, []);
-    return history.filter((m) => (m.property_id || "prop-1") === targetPropId);
+    const allRooms = this.getAllRawRooms();
+    const roomById = new Map<string, Room>();
+    for (const r of allRooms) {
+      roomById.set(r.id, r);
+      roomById.set(r.id.toLowerCase(), r);
+      roomById.set(toUuid(r.id), r);
+    }
+    const roomByNum = new Map(
+      allRooms
+        .filter((r) => (r.propertyId || "prop-1") === targetPropId)
+        .map((r) => [r.roomNumber, r])
+    );
+
+    return history
+      .filter((m) => {
+        const roomKey = String(m.room_id || "").toLowerCase();
+        const matchedRoom = roomById.get(m.room_id) || roomById.get(roomKey);
+        const propId = m.property_id || matchedRoom?.propertyId || "prop-1";
+        return propId === targetPropId;
+      })
+      .map((m) => {
+        const roomKey = String(m.room_id || "").toLowerCase();
+        const matchedRoom =
+          roomById.get(m.room_id) ||
+          roomById.get(roomKey) ||
+          roomByNum.get(m.room_number);
+        const elecPrev = Number(m.electric_prev || 0);
+        const elecCurr = Number(m.electric_curr || 0);
+        const waterPrev = Number(m.water_prev || 0);
+        const waterCurr = Number(m.water_curr || 0);
+        return {
+          ...m,
+          property_id: m.property_id || matchedRoom?.propertyId || targetPropId,
+          room_number: m.room_number || matchedRoom?.roomNumber || "",
+          tenant_name: m.tenant_name || matchedRoom?.currentTenant?.fullName || "(ห้องว่าง)",
+          electric_prev: elecPrev,
+          electric_curr: elecCurr,
+          electric_units: Number(m.electric_units ?? 0) || Math.max(0, elecCurr - elecPrev),
+          water_prev: waterPrev,
+          water_curr: waterCurr,
+          water_units: Number(m.water_units ?? 0) || Math.max(0, waterCurr - waterPrev),
+        };
+      });
   },
 
   async getLatestMeterReading(roomId: string, billingMonth?: string): Promise<any | null> {

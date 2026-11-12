@@ -20,7 +20,7 @@ import {
   FileText,
   Image as ImageIcon,
 } from "lucide-react";
-import { formatCurrency, formatMonthThai } from "@/lib/utils";
+import { buildYearMonthsList, formatCurrency, formatMonthThai, normalizeYearMonth } from "@/lib/utils";
 
 interface InvoicesBillingViewProps {
   invoices: Invoice[];
@@ -45,25 +45,19 @@ export function InvoicesBillingView({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedSlipInvoice, setSelectedSlipInvoice] = useState<Invoice | null>(null);
 
-  // Extract available billing months
+  // Pre-populate all 12 billing months (January - December) even when no invoices exist yet
   const invoiceMonths = useMemo(() => {
-    return Array.from(
-      new Set([
-        new Date().toISOString().slice(0, 7),
-        ...invoices
-          .map((i) => (i.billingDate && i.billingDate.length >= 7 ? i.billingDate.slice(0, 7) : ""))
-          .filter((m) => !!m),
-      ])
-    )
-      .sort()
-      .reverse();
+    return buildYearMonthsList(
+      invoices.map((i) => (i.billingDate && i.billingDate.length >= 7 ? i.billingDate.slice(0, 7) : ""))
+    );
   }, [invoices]);
 
   const displayedInvoices = useMemo(() => {
     return invoices.filter((i) => {
       let matchMonth = true;
       if (monthFilter !== "all") {
-        matchMonth = (i.billingDate || "").startsWith(monthFilter);
+        const invYm = normalizeYearMonth(i.billingDate) || (i.billingDate || "").slice(0, 7);
+        matchMonth = invYm === monthFilter;
       }
       const q = searchQuery.trim().toLowerCase();
       const matchSearch =
@@ -193,11 +187,17 @@ export function InvoicesBillingView({
                 className="bg-[var(--subtle)] border border-[var(--border)] text-[var(--foreground)] text-xs font-semibold rounded-xl px-3 py-1.5 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition cursor-pointer appearance-none"
               >
                 <option value="all">ทุกรอบเดือน (ทั้งหมด - All Time)</option>
-                {invoiceMonths.map((ym) => (
-                  <option key={ym} value={ym}>
-                    {formatMonthThai(ym)} {ym === new Date().toISOString().slice(0, 7) ? "★ เดือนปัจจุบัน" : ""}
-                  </option>
-                ))}
+                {invoiceMonths.map((ym) => {
+                  const monthCount = invoices.filter(
+                    (i) => (normalizeYearMonth(i.billingDate) || (i.billingDate || "").slice(0, 7)) === ym
+                  ).length;
+                  const isCurrent = ym === new Date().toISOString().slice(0, 7);
+                  return (
+                    <option key={ym} value={ym}>
+                      {formatMonthThai(ym)} {monthCount > 0 ? `(${monthCount} บิล)` : ""} {isCurrent ? "★ เดือนปัจจุบัน" : ""}
+                    </option>
+                  );
+                })}
               </select>
               <ChevronRight className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90 text-[var(--muted)] pointer-events-none" />
             </div>
