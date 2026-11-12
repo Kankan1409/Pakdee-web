@@ -132,14 +132,12 @@ export function toPgDate(val: string | undefined | null, fallbackDate: string | 
 
 /**
  * Formats a timestamp string into ISO 8601 for PostgreSQL TIMESTAMPTZ columns.
- * Handles both Thai Buddhist Era strings (e.g. "11/11/2569 17:08:23" / "2569-11-11T...")
- * and standard ISO/Gregorian strings cleanly.
  */
 export function toPgTimestamp(val: string | undefined | null, fallbackNow = false): string | null {
   if (!val) return fallbackNow ? new Date().toISOString() : null;
   const trimmed = String(val).trim();
 
-  // Handle ISO-like strings first (guard against Buddhist Era years > 2400)
+  // (origin/main 2f42266) Handle ISO-like strings first (guard against Buddhist Era years > 2400)
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?/);
   if (isoMatch) {
     let year = parseInt(isoMatch[1], 10);
@@ -176,6 +174,7 @@ export function toPgTimestamp(val: string | undefined | null, fallbackNow = fals
   return fallbackNow ? new Date().toISOString() : null;
 }
 
+/** (origin/main 2f42266) "YYYY-MM" from a meter month value; converts Buddhist Era years. */
 function normalizeMeterMonth(raw: any): string {
   const str = String(raw || "").trim();
   const match = str.match(/^(\d{4})-(\d{2})/);
@@ -1025,25 +1024,33 @@ export async function syncAllToRelationalTables(memoryDb: Record<string, any>): 
   }
 }
 
-interface CoreEntitiesInput {
-  propRows: any[];
-  settingsRows: any[];
-  tenantRows: any[];
-  roomRows: any[];
-  existingMemoryDb: Record<string, any>;
+/**
+ * Core context (properties, branch_settings, tenants, rooms) for server endpoints such as
+ * /api/line/broadcast — used by DatabaseService.initCoreOnly (origin/main 2f42266).
+ * Merge fix: origin/main implemented this with a new mapper built on older code (no short ids,
+ * branch filters, notification/signature fields). To keep one mapping, it reuses
+ * loadFromRelationalTables and returns only the core keys.
+ */
+export async function loadCoreContextFromSupabase(
+  existingMemoryDb: Record<string, any> = {}
+): Promise<{ hasCoreData: boolean; data: Record<string, any> }> {
+  const { hasRelationalData, data } = await loadFromRelationalTables(existingMemoryDb);
+  const core: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data || {})) {
+    if (key === "properties" || key === "tenants" || key === "rooms" || key.startsWith("branch_settings")) {
+      core[key] = value;
+    }
+  }
+  return { hasCoreData: hasRelationalData, data: core };
 }
 
 /**
- * Shared mapper for core entities (properties, branch_settings, tenants, rooms)
- * plus lookup maps needed by dependent tables.
+ * Loads data directly from the separate Supabase relational tables and merges with
+ * any extended JSON fields in memoryDb.
  */
-function mapCoreEntities({
-  propRows,
-  settingsRows,
-  tenantRows,
-  roomRows,
-  existingMemoryDb,
-}: CoreEntitiesInput) {
+export async function loadFromRelationalTables(
+  existingMemoryDb: Record<string, any>
+): Promise<{ hasRelationalData: boolean; data: Record<string, any> }> {
   const result: Record<string, any> = {};
   let hasRelationalData = false;
 
@@ -1069,7 +1076,7 @@ function mapCoreEntities({
       supabase.from("contracts").select("*"),
       supabase.from("invoices").select("*"),
       supabase.from("invoice_items").select("*"),
-      supabase.from("meter_readings").select("*"),
+      supabase.from("meter_readings").select("*").order("recorded_at", { ascending: false }),
       supabase.from("repairs").select("*"),
       supabase.from("expenses").select("*"),
       supabase.from("daily_bookings").select("*"),
@@ -1130,26 +1137,6 @@ function mapCoreEntities({
         plan: (row.plan || "pro") as PlanType,
       } satisfies Property;
     });
-  result["properties"] = propRows.map((row: any, idx: number) => {
-    const origId =
-      uuidToPropId.get(String(row.id).toLowerCase()) ||
-      existingProps.find((p) => p.name === row.name)?.id ||
-      (idx === 0 ? "prop-1" : String(row.id));
-    uuidToPropId.set(String(row.id).toLowerCase(), origId);
-    const existingMatch = existingProps.find((p) => p.id === origId);
-    return {
-      ...(existingMatch || {}),
-      id: origId,
-      name: row.name,
-      address: row.address || "",
-      phone: row.phone || "",
-      promptpayNumber: row.promptpay_number || "",
-      promptpayName: row.promptpay_name || "",
-      electricRate: Number(row.electric_rate ?? 8),
-      waterRate: Number(row.water_rate ?? 18),
-      plan: (row.plan || "pro") as PlanType,
-    } satisfies Property;
-  });
 
     // Map branch_settings
     if (settingsRes.data && settingsRes.data.length > 0) {
@@ -1200,46 +1187,6 @@ function mapCoreEntities({
         } satisfies BranchSettingsDetail;
       }
     }
-  if (settingsRows && settingsRows.length > 0) {
-    for (const sRow of settingsRows) {
-      const propId = uuidToPropId.get(String(sRow.property_id || "").toLowerCase()) || "prop-1";
-      const existingSetting = existingMemoryDb[`branch_settings_${propId}`] || {};
-      result[`branch_settings_${propId}`] = {
-        ...existingSetting,
-        id: sRow.id,
-        branchName: sRow.branch_name || existingSetting.branchName || "",
-        address: sRow.address ?? existingSetting.address ?? "",
-        phone: sRow.phone ?? existingSetting.phone ?? "",
-        ownerName: sRow.owner_name ?? existingSetting.ownerName ?? "",
-        ownerPhone: sRow.owner_phone ?? existingSetting.ownerPhone ?? "",
-        taxId: sRow.tax_id ?? existingSetting.taxId ?? "",
-        waterRate: Number(sRow.water_rate ?? existingSetting.waterRate ?? 18),
-        electricRate: Number(sRow.electric_rate ?? existingSetting.electricRate ?? 8),
-        useMinWater: Boolean(sRow.use_min_water ?? existingSetting.useMinWater),
-        minWaterUnits: Number(sRow.min_water_units ?? existingSetting.minWaterUnits ?? 5),
-        minWaterFee: Number(sRow.min_water_fee ?? existingSetting.minWaterFee ?? 100),
-        useMinElectric: Boolean(sRow.use_min_electric ?? existingSetting.useMinElectric),
-        minElectricUnits: Number(sRow.min_electric_units ?? existingSetting.minElectricUnits ?? 10),
-        minElectricFee: Number(sRow.min_electric_fee ?? existingSetting.minElectricFee ?? 150),
-        commonFee: Number(sRow.common_fee ?? existingSetting.commonFee ?? 300),
-        internetFee: Number(sRow.internet_fee ?? existingSetting.internetFee ?? 0),
-        parkingFee: Number(sRow.parking_fee ?? existingSetting.parkingFee ?? 0),
-        billCycleDay: Number(sRow.bill_cycle_day ?? existingSetting.billCycleDay ?? 25),
-        billDueDay: Number(sRow.bill_due_day ?? existingSetting.billDueDay ?? 5),
-        lateFeePerDay: Number(sRow.late_fee_per_day ?? existingSetting.lateFeePerDay ?? 50),
-        bankName: sRow.bank_name ?? existingSetting.bankName ?? "",
-        bankAccountNumber: sRow.bank_account_number ?? existingSetting.bankAccountNumber ?? "",
-        bankAccountName: sRow.bank_account_name ?? existingSetting.bankAccountName ?? "",
-        promptpayNumber: sRow.promptpay_number ?? existingSetting.promptpayNumber ?? "",
-        promptpayName: sRow.promptpay_name ?? existingSetting.promptpayName ?? "",
-        lineChannelAccessToken: sRow.line_channel_access_token ?? existingSetting.lineChannelAccessToken ?? "",
-        lineChannelSecret: sRow.line_channel_secret ?? existingSetting.lineChannelSecret ?? "",
-        signatureUrl: sRow.signature_url ?? existingSetting.signatureUrl ?? "",
-        stampUrl: sRow.stamp_url ?? existingSetting.stampUrl ?? "",
-        contractTerms: sRow.contract_terms ?? existingSetting.contractTerms ?? "",
-      } satisfies BranchSettingsDetail;
-    }
-  }
 
     // Map tenants
     const existingTenants: Tenant[] = Array.isArray(existingMemoryDb["tenants"])
@@ -1276,215 +1223,47 @@ function mapCoreEntities({
       return mapped;
     });
     result["tenants"] = mappedTenants;
-  const existingTenants: Tenant[] = Array.isArray(existingMemoryDb["tenants"])
-    ? existingMemoryDb["tenants"]
-    : [];
-  const tenantByUuid = new Map<string, Tenant>();
-  const mappedTenants: Tenant[] = tenantRows.map((tRow: any) => {
-    const rowUuid = String(tRow.id).toLowerCase();
-    const existingMatch = existingTenants.find(
-      (et) => toUuid(et.id) === rowUuid || et.fullName === tRow.full_name
-    );
-    const mapped: Tenant = {
-      ...(existingMatch || {}),
-      id: existingMatch?.id || String(tRow.id),
-      propertyId: existingMatch?.propertyId || "prop-1",
-      fullName: tRow.full_name || "ไม่ระบุชื่อ",
-      phone: tRow.phone || "-",
-      idCard: tRow.id_card || existingMatch?.idCard || "",
-      gender: (tRow.gender || existingMatch?.gender || "MALE") as "MALE" | "FEMALE" | "OTHER",
-      age: Number(tRow.age ?? existingMatch?.age ?? 25),
-      lineId: tRow.line_id ?? existingMatch?.lineId ?? "",
-      lineUserId:
-        existingMatch?.lineUserId ||
-        (typeof tRow.line_id === "string" && tRow.line_id.trim().startsWith("U")
-          ? tRow.line_id.trim()
-          : undefined),
-      Line_Acc:
-        tRow.Line_Acc ??
-        tRow.line_acc ??
-        tRow.line_Acc ??
-        tRow.LineAcc ??
-        tRow.line_id ??
-        existingMatch?.Line_Acc ??
-        existingMatch?.lineAcc ??
-        "",
-      lineAcc:
-        tRow.Line_Acc ??
-        tRow.line_acc ??
-        tRow.line_Acc ??
-        tRow.LineAcc ??
-        tRow.line_id ??
-        existingMatch?.Line_Acc ??
-        existingMatch?.lineAcc ??
-        "",
-      taxId: tRow.tax_id ?? existingMatch?.taxId ?? "",
-      email: tRow.email ?? existingMatch?.email ?? "",
-      address: tRow.address ?? existingMatch?.address ?? "",
-      emergencyContact: tRow.emergency_contact ?? existingMatch?.emergencyContact ?? "",
-      vehiclePlate: tRow.vehicle_plate ?? existingMatch?.vehiclePlate ?? "",
-      idCardImageUrl: tRow.id_card_image_url ?? existingMatch?.idCardImageUrl ?? "",
-      invoiceLang: (tRow.invoice_lang || existingMatch?.invoiceLang || "TH") as "TH" | "EN",
-      notes: tRow.notes ?? existingMatch?.notes ?? "",
-    };
-    tenantByUuid.set(rowUuid, mapped);
-    return mapped;
-  });
-  result["tenants"] = mappedTenants;
 
-  const existingRooms: Room[] = Array.isArray(existingMemoryDb["rooms"])
-    ? existingMemoryDb["rooms"]
-    : [];
-  const uuidToRoomNumber = new Map<string, string>();
-  const roomInfoByUuid = new Map<string, { propertyId: string; roomNumber: string; tenantName: string }>();
-  result["rooms"] = roomRows.filter(belongsToKnownBranch).map((rRow: any) => {
-    const rowUuid = String(rRow.id).toLowerCase();
-    const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
-    const existingRoom = existingRooms.find(
-      (er) =>
-        toUuid(er.id).toLowerCase() === rowUuid ||
-        ((er.propertyId || defaultPropId) === propId && er.roomNumber === rRow.room_number)
-    );
-    uuidToRoomNumber.set(rowUuid, rRow.room_number);
-    const linkedTenant = rRow.current_tenant_id
-      ? tenantByUuid.get(String(rRow.current_tenant_id).toLowerCase()) || existingRoom?.currentTenant
-      : rRow.status === "occupied" || rRow.status === "overdue"
-        ? existingRoom?.currentTenant
-        : undefined;
+    // Map rooms
+    const existingRooms: Room[] = Array.isArray(existingMemoryDb["rooms"])
+      ? existingMemoryDb["rooms"]
+      : [];
+    const uuidToRoomNumber = new Map<string, string>();
+    result["rooms"] = roomRows.filter(belongsToKnownBranch).map((rRow: any) => {
+      const rowUuid = String(rRow.id).toLowerCase();
+      const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
+      const existingRoom = existingRooms.find(
+        (er) =>
+          toUuid(er.id).toLowerCase() === rowUuid ||
+          ((er.propertyId || defaultPropId) === propId && er.roomNumber === rRow.room_number)
+      );
+      uuidToRoomNumber.set(rowUuid, rRow.room_number);
+      const linkedTenant = rRow.current_tenant_id
+        ? tenantByUuid.get(String(rRow.current_tenant_id).toLowerCase()) || existingRoom?.currentTenant
+        : rRow.status === "occupied" || rRow.status === "overdue"
+          ? existingRoom?.currentTenant
+          : undefined;
       if (linkedTenant) {
         linkedTenant.propertyId = propId;
       }
-    roomInfoByUuid.set(rowUuid, {
-      propertyId: propId,
-      roomNumber: String(rRow.room_number),
-      tenantName: linkedTenant?.fullName || "",
+
+      return {
+        ...(existingRoom || {}),
+        id: String(rRow.id),
+        propertyId: propId,
+        buildingId: rRow.building_id ? String(rRow.building_id) : "B0001",
+        roomNumber: String(rRow.room_number),
+        floor: Number(rRow.floor || 1),
+        type: rRow.type || existingRoom?.type || "Standard",
+        monthlyRate: Number(rRow.monthly_rate ?? existingRoom?.monthlyRate ?? 4000),
+        dailyRate: Number(rRow.daily_rate ?? existingRoom?.dailyRate ?? 650),
+        status: (rRow.status || "vacant") as RoomStatus,
+        currentElectricMeter: Number(rRow.current_electric_meter ?? existingRoom?.currentElectricMeter ?? 0),
+        currentWaterMeter: Number(rRow.current_water_meter ?? existingRoom?.currentWaterMeter ?? 0),
+        currentTenant: linkedTenant,
+        leaseEndDate: rRow.lease_end_date || existingRoom?.leaseEndDate || undefined,
+      } satisfies Room;
     });
-
-    return {
-      ...(existingRoom || {}),
-      id: String(rRow.id),
-      propertyId: propId,
-      buildingId: rRow.building_id ? String(rRow.building_id) : "B0001",
-      roomNumber: String(rRow.room_number),
-      floor: Number(rRow.floor || 1),
-      type: rRow.type || existingRoom?.type || "Standard",
-      monthlyRate: Number(rRow.monthly_rate ?? existingRoom?.monthlyRate ?? 4000),
-      dailyRate: Number(rRow.daily_rate ?? existingRoom?.dailyRate ?? 650),
-      status: (rRow.status || "vacant") as RoomStatus,
-      currentElectricMeter: Number(rRow.current_electric_meter ?? existingRoom?.currentElectricMeter ?? 0),
-      currentWaterMeter: Number(rRow.current_water_meter ?? existingRoom?.currentWaterMeter ?? 0),
-      currentTenant: linkedTenant,
-      leaseEndDate: rRow.lease_end_date || existingRoom?.leaseEndDate || undefined,
-    } satisfies Room;
-  });
-
-  return { result, uuidToPropId, uuidToRoomNumber, roomInfoByUuid, tenantByUuid };
-}
-
-/**
- * Lightweight loader fetching ONLY properties, branch_settings, tenants, and rooms.
- * Used by fast server endpoints (such as /api/line/broadcast) instead of pulling all 12 tables.
- */
-export async function loadCoreContextFromSupabase(
-  existingMemoryDb: Record<string, any> = {}
-): Promise<{ hasCoreData: boolean; data: Record<string, any> }> {
-  const [propsRes, settingsRes, tenantsRes, roomsRes] = await Promise.all([
-    supabase.from("properties").select("*"),
-    supabase.from("branch_settings").select("*"),
-    supabase.from("tenants").select("*"),
-    supabase.from("rooms").select("*"),
-  ]);
-
-  const responses = {
-    properties: propsRes,
-    branch_settings: settingsRes,
-    tenants: tenantsRes,
-    rooms: roomsRes,
-  };
-  for (const [table, response] of Object.entries(responses)) {
-    if (response.error) throw new Error(`[Supabase ${table}] ${response.error.message}`, { cause: response.error });
-  }
-
-  const propRows = propsRes.data || [];
-  const roomRows = roomsRes.data || [];
-  const tenantRows = tenantsRes.data || [];
-  const hasCoreData = propRows.length > 0 || roomRows.length > 0 || tenantRows.length > 0;
-  const { result } = mapCoreEntities({
-    propRows,
-    settingsRows: settingsRes.data || [],
-    tenantRows,
-    roomRows,
-    existingMemoryDb,
-  });
-
-  return { hasCoreData, data: result };
-}
-
-/**
- * Loads data directly from the separate Supabase relational tables and merges with
- * any extended JSON fields in memoryDb.
- */
-export async function loadFromRelationalTables(
-  existingMemoryDb: Record<string, any>
-): Promise<{ hasRelationalData: boolean; data: Record<string, any> }> {
-  let result: Record<string, any> = {};
-  let hasRelationalData = false;
-
-  try {
-    const [
-      propsRes,
-      settingsRes,
-      tenantsRes,
-      roomsRes,
-      contractsRes,
-      invoicesRes,
-      invoiceItemsRes,
-      metersRes,
-      repairsRes,
-      expensesRes,
-      dailyRes,
-      logsRes,
-    ] = await Promise.all([
-      supabase.from("properties").select("*"),
-      supabase.from("branch_settings").select("*"),
-      supabase.from("tenants").select("*"),
-      supabase.from("rooms").select("*"),
-      supabase.from("contracts").select("*"),
-      supabase.from("invoices").select("*"),
-      supabase.from("invoice_items").select("*"),
-      supabase.from("meter_readings").select("*").order("recorded_at", { ascending: false }),
-      supabase.from("repairs").select("*"),
-      supabase.from("expenses").select("*"),
-      supabase.from("daily_bookings").select("*"),
-      supabase.from("activity_logs").select("*").order("created_at", { ascending: false }).limit(50),
-    ]);
-
-    const responses = { properties: propsRes, branch_settings: settingsRes,
-      tenants: tenantsRes, rooms: roomsRes, contracts: contractsRes,
-      invoices: invoicesRes, invoice_items: invoiceItemsRes, meter_readings: metersRes,
-      repairs: repairsRes, expenses: expensesRes, daily_bookings: dailyRes, activity_logs: logsRes };
-    for (const [table, response] of Object.entries(responses)) {
-      if (response.error) throw new Error(`[Supabase ${table}] ${response.error.message}`, { cause: response.error });
-    }
-
-    const propRows = propsRes.data || [];
-    const roomRows = roomsRes.data || [];
-    const tenantRows = tenantsRes.data || [];
-    const contractRows = contractsRes.data || [];
-
-    if (propRows.length > 0 || roomRows.length > 0 || tenantRows.length > 0 || contractRows.length > 0) {
-      hasRelationalData = true;
-    }
-
-    const core = mapCoreEntities({
-      propRows,
-      settingsRows: settingsRes.data || [],
-      tenantRows,
-      roomRows,
-      existingMemoryDb,
-    });
-    result = core.result;
-    const { uuidToPropId, uuidToRoomNumber, roomInfoByUuid, tenantByUuid } = core;
 
     // Map contracts
     const existingContracts: ContractItem[] = Array.isArray(existingMemoryDb["contracts"])
@@ -1574,30 +1353,17 @@ export async function loadFromRelationalTables(
       } satisfies Invoice;
     });
 
-    // Map meter_readings
+    // Map meter_readings (from origin/main 2f42266: keep local ids, room's branch/tenant, B.E.-safe month/time)
     if (metersRes.data) {
-      result["meter_readings"] = metersRes.data.map((mRow: any) => ({
-        id: String(mRow.id),
-        property_id: defaultPropId,
-        room_id: String(mRow.room_id),
-        room_number: uuidToRoomNumber.get(String(mRow.room_id).toLowerCase()) || "",
-        billing_month: mRow.billing_month ?? mRow.reading_month,
-        electric_prev: Number(mRow.electric_prev || 0),
-        electric_curr: Number(mRow.electric_curr || 0),
-        electric_units: Number(mRow.electric_units || 0),
-        water_prev: Number(mRow.water_prev || 0),
-        water_curr: Number(mRow.water_curr || 0),
-        water_units: Number(mRow.water_units || 0),
-        recorded_at: mRow.recorded_at,
-      }));
       const existingMeters: any[] = Array.isArray(existingMemoryDb["meter_readings"])
         ? existingMemoryDb["meter_readings"]
         : [];
+      const mappedRooms: Room[] = Array.isArray(result["rooms"]) ? result["rooms"] : [];
       result["meter_readings"] = metersRes.data.map((mRow: any) => {
         const rowUuid = String(mRow.id || "").toLowerCase();
         const rUuid = String(mRow.room_id || "").toLowerCase();
-        const roomInfo = roomInfoByUuid.get(rUuid);
-        const existingMeter = existingMeters.find((em) => toUuid(em.id) === rowUuid);
+        const room = mappedRooms.find((r) => toUuid(r.id).toLowerCase() === rUuid);
+        const existingMeter = existingMeters.find((em) => toUuid(em.id).toLowerCase() === rowUuid);
         const elecPrev = Number(mRow.electric_prev ?? existingMeter?.electric_prev ?? 0);
         const elecCurr = Number(mRow.electric_curr ?? existingMeter?.electric_curr ?? 0);
         const waterPrev = Number(mRow.water_prev ?? existingMeter?.water_prev ?? 0);
@@ -1609,10 +1375,10 @@ export async function loadFromRelationalTables(
 
         return {
           id: existingMeter?.id || String(mRow.id),
-          property_id: roomInfo?.propertyId || existingMeter?.property_id || "prop-1",
+          property_id: room?.propertyId || existingMeter?.property_id || defaultPropId,
           room_id: existingMeter?.room_id || String(mRow.room_id || ""),
-          room_number: roomInfo?.roomNumber || mRow.room_number || existingMeter?.room_number || "",
-          tenant_name: mRow.tenant_name || roomInfo?.tenantName || existingMeter?.tenant_name || "",
+          room_number: room?.roomNumber || uuidToRoomNumber.get(rUuid) || mRow.room_number || existingMeter?.room_number || "",
+          tenant_name: mRow.tenant_name || room?.currentTenant?.fullName || existingMeter?.tenant_name || "",
           billing_month: normalizeMeterMonth(mRow.reading_month ?? mRow.billing_month ?? existingMeter?.billing_month),
           electric_prev: elecPrev,
           electric_curr: elecCurr,

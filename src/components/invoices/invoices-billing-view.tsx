@@ -61,9 +61,6 @@ export function InvoicesBillingView({
   // Latest failed Slip2Go check per bill (fake, duplicate, wrong amount, ...). Display only.
   const { byInvoiceNumber: failedSlipByInvoice } = useFailedSlips(propertyId, invoices);
 
-  // Latest failed Slip2Go check per bill (fake, duplicate, wrong amount, ...). Display only.
-  const { byInvoiceNumber: failedSlipByInvoice } = useFailedSlips(propertyId, invoices);
-
   // Pre-populate all 12 billing months (January - December) even when no invoices exist yet
   const invoiceMonths = useMemo(() => {
     return buildYearMonthsList(

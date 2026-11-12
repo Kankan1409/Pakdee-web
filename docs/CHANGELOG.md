@@ -42,6 +42,19 @@
 
 ## 2026-11-12
 
+### 🟡 แก้ไฟล์ที่ merge พัง (merge `973c7b6`): `supabase-relational.ts`, `database.service.ts`, `invoices-billing-view.tsx`
+- **ทำแล้ว (ผู้ใช้อนุญาตให้วางทับ):** วางไฟล์ที่เตรียมไว้ทับ `src/lib/supabase-relational.ts` แล้วเช็คทั้งโปรเจกต์ เจอเพิ่มอีก 2 ไฟล์ที่ merge พัง:
+  - `database.service.ts`: ใน `saveMeterReadingsBatch` มีโค้ดเก่าของ `saveMeterReading` ค้างอยู่หลัง `return newRecords;` (ตัวแปรไม่มีอยู่จริง) → ลบส่วนที่ค้างออก ใช้ของ origin/main
+  - `invoices-billing-view.tsx`: ประกาศ `failedSlipByInvoice` ซ้ำ 2 ครั้ง → เหลือครั้งเดียว
+  - ✅ ตรวจแล้ว: type-check ทั้งโปรเจกต์ผ่าน (0 errors), lint 0 errors, หน้าแรกตอบ 200, กระดิ่งเรียก hook สลิปไม่ผ่าน/เซ็นสัญญาแล้วอย่างละครั้ง
+- **สาเหตุ:** merge `973c7b6` (origin/main `2f42266` เข้า pakdee) รวมไฟล์นี้ผิด — origin/main แยกฟังก์ชัน `mapCoreEntities` / `loadCoreContextFromSupabase` ออกมาจากโค้ดรุ่นเก่า (ยังไม่มี short ID) แต่ผล merge มีโค้ด `loadFromRelationalTables` เดิมของ pakdee ไปอยู่ใน `mapCoreEntities` ทำให้ `try {` ไม่ปิด แอปทั้งแอปคอมไพล์ไม่ผ่าน
+- **ไฟล์ที่ใช้แทน:** scratchpad `merge/fixed.ts` = เวอร์ชัน pakdee ก่อน merge (`973c7b6^1`) + สิ่งที่ origin/main เพิ่ม:
+  - `toPgTimestamp` รองรับปี พ.ศ. / รูปแบบ D/M/YYYY และ `normalizeMeterMonth`
+  - `syncMeterReadingsToSupabase` ส่งทั้ง `reading_month` และ `billing_month` + คำนวณหน่วย
+  - โหลด `meter_readings` เรียงตาม `recorded_at` ล่าสุดก่อน และ map สาขา/ห้อง/ชื่อผู้เช่า/เดือน/เวลาแบบ origin/main
+  - `loadCoreContextFromSupabase` (ที่ `DatabaseService.initCoreOnly` ใช้): ใช้ `loadFromRelationalTables` เดิมแล้วคืนเฉพาะ properties/branch_settings/tenants/rooms (ช้ากว่าของ origin/main เพราะโหลดครบทุกตาราง แต่ใช้ mapping ชุดเดียวกับส่วนอื่น)
+  - ตรวจแล้ว: type-check ผ่าน และทุกชื่อที่ไฟล์อื่น import ยังมีอยู่
+
 ### 🟡 บันทึกแนบท้ายที่ผู้เช่าเซ็นแล้ว ยังค้างสถานะ "รอผู้เช่าเซ็น" + หายาก
 - **พบ:** คำขอเซ็น `CT-2026-A1-336 / แนบท้ายฉบับที่ 1` เป็น signed (04:50) แต่ `contract_addenda` ADD-6b710b9a6c8a ยัง pending — log เซิร์ฟเวอร์ไม่มี error จึงยังไม่รู้สาเหตุแน่ชัด (ทดลองซ้ำไม่ได้เพราะเซ็นไปแล้ว)
 - **แก้:**

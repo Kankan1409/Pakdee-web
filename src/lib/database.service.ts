@@ -1177,29 +1177,6 @@ export const DatabaseService = {
         : `บันทึกเลขมิเตอร์ประจำรอบจำนวน ${readings.length} ห้อง`;
     await this.logActivity("UPDATE", "METER", logDesc, newRecords[0]?.property_id || defaultPropId);
     return newRecords;
-    const newRecord = {
-      id: nextShortId("W", history.map((m) => m.id)),
-      property_id: targetPropId,
-      room_id: roomId,
-      room_number: targetRoom?.roomNumber || "",
-      billing_month: billingMonth,
-      electric_prev: electricPrev,
-      electric_curr: electricCurr,
-      electric_units: Math.max(0, electricCurr - electricPrev),
-      water_prev: waterPrev,
-      water_curr: waterCurr,
-      water_units: Math.max(0, waterCurr - waterPrev),
-      recorded_at: new Date().toLocaleString("th-TH"),
-    };
-    setLocal(KEYS.METER_READINGS, [newRecord, ...history]);
-
-    await this.logActivity(
-      "UPDATE",
-      "METER",
-      `จดมิเตอร์ห้อง ${targetRoom?.roomNumber}: ไฟ ${electricCurr}, น้ำ ${waterCurr}`,
-      targetPropId
-    );
-    return true;
   },
 
   async getMeterReadings(propertyId?: string): Promise<any[]> {
