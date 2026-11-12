@@ -2,15 +2,19 @@
 /**
  * PAKDEE Unified Launcher: Next.js Server + Cloudflare Tunnel + LINE Auto-Webhook Sync
  *
- * Usage:
- *   node scripts/dev-with-bot.mjs --mode dev --port 3000
- *   node scripts/dev-with-bot.mjs --mode start --port 3000
- *   node scripts/dev-with-bot.mjs --tunnel-only --port 3000
+ * Automatically launched by `npm run dev` and `npm run start`.
+ * Optional flags:
+ *   --mode dev|start   (default: dev)
+ *   --port 3000        (default: 3000 or PORT env)
+ *   --target-host IP   (default: 127.0.0.1)
+ *   --tunnel-only      (attach tunnel & LINE webhook to an already-running server)
+ *   --no-line-sync     (skip updating LINE Developers webhook endpoint)
  */
 
 import fs from "node:fs";
-import path from "node:path";
+import net from "node:net";
 import os from "node:os";
+import path from "node:path";
 import { spawn, execSync } from "node:child_process";
 
 const args = process.argv.slice(2);
@@ -24,6 +28,7 @@ const MODE = getArg("--mode", "dev");
 const PORT = Number(getArg("--port", process.env.PORT || "3000"));
 const TARGET_HOST = getArg("--target-host", "127.0.0.1");
 const TUNNEL_ONLY = args.includes("--tunnel-only");
+const NO_LINE_SYNC = args.includes("--no-line-sync");
 
 const ROOT_DIR = process.cwd();
 
@@ -58,13 +63,31 @@ const envConfig = {
 function getLanIp() {
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
-    for (const net of nets[name] || []) {
-      if (net.family === "IPv4" && !net.internal && !net.address.startsWith("169.254.")) {
-        return net.address;
+    for (const netInfo of nets[name] || []) {
+      if (netInfo.family === "IPv4" && !netInfo.internal && !netInfo.address.startsWith("169.254.")) {
+        return netInfo.address;
       }
     }
   }
   return "127.0.0.1";
+}
+
+function isPortOpen(host, port, timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finish = (open) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.connect(port, host);
+  });
 }
 
 async function resolveLineToken() {
@@ -85,7 +108,7 @@ async function resolveLineToken() {
         if (found) return found.line_channel_access_token.trim();
       }
     } catch {
-      // Ignore network fallback error
+      // Ignore Supabase network error and fall back to manual URL warning
     }
   }
   return "";
@@ -97,7 +120,7 @@ async function waitForLocalServer(url, maxAttempts = 60) {
       const res = await fetch(`${url}/api/line/webhook`, { method: "GET" });
       if (res.ok) return true;
     } catch {
-      // Server still booting
+      // Server still starting
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
@@ -105,6 +128,11 @@ async function waitForLocalServer(url, maxAttempts = 60) {
 }
 
 async function syncLineWebhook(webhookUrl) {
+  if (NO_LINE_SYNC) {
+    console.log(`[AUTO-BOT] (--no-line-sync) ข้ามการอัปเดต LINE Webhook: ${webhookUrl}`);
+    return;
+  }
+
   const token = await resolveLineToken();
   if (!token) {
     console.warn("\n[AUTO-BOT] ⚠️ ไม่พบ LINE_CHANNEL_ACCESS_TOKEN ใน .env.local กรุณานำ Webhook URL ไปวางใน LINE Developers Console เอง:");
@@ -128,7 +156,7 @@ async function syncLineWebhook(webhookUrl) {
       return;
     }
 
-    // Retry LINE webhook verification test to allow trycloudflare DNS propagation
+    // Retry LINE webhook verification test while trycloudflare DNS propagates
     for (let attempt = 1; attempt <= 6; attempt++) {
       await new Promise((r) => setTimeout(r, attempt === 1 ? 2500 : 3000));
       const testRes = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
@@ -145,7 +173,7 @@ async function syncLineWebhook(webhookUrl) {
         if (result.success && result.statusCode === 200) {
           const lanIp = getLanIp();
           console.log("\n================================================================================");
-          console.log("  ✅ PAKDEE SERVER + LINE BOT WEBHOOK ONLINE!");
+          console.log("  ✅ PAKDEE SERVER + CLOUDFLARE TUNNEL + LINE BOT READY!");
           console.log("================================================================================");
           console.log(`  🌐 Local / LAN Web : http://${lanIp}:${PORT}`);
           console.log(`  🤖 LINE Webhook URL: ${webhookUrl}`);
@@ -179,44 +207,84 @@ function killTree(child) {
   }
 }
 
-function shutdown() {
+function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log("\n[AUTO-BOT] กำลังปิดระบบ Next.js และ Cloudflare Tunnel อย่างปลอดภัย...");
   for (const child of children) {
     killTree(child);
   }
-  process.exit(0);
+  process.exit(exitCode);
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
+
+function spawnNextServer(nextCmd) {
+  const localNextBin = path.join(ROOT_DIR, "node_modules", "next", "dist", "bin", "next");
+  if (fs.existsSync(localNextBin)) {
+    return spawn(process.execPath, [localNextBin, nextCmd, "-p", String(PORT), "-H", "0.0.0.0"], {
+      cwd: ROOT_DIR,
+      stdio: "inherit",
+    });
+  }
+  // Fallback using a single command string to avoid DEP0190 warning
+  return spawn(`npx next ${nextCmd} -p ${PORT} -H 0.0.0.0`, {
+    cwd: ROOT_DIR,
+    stdio: "inherit",
+    shell: true,
+  });
+}
+
+function spawnCloudflared(localTarget) {
+  const namedToken = envConfig.CLOUDFLARE_TUNNEL_TOKEN?.trim();
+  const cmdStr = namedToken
+    ? `npx --yes cloudflared tunnel --no-autoupdate run --token ${namedToken}`
+    : `npx --yes cloudflared tunnel --url ${localTarget}`;
+
+  return {
+    namedToken,
+    proc: spawn(cmdStr, {
+      cwd: ROOT_DIR,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: true,
+    }),
+  };
+}
 
 async function main() {
   const localTarget = `http://${TARGET_HOST}:${PORT}`;
 
   if (!TUNNEL_ONLY) {
-    const nextCmd = MODE === "start" ? "start" : "dev";
-    console.log(`[AUTO-BOT] 🚀 กำลังเริ่ม Next.js (${nextCmd}) บนพอร์ต ${PORT}...`);
-    const nextProc = spawn("npx", ["next", nextCmd, "-p", String(PORT), "-H", "0.0.0.0"], {
-      cwd: ROOT_DIR,
-      stdio: "inherit",
-      shell: true,
-    });
-    children.push(nextProc);
-    nextProc.on("exit", (code) => {
-      if (!shuttingDown) {
-        console.log(`[AUTO-BOT] Next.js หยุดทำงาน (code ${code})`);
-        shutdown();
+    const portBusy = await isPortOpen(TARGET_HOST, PORT);
+    if (portBusy) {
+      const alreadyPakdee = await waitForLocalServer(localTarget, 2);
+      if (alreadyPakdee) {
+        console.log(`[AUTO-BOT] ℹ️ พอร์ต ${PORT} มีเซิร์ฟเวอร์ PAKDEE เปิดใช้งานอยู่แล้ว — กำลังเชื่อม Cloudflare Tunnel ต่อให้ทันที...`);
+      } else {
+        console.error(`[AUTO-BOT] ❌ พอร์ต ${PORT} ถูกโปรแกรมอื่นใช้งานอยู่ กรุณาปิดโปรแกรมนั้นก่อนหรือใช้ --port อื่น`);
+        process.exit(1);
       }
-    });
+    } else {
+      const nextCmd = MODE === "start" ? "start" : "dev";
+      console.log(`[AUTO-BOT] 🚀 กำลังเริ่ม Next.js (${nextCmd}) บนพอร์ต ${PORT}...`);
+      const nextProc = spawnNextServer(nextCmd);
+      children.push(nextProc);
 
-    console.log(`[AUTO-BOT] ⏳ รอให้เว็บเซิร์ฟเวอร์ ${localTarget} พร้อมใช้งาน...`);
-    const ready = await waitForLocalServer(localTarget);
-    if (!ready) {
-      console.error(`[AUTO-BOT] ❌ เซิร์ฟเวอร์ ${localTarget} ไม่ตอบสนองภายในเวลาที่กำหนด`);
-      shutdown();
-      return;
+      nextProc.on("exit", (code) => {
+        if (!shuttingDown) {
+          console.log(`[AUTO-BOT] Next.js หยุดทำงาน (code ${code})`);
+          shutdown(code ?? 0);
+        }
+      });
+
+      console.log(`[AUTO-BOT] ⏳ รอให้เว็บเซิร์ฟเวอร์ ${localTarget} พร้อมใช้งาน...`);
+      const ready = await waitForLocalServer(localTarget);
+      if (!ready) {
+        console.error(`[AUTO-BOT] ❌ เซิร์ฟเวอร์ ${localTarget} ไม่ตอบสนองภายในเวลาที่กำหนด`);
+        shutdown(1);
+        return;
+      }
     }
   } else {
     console.log(`[AUTO-BOT] 🔎 ตรวจสอบปลายทาง ${localTarget}/api/line/webhook ...`);
@@ -226,36 +294,33 @@ async function main() {
     }
   }
 
-  const namedToken = envConfig.CLOUDFLARE_TUNNEL_TOKEN?.trim();
-  const cfArgs = namedToken
-    ? ["--yes", "cloudflared", "tunnel", "--no-autoupdate", "run", "--token", namedToken]
-    : ["--yes", "cloudflared", "tunnel", "--url", localTarget];
-
   console.log(`[AUTO-BOT] 🌐 กำลังเปิด Cloudflare Tunnel ไปยัง ${localTarget} ...`);
-  const cfProc = spawn("npx", cfArgs, {
-    cwd: ROOT_DIR,
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: true,
-  });
+  const { namedToken, proc: cfProc } = spawnCloudflared(localTarget);
   children.push(cfProc);
 
   let syncedUrl = "";
-  let registeredConnection = false;
+  let registered = false;
+  let webhookSynced = false;
+
+  const maybeSyncWebhook = () => {
+    if (!namedToken && syncedUrl && registered && !webhookSynced) {
+      webhookSynced = true;
+      syncLineWebhook(syncedUrl);
+    }
+  };
 
   const handleCfOutput = (chunk) => {
     const text = chunk.toString();
     process.stdout.write(text);
 
-    if (!namedToken) {
-      const match = text.match(/https:\/\/([a-z0-9-]+)\.trycloudflare\.com/i);
-      if (match && !syncedUrl) {
-        syncedUrl = `${match[0]}/api/line/webhook`;
-      }
-      if (text.includes("Registered tunnel connection") && syncedUrl && !registeredConnection) {
-        registeredConnection = true;
-        syncLineWebhook(syncedUrl);
-      }
+    const match = text.match(/https:\/\/([a-z0-9-]+)\.trycloudflare\.com/i);
+    if (match && !syncedUrl) {
+      syncedUrl = `${match[0]}/api/line/webhook`;
     }
+    if (text.includes("Registered tunnel connection")) {
+      registered = true;
+    }
+    maybeSyncWebhook();
   };
 
   cfProc.stdout?.on("data", handleCfOutput);
@@ -264,12 +329,12 @@ async function main() {
   cfProc.on("exit", (code) => {
     if (!shuttingDown) {
       console.log(`[AUTO-BOT] ⚠️ Cloudflare Tunnel ปิดตัวลง (code ${code})`);
-      if (TUNNEL_ONLY) shutdown();
+      if (TUNNEL_ONLY) shutdown(code ?? 0);
     }
   });
 }
 
 main().catch((err) => {
   console.error("[AUTO-BOT] Fatal error:", err);
-  shutdown();
+  shutdown(1);
 });
