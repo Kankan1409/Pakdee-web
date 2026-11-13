@@ -134,40 +134,78 @@ async function waitForLocalServer(url, maxAttempts = 60) {
 }
 
 async function syncSingleTokenWebhook(token, webhookUrl) {
-  const putRes = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ endpoint: webhookUrl }),
-  });
+  console.log(`[AUTO-BOT] ⏳ กำลังเตรียมเชื่อมต่อ LINE Webhook: ${webhookUrl}`);
+  console.log("[AUTO-BOT] ⏳ รอ Cloudflare DNS กระจายตัวสักครู่ (ประมาณ 4-8 วินาที)...");
 
-  if (!putRes.ok) {
-    const errText = await putRes.text();
-    console.error(`[AUTO-BOT] ❌ อัปเดต Webhook ไปยัง LINE API ไม่สำเร็จ (${putRes.status}): ${errText}`);
+  // Initial grace period to give Cloudflare's global DNS time to publish the subdomain
+  await new Promise((r) => setTimeout(r, 4000));
+
+  let putSuccess = false;
+  let lastPutError = "";
+  const maxPutAttempts = 8;
+
+  for (let attempt = 1; attempt <= maxPutAttempts; attempt++) {
+    try {
+      const putRes = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ endpoint: webhookUrl }),
+      });
+
+      if (putRes.ok) {
+        putSuccess = true;
+        console.log(`[AUTO-BOT] 🎯 บันทึก Webhook URL เข้าสู่ระบบ LINE สำเร็จแล้ว`);
+        break;
+      }
+
+      lastPutError = await putRes.text();
+      // LINE returns 400 "Invalid webhook endpoint URL" when the new trycloudflare DNS hasn't propagated to LINE's servers
+      if (attempt < maxPutAttempts) {
+        console.log(`[AUTO-BOT] ⏳ รอ DNS propagation เพื่อลงทะเบียน Webhook กับ LINE (ครั้งที่ ${attempt}/${maxPutAttempts})...`);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    } catch (err) {
+      lastPutError = err.message;
+      if (attempt < maxPutAttempts) {
+        console.log(`[AUTO-BOT] ⏳ เครือข่ายกำลังเชื่อมต่อ LINE API (ครั้งที่ ${attempt}/${maxPutAttempts})...`);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+  }
+
+  if (!putSuccess) {
+    console.error(`[AUTO-BOT] ❌ อัปเดต Webhook ไปยัง LINE API ไม่สำเร็จ: ${lastPutError}`);
+    console.warn(`[AUTO-BOT] 💡 คุณสามารถนำ Webhook URL ไปใส่ใน LINE Developers Console เองได้: ${webhookUrl}`);
     return false;
   }
 
-  // Retry LINE webhook verification test while trycloudflare DNS propagates
-  for (let attempt = 1; attempt <= 6; attempt++) {
-    await new Promise((r) => setTimeout(r, attempt === 1 ? 2500 : 3000));
-    const testRes = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ endpoint: webhookUrl }),
-    });
+  // Retry LINE webhook verification test while tunnel endpoint is fully active
+  const maxTestAttempts = 8;
+  for (let attempt = 1; attempt <= maxTestAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt === 1 ? 1500 : 3000));
+    try {
+      const testRes = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ endpoint: webhookUrl }),
+      });
 
-    if (testRes.ok) {
-      const result = await testRes.json();
-      if (result.success && result.statusCode === 200) {
-        return true;
+      if (testRes.ok) {
+        const result = await testRes.json();
+        if (result.success && result.statusCode === 200) {
+          return true;
+        }
       }
+    } catch {
+      // Retry
     }
-    console.log(`[AUTO-BOT] ⏳ รอ DNS propagation เพื่อทดสอบ LINE Webhook (ครั้งที่ ${attempt}/6)...`);
+    console.log(`[AUTO-BOT] ⏳ รอทดสอบการตอบสนองของ LINE Webhook (ครั้งที่ ${attempt}/${maxTestAttempts})...`);
   }
   return false;
 }
