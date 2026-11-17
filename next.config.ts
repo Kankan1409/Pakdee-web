@@ -20,14 +20,6 @@ const nextConfig: NextConfig = {
     "0.0.0.0:3000",
     "0.0.0.0:3001",
   ],
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
   async rewrites() {
     return [
       { source: "/branches", destination: "/" },
