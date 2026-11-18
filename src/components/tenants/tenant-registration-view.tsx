@@ -337,19 +337,9 @@ export function TenantRegistrationView({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       setIdCardImage(dataUrl);
-      setIsScanning(true);
+      // แนบรูปบัตรเท่านั้น ข้อมูลผู้เช่ากรอกเอง (เดิมมี OCR จำลองที่เติมชื่อ/เลขบัตร/ที่อยู่/เบอร์ปลอมให้)
+      setIsScanning(false);
       setOcrSuccess(false);
-
-      // Simulate Smart OCR AI
-      setTimeout(() => {
-        setIsScanning(false);
-        setOcrSuccess(true);
-        if (!fullName.trim()) setFullName("คุณนวรัตน์ มงคลสุข");
-        if (!idCard.trim()) setIdCard("1-1004-98765-43-2");
-        if (!address.trim()) setAddress("88/19 หมู่ 2 ต.สวนใหญ่ อ.เมืองนนทบุรี จ.นนทบุรี 11000");
-        if (!age) setAge("28");
-        if (!phone.trim()) setPhone("086-456-7890");
-      }, 700);
     };
     reader.readAsDataURL(file);
   };
@@ -555,7 +545,7 @@ export function TenantRegistrationView({
               ลงทะเบียนผู้เช่าใหม่และทำสัญญาเช่า
             </h1>
             <p className="text-xs text-[var(--muted)] mt-0.5">
-              จัดสรรห้องพัก สแกนบัตรประชาชนด้วย Smart OCR พร้อมเปิด/ปิดออปชันเงินประกันและเครื่องใช้ไฟฟ้า
+              จัดสรรห้องพัก แนบรูปบัตรประชาชน พร้อมเปิด/ปิดออปชันเงินประกันและเครื่องใช้ไฟฟ้า
             </p>
           </div>
         </div>
@@ -682,10 +672,10 @@ export function TenantRegistrationView({
                 </div>
                 <div>
                   <h2 className="font-bold text-sm text-[var(--foreground)]">
-                    2. อัปโหลดรูปบัตรประชาชน & Smart OCR ดึงข้อมูลอัตโนมัติ
+                    2. อัปโหลดรูปบัตรประชาชน
                   </h2>
                   <p className="text-[11px] text-[var(--muted)]">
-                    ระบบ AI จะอ่านชื่อ, เลข 13 หลัก, วันเกิด และที่อยู่จากรูปถ่ายบัตรประชาชนให้อัตโนมัติ
+                    แนบรูปบัตรเก็บไว้เป็นหลักฐาน (กรอกชื่อ เลขบัตร และที่อยู่ด้านล่างด้วยตนเอง)
                   </p>
                 </div>
               </div>

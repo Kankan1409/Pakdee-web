@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Room, Property, ContractItem, DailyBooking } from "@/types/dormitory";
+import { Room, Property, ContractItem, DailyBooking, tenantTypeOf } from "@/types/dormitory";
 import { formatCurrency } from "@/lib/utils";
 import { initialProperty } from "@/lib/defaults";
 import { DocumentViewerModal, DocumentType } from "@/components/documents/document-viewer-modal";
@@ -94,7 +94,7 @@ export function RoomDetailModal({
   const isDaily = !isCleaning && (
     room.status === "daily" ||
     Boolean(activeDailyBooking) ||
-    Boolean(room.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]"))
+    Boolean(tenantTypeOf(room.currentTenant) === "daily")
   );
 
   // A room is strictly MONTHLY if NOT daily, NOT cleaning, and is occupied/overdue or has long-term tenant
@@ -102,7 +102,7 @@ export function RoomDetailModal({
     room.status === "occupied" ||
     room.status === "overdue" ||
     Boolean(activeContract) ||
-    (Boolean(tenant) && !tenant?.notes?.includes("[ผู้เข้าพักรายวัน]"))
+    (Boolean(tenant) && tenantTypeOf(tenant) !== "daily")
   );
 
   const isOccupiedDaily = isDaily;

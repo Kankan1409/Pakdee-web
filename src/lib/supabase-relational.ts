@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import {
+  tenantTypeOf,
   Property,
   Room,
   Tenant,
@@ -495,55 +496,36 @@ export function collectUnifiedTenants(
 ): Tenant[] {
   const byKey = new Map<string, Tenant>();
 
+  // One row per tenant id. Two registry entries with the same name are two different people
+  // (e.g. a daily guest and a monthly tenant, or two guests called "พีบี"): they used to be
+  // merged here, and the merged-away row was then deleted from Supabase by pruneOrphanRows.
   for (const t of rawTenants || []) {
     if (!t || !t.fullName) continue;
-    const existingByName = Array.from(byKey.values()).find(
-      (x) =>
-        x.fullName.trim() === t.fullName.trim() &&
-        (x.propertyId || "prop-1") === (t.propertyId || "prop-1")
-    );
-    if (existingByName) {
-      const mergedId = toUuid(
-        existingByName.idCard && existingByName.idCard !== "-" ? existingByName.id : t.id
-      );
-      byKey.delete(toUuid(existingByName.id));
-      byKey.set(mergedId, {
-        ...existingByName,
-        ...t,
-        id: mergedId,
-        idCard:
-          t.idCard && t.idCard !== "-"
-            ? t.idCard
-            : existingByName.idCard && existingByName.idCard !== "-"
-            ? existingByName.idCard
-            : t.idCard || "-",
-        lineId: t.lineId || t.lineUserId || existingByName.lineId || existingByName.lineUserId,
-        lineUserId: t.lineUserId || existingByName.lineUserId,
-      });
-    } else {
-      const key = t.id ? toUuid(t.id) : `${t.fullName.trim()}|${(t.phone || "").trim()}`;
-      byKey.set(key, {
-        ...t,
-        id: toUuid(t.id || `tenant-${t.fullName}-${t.phone}`),
-      });
-    }
+    const id = toUuid(t.id || `tenant-${t.fullName}-${t.phone}`);
+    const prev = byKey.get(id);
+    byKey.set(id, { ...(prev || {}), ...t, id, tenantType: tenantTypeOf(t.tenantType ? t : prev || t) });
   }
 
   for (const r of rawRooms || []) {
     if (r?.currentTenant?.fullName) {
       const ct = r.currentTenant;
       const uuid = toUuid(ct.id || `tenant-${r.propertyId || "prop-1"}-${r.roomNumber}-${ct.fullName}`);
-      // Same name only counts as the same person within the same branch (branches are separate)
+      const roomBranch = ct.propertyId || r.propertyId || "prop-1";
+      // By id. Older room copies may carry a temporary id: then the same name counts only within
+      // the same branch AND the same room (never phone, never another room's tenant).
       const existing = byKey.get(uuid) || Array.from(byKey.values()).find(
         (x) =>
           x.fullName.trim() === ct.fullName.trim() &&
-          (x.propertyId || "prop-1") === (ct.propertyId || r.propertyId || "prop-1")
+          (x.propertyId || "prop-1") === roomBranch &&
+          (x.roomId === r.id || x.roomNumber === r.roomNumber)
       );
       if (existing) {
         byKey.set(toUuid(existing.id), {
           ...existing,
           ...ct,
           id: toUuid(existing.id),
+          // The registry entry decides monthly/daily; a room copy never changes it.
+          tenantType: tenantTypeOf(existing.tenantType ? existing : ct),
           idCard:
             ct.idCard && ct.idCard !== "-"
               ? ct.idCard
@@ -562,6 +544,7 @@ export function collectUnifiedTenants(
         byKey.set(uuid, {
           ...ct,
           id: uuid,
+          tenantType: ct.tenantType || (r.status === "daily" ? "daily" : tenantTypeOf(ct)),
           propertyId: ct.propertyId || r.propertyId || "prop-1",
           roomId: r.id,
           roomNumber: r.roomNumber,
@@ -572,13 +555,23 @@ export function collectUnifiedTenants(
 
   for (const c of rawContracts || []) {
     if (c && c.tenantName && c.status !== "terminated" && c.status !== "expired") {
-      const alreadyExists = Array.from(byKey.values()).some(
-        (x) => x.fullName.trim() === c.tenantName.trim()
-      );
+      // Contract → tenant by tenant_id. Legacy contracts without one: a monthly tenant with the
+      // same name in the same branch (daily guests are never a contract's tenant).
+      const alreadyExists = c.tenantId
+        ? byKey.has(toUuid(c.tenantId))
+        : Array.from(byKey.values()).some(
+            (x) =>
+              x.fullName.trim() === c.tenantName.trim() &&
+              (x.propertyId || "prop-1") === (c.propertyId || "prop-1") &&
+              tenantTypeOf(x) === "monthly"
+          );
       if (!alreadyExists) {
-        const uuid = toUuid(`tenant-contract-${c.propertyId || "prop-1"}-${c.roomNumber}-${c.tenantName}`);
+        const uuid = c.tenantId
+          ? toUuid(c.tenantId)
+          : toUuid(`tenant-contract-${c.propertyId || "prop-1"}-${c.roomNumber}-${c.tenantName}`);
         byKey.set(uuid, {
           id: uuid,
+          tenantType: "monthly",
           propertyId: c.propertyId || "prop-1",
           roomNumber: c.roomNumber,
           fullName: c.tenantName,
@@ -615,6 +608,8 @@ export async function syncTenantsToSupabase(
     // Branch of this tenant (docs/supabase_branch_isolation.sql; stripped by safeUpsert if missing).
     // Placeholder "prop-1" is not a real branch, so it is not sent.
     ...(t.propertyId && t.propertyId !== "prop-1" ? { property_id: toUuid(t.propertyId) } : {}),
+    // monthly / daily (docs/supabase_tenant_links.sql; stripped by safeUpsert if missing)
+    tenant_type: tenantTypeOf(t),
     full_name: t.fullName || "ไม่ระบุชื่อ",
     phone: t.phone || "-",
     id_card: (t.idCard || "").slice(0, 20),
@@ -712,6 +707,8 @@ export async function syncContractsToSupabase(
       property_id: toUuid(propId),
       contract_number: c.contractNumber || `CT-${c.roomNumber}-${Date.now()}`,
       room_id: roomUuid,
+      // ผู้เช่าของสัญญา (docs/supabase_tenant_links.sql; stripped by safeUpsert if missing)
+      ...(c.tenantId ? { tenant_id: toUuid(c.tenantId) } : {}),
       room_number: String(c.roomNumber || ""),
       tenant_name: c.tenantName || "ไม่ระบุชื่อ",
       tenant_phone: c.tenantPhone || "-",
@@ -921,25 +918,43 @@ export async function syncExpensesToSupabase(expenses: ExpenseItem[]): Promise<v
   await safeUpsert("expenses", rows, "id");
 }
 
-export async function syncDailyBookingsToSupabase(bookings: DailyBooking[]): Promise<void> {
+export async function syncDailyBookingsToSupabase(
+  bookings: DailyBooking[],
+  tenants: Tenant[] = [],
+  rooms: Room[] = [],
+  contracts: ContractItem[] = []
+): Promise<void> {
   const todayStr = new Date().toISOString().slice(0, 10);
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+  // The guest's tenant row must exist before daily_bookings.tenant_id can point to it.
+  // Only send tenant_id for tenants we know, so one unknown id does not make the FK
+  // fallback in safeUpsert clear tenant_id on every booking in the batch.
+  const known = new Set(collectUnifiedTenants(tenants, rooms, contracts).map((t) => toUuid(t.id)));
+  if ((bookings || []).some((b) => b.tenantId && known.has(toUuid(b.tenantId)))) {
+    await syncTenantsToSupabase(tenants, rooms, contracts);
+  }
 
   const rows = (bookings || []).map((b) => ({
     id: toUuid(b.id, `daily-${b.roomNumber}-${b.checkInDate}`),
     // Branch (docs/supabase_branch_isolation.sql; stripped by safeUpsert if missing)
     ...(b.propertyId && b.propertyId !== "prop-1" ? { property_id: toUuid(b.propertyId) } : {}),
+    // Guest in the tenant registry + ID card / plate / room deposit (docs/supabase_tenant_links.sql)
+    ...(b.tenantId && known.has(toUuid(b.tenantId)) ? { tenant_id: toUuid(b.tenantId) } : {}),
+    id_card: (b.idCard || "").slice(0, 20),
+    vehicle_plate: b.vehiclePlate || "",
+    room_deposit: Number(b.roomDeposit || 0),
     room_number: String(b.roomNumber || ""),
-    guest_name: b.guestName || "ผู้เข้าพักรายวัน",
+    guest_name: b.guestName || "ไม่ระบุชื่อ",
     guest_phone: b.guestPhone || "-",
     check_in_date: toPgDate(b.checkInDate, todayStr)!,
     check_in_time: (b.checkInTime || "14:00").slice(0, 10),
     check_out_date: toPgDate(b.checkOutDate, tomorrowStr)!,
     check_out_time: (b.checkOutTime || "12:00").slice(0, 10),
     nights: Number(b.nights || 1),
-    daily_rate: Number(b.dailyRate || 650),
-    total_room_price: Number(b.totalRoomPrice || 650),
-    key_deposit: Number(b.keyDeposit ?? 500),
+    daily_rate: Number(b.dailyRate || 0),
+    total_room_price: Number(b.totalRoomPrice || 0),
+    key_deposit: Number(b.keyDeposit ?? 0),
     status: (b.status || "confirmed").slice(0, 30),
   }));
 
@@ -1004,7 +1019,7 @@ export async function syncKeyToRelationalTable(
       await syncExpensesToSupabase(value);
       await pruneOrphanRows("expenses", value.map((e: any) => toUuid(e.id, `exp-${e.title}-${e.date}`)), scope);
     } else if (normKey === "daily_bookings" && Array.isArray(value)) {
-      await syncDailyBookingsToSupabase(value);
+      await syncDailyBookingsToSupabase(value, tenants, rooms, contracts);
       await pruneOrphanRows("daily_bookings", value.map((b: any) => toUuid(b.id, `daily-${b.roomNumber}-${b.checkInDate}`)), scope);
     } else if (normKey === "activity_logs" && Array.isArray(value)) {
       await syncActivityLogsToSupabase(value);
@@ -1060,7 +1075,7 @@ export async function syncAllToRelationalTables(memoryDb: Record<string, any>): 
     await syncMeterReadingsToSupabase(meterReadings, rooms);
     await syncRepairsToSupabase(repairs);
     await syncExpensesToSupabase(expenses);
-    await syncDailyBookingsToSupabase(dailyBookings);
+    await syncDailyBookingsToSupabase(dailyBookings, rawTenants, rooms, contracts);
     await syncActivityLogsToSupabase(activityLogs);
   } catch (e: any) {
     console.warn("[Supabase Relational] Full relational sync warning:", e?.message);
@@ -1246,12 +1261,14 @@ export async function loadFromRelationalTables(
     const tenantByUuid = new Map<string, Tenant>();
     const mappedTenants: Tenant[] = tenantRows.map((tRow: any) => {
       const rowUuid = String(tRow.id).toLowerCase();
-      const existingMatch = existingTenants.find(
-        (et) => toUuid(et.id).toLowerCase() === rowUuid || et.fullName === tRow.full_name
-      );
+      // Same row only (by id). Matching by name mixed up two people with the same name.
+      const existingMatch = existingTenants.find((et) => toUuid(et.id).toLowerCase() === rowUuid);
+      const dbType = tRow.tenant_type === "daily" || tRow.tenant_type === "monthly" ? tRow.tenant_type : undefined;
       const mapped: Tenant = {
         ...(existingMatch || {}),
         id: String(tRow.id),
+        // monthly / daily: tenants.tenant_type (docs/supabase_tenant_links.sql) → legacy note mark
+        tenantType: dbType || tenantTypeOf({ tenantType: existingMatch?.tenantType, notes: tRow.notes || existingMatch?.notes }),
         // Branch: tenants.property_id (docs/supabase_branch_isolation.sql) → branch of the room the
         // tenant lives in → value on this device → first branch (legacy rows only)
         propertyId:
@@ -1343,6 +1360,7 @@ export async function loadFromRelationalTables(
         id: String(cRow.id),
         propertyId: propId,
         contractNumber: cRow.contract_number,
+        tenantId: cRow.tenant_id ? String(cRow.tenant_id) : existingContract?.tenantId,
         roomNumber: String(cRow.room_number),
         tenantName: cRow.tenant_name,
         tenantPhone: cRow.tenant_phone,
@@ -1528,17 +1546,21 @@ export async function loadFromRelationalTables(
           propertyId:
             branchOf(dRow.property_id) ||
             (existingDb?.propertyId && /^[A-Z]\d{4}$/i.test(existingDb.propertyId) ? existingDb.propertyId : defaultPropId),
+          tenantId: dRow.tenant_id ? String(dRow.tenant_id) : existingDb?.tenantId,
           roomNumber: String(dRow.room_number),
           guestName: dRow.guest_name,
           guestPhone: dRow.guest_phone,
+          idCard: dRow.id_card || existingDb?.idCard || "",
+          vehiclePlate: dRow.vehicle_plate || existingDb?.vehiclePlate || "",
+          roomDeposit: Number(dRow.room_deposit ?? existingDb?.roomDeposit ?? 0),
           checkInDate: dRow.check_in_date,
           checkInTime: dRow.check_in_time || "14:00",
           checkOutDate: dRow.check_out_date,
           checkOutTime: dRow.check_out_time || "12:00",
           nights: Number(dRow.nights || 1),
-          dailyRate: Number(dRow.daily_rate || 650),
-          totalRoomPrice: Number(dRow.total_room_price || 650),
-          keyDeposit: Number(dRow.key_deposit ?? 500),
+          dailyRate: Number(dRow.daily_rate || 0),
+          totalRoomPrice: Number(dRow.total_room_price || 0),
+          keyDeposit: Number(dRow.key_deposit ?? 0),
           status: (dRow.status || "confirmed") as DailyBooking["status"],
         } satisfies DailyBooking;
       });

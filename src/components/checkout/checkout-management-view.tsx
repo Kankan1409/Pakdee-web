@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Room, ContractItem, Invoice, Property } from "@/types/dormitory";
+import { Room, ContractItem, Invoice, Property, tenantTypeOf } from "@/types/dormitory";
 import {
   DoorOpen,
   Users,
@@ -169,7 +169,7 @@ export function CheckoutManagementView({
             .filter(
               (r) =>
                 (r.status === "occupied" || r.status === "overdue") &&
-                !r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]")
+                tenantTypeOf(r.currentTenant) !== "daily"
             )
             .map((r) => (
               <option key={r.id} value={r.id}>

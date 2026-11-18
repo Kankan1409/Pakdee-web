@@ -41,7 +41,7 @@ export function LoginView() {
   const [forgotStep, setForgotStep] = useState<"phone" | "otp" | "new_password" | "success">("phone");
   const [forgotPhone, setForgotPhone] = useState("");
   const [forgotOtp, setForgotOtp] = useState("");
-  const [generatedOtp, setGeneratedOtp] = useState("123456");
+  const [generatedOtp, setGeneratedOtp] = useState("");
   const [forgotNewPassword, setForgotNewPassword] = useState("");
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -95,9 +95,9 @@ export function LoginView() {
       setForgotError("กรุณากรอกรหัส OTP 6 หลัก");
       return;
     }
-    // Allow generated OTP or demo OTP "123456"
-    if (forgotOtp.trim() !== generatedOtp && forgotOtp.trim() !== "123456") {
-      setForgotError(`รหัส OTP ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง (ทดสอบ: ${generatedOtp} หรือ 123456)`);
+    // Only the OTP generated for this request (the fixed demo OTP "123456" was removed)
+    if (!generatedOtp || forgotOtp.trim() !== generatedOtp) {
+      setForgotError("รหัส OTP ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
       return;
     }
     setForgotStep("new_password");
@@ -543,7 +543,7 @@ export function LoginView() {
                           <span>ส่งรหัส OTP เรียบร้อยแล้ว</span>
                         </div>
                         <div className="text-[11px] text-emerald-700">
-                          ส่งไปยังเบอร์ <strong>{forgotPhone}</strong> (รหัสทดสอบ Sandbox: <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-1 rounded">{generatedOtp}</span> หรือ <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-1 rounded">123456</span>)
+                          ส่งไปยังเบอร์ <strong>{forgotPhone}</strong> (รหัสทดสอบ Sandbox: <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-1 rounded">{generatedOtp}</span>)
                         </div>
                       </div>
 

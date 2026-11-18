@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { PlanType } from "@/types/dormitory";
 import { globalPopup } from "@/lib/popup-context";
+import type { BranchItem } from "@/components/branch/branch-selector-view";
 import { X, ShieldCheck, Plus, Check, Eye } from "lucide-react";
 
 interface SuperAdminModalProps {
@@ -10,6 +11,9 @@ interface SuperAdminModalProps {
   onClose: () => void;
   currentPlan: PlanType;
   onChangePlan: (newPlan: PlanType) => void;
+  /** หอพัก/สาขาจริงจากฐานข้อมูล (ตาราง properties) */
+  branches?: BranchItem[];
+  currentPropertyId?: string;
 }
 
 export function SuperAdminModal({
@@ -17,6 +21,8 @@ export function SuperAdminModal({
   onClose,
   currentPlan,
   onChangePlan,
+  branches = [],
+  currentPropertyId,
 }: SuperAdminModalProps) {
   const [selectedPlan, setSelectedPlan] = useState<PlanType>(currentPlan);
 
@@ -155,42 +161,34 @@ export function SuperAdminModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)] text-[var(--foreground)]">
-                  <tr>
-                    <td className="py-2.5 px-3 font-semibold">พักดี แมนชั่น (สุขุมวิท)</td>
-                    <td className="py-2.5 px-3 text-[var(--muted)]">คุณสมชาย (081-234-5678)</td>
-                    <td className="py-2.5 px-3 text-center">24</td>
-                    <td className="py-2.5 px-3 text-center">
-                      <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold uppercase text-[10px]">
-                        {selectedPlan}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <button
-                        onClick={onClose}
-                        className="bg-blue-600 text-white px-2 py-1 rounded text-[11px] font-medium hover:bg-blue-500 transition cursor-pointer"
-                      >
-                        👁️ เข้าดูระบบ
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-semibold">ศิริสุข เพลส (รังสิต)</td>
-                    <td className="py-2.5 px-3 text-[var(--muted)]">คุณวิภา (089-876-5432)</td>
-                    <td className="py-2.5 px-3 text-center">48</td>
-                    <td className="py-2.5 px-3 text-center">
-                      <span className="bg-slate-500/15 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase text-[10px]">
-                        STARTER
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <button
-                        onClick={() => globalPopup.info("สลับหอพัก", "สลับไปหน้าจอหอพัก ศิริสุข เพลส")}
-                        className="bg-blue-600 text-white px-2 py-1 rounded text-[11px] font-medium hover:bg-blue-500 transition cursor-pointer"
-                      >
-                        👁️ เข้าดูระบบ
-                      </button>
-                    </td>
-                  </tr>
+                  {branches.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-[var(--muted)]">
+                        ยังไม่มีหอพัก/สาขาในระบบ
+                      </td>
+                    </tr>
+                  ) : (
+                    branches.map((b) => (
+                      <tr key={b.id}>
+                        <td className="py-2.5 px-3 font-semibold">{b.name || "-"}</td>
+                        <td className="py-2.5 px-3 text-[var(--muted)]">
+                          {b.ownerName || "-"}
+                          {b.phone ? ` (${b.phone})` : ""}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">{b.totalRooms ?? 0}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold uppercase text-[10px]">
+                            {b.id === currentPropertyId ? selectedPlan : b.plan || "-"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {b.id === currentPropertyId ? (
+                            <span className="text-[11px] text-[var(--muted)]">สาขาที่เปิดอยู่</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

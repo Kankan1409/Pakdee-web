@@ -41,9 +41,14 @@ export interface AdditionalFeeItem {
   isEnabled: boolean;
 }
 
+/** ประเภทผู้เช่า: รายเดือน (ทำสัญญา) หรือ ผู้เข้าพักรายวัน — บันทึกใน tenants.tenant_type */
+export type TenantType = "monthly" | "daily";
+
 export interface Tenant {
   id: string;
   propertyId?: string;
+  /** ประเภทผู้เช่า ตั้งตอนสร้างครั้งเดียว ไม่เดาจากเบอร์/ชื่อ/สถานะห้อง */
+  tenantType?: TenantType;
   roomId?: string;
   roomNumber?: string;
   fullName: string;
@@ -197,6 +202,8 @@ export interface Invoice {
 export interface DailyBooking {
   id: string;
   propertyId?: string;
+  /** ผู้เข้าพักในทะเบียนผู้เช่า (tenants.id) — daily_bookings.tenant_id */
+  tenantId?: string;
   roomNumber: string;
   guestName: string;
   guestPhone: string;
@@ -248,6 +255,8 @@ export interface ContractClause {
 export interface ContractItem {
   id: string;
   propertyId?: string;
+  /** ผู้เช่าในทะเบียนผู้เช่า (tenants.id) — contracts.tenant_id */
+  tenantId?: string;
   contractNumber: string;
   roomNumber: string;
   tenantName: string;
@@ -452,3 +461,16 @@ export const defaultRoomTypes: RoomTypeConfig[] = [
   },
 ];
 
+
+/** เครื่องหมายใน notes ของผู้เข้าพักรายวันที่สร้างก่อนมีคอลัมน์ tenant_type */
+export const DAILY_GUEST_NOTE_MARK = "[ผู้เข้าพักรายวัน]";
+
+/**
+ * ประเภทของผู้เช่า: ใช้ tenantType ที่บันทึกไว้ (tenants.tenant_type) เป็นหลัก
+ * ข้อมูลเก่าที่ยังไม่มีค่า ดูจากเครื่องหมาย [ผู้เข้าพักรายวัน] ใน notes เท่านั้น
+ * (ไม่เดาจากเบอร์โทร ชื่อ หรือสถานะห้อง)
+ */
+export function tenantTypeOf(t: Pick<Tenant, "tenantType" | "notes"> | undefined | null): TenantType {
+  if (t?.tenantType === "daily" || t?.tenantType === "monthly") return t.tenantType;
+  return t?.notes?.includes(DAILY_GUEST_NOTE_MARK) ? "daily" : "monthly";
+}

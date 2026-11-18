@@ -32,42 +32,6 @@ export interface NotificationItem {
   actionText?: string;
 }
 
-const STATIC_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "notif-static-1",
-    title: "ห้อง 105 ค้างชำระเกินกำหนด",
-    description: "บิลประจำงวด มียอดค้างชำระ 4,924.00 บาท กรุณาตรวจสอบและติดตาม",
-    type: "urgent",
-    category: "billing",
-    targetTab: "invoices",
-    time: "10 นาทีที่แล้ว",
-    isRead: false,
-    actionText: "เปิดดูใบแจ้งหนี้",
-  },
-  {
-    id: "notif-static-2",
-    title: "ห้อง 202 แจ้งซ่อม: แอร์ไม่เย็น มีน้ำหยด",
-    description: "สถานะ: รองานซ่อมบำรุง นัดหมายเข้าตรวจสอบและล้างแอร์",
-    type: "warning",
-    category: "repair",
-    targetTab: "repairs",
-    time: "วันนี้ 09:30",
-    isRead: false,
-    actionText: "เปิดหน้าระบบแจ้งซ่อม",
-  },
-  {
-    id: "notif-static-3",
-    title: "ระบบจดมิเตอร์น้ำ-ไฟ ประจำงวด",
-    description: "ระบบพร้อมสำหรับการบันทึกหน่วยและคำนวณบิลรอบเดือน",
-    type: "info",
-    category: "meter",
-    targetTab: "meter",
-    time: "2 ชั่วโมงที่แล้ว",
-    isRead: true,
-    actionText: "เปิดหน้าจดมิเตอร์",
-  },
-];
-
 interface NotificationDropdownProps {
   onNavigateToTab?: (tab: string) => void;
   rooms?: Room[];
@@ -212,16 +176,6 @@ export function NotificationDropdown({
         actionText: `ไปที่ระบบแจ้งซ่อมห้อง ${rep.roomNumber}`,
       });
     });
-
-    // 5. Append general static notifications only if list is empty
-    if (list.length === 0) {
-      STATIC_NOTIFICATIONS.forEach((sn) => {
-        list.push({
-          ...sn,
-          isRead: readIds.includes(sn.id) || sn.isRead,
-        });
-      });
-    }
 
     return list;
   }, [rooms, invoices, repairs, readIds, failedSlipEntries, signedContracts]);

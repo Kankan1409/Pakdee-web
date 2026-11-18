@@ -167,6 +167,10 @@ export function SlipVerificationView({
     () => pendingInvoices.reduce((acc, i) => acc + i.totalAmount, 0),
     [pendingInvoices]
   );
+  // Real counts from the bills (replaces the old fixed "99.8%" / "100% ปลอดภัย" cards)
+  const autoVerifiedCount = useMemo(() => invoices.filter((i) => i.slipVerifiedBy === "ai").length, [invoices]);
+  const manualVerifiedCount = useMemo(() => invoices.filter((i) => i.slipVerifiedBy === "manual").length, [invoices]);
+  const rejectedSlipCount = useMemo(() => invoices.filter((i) => i.slipStatus === "action_needed").length, [invoices]);
 
   // Filtered List
   const filteredList = useMemo(() => {
@@ -257,17 +261,17 @@ export function SlipVerificationView({
         <div className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between text-xs text-[var(--muted)] font-medium">
             <span className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300 font-bold">
-              <Sparkles className="w-4 h-4 text-blue-500" /> ความแม่นยำ AI Vision
+              <Sparkles className="w-4 h-4 text-blue-500" /> ตรวจผ่านอัตโนมัติ
             </span>
             <span className="text-[10px] font-bold bg-blue-500/15 text-blue-600 px-2 py-0.5 rounded-full">
-              Real-time
+              Slip2Go
             </span>
           </div>
           <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-2 font-mono">
-            99.8%
+            {autoVerifiedCount} บิล
           </div>
           <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
-            รองรับ KBank, SCB, BBL, KTB, TTB, GSB
+            ยืนยันด้วยมือ {manualVerifiedCount} บิล
           </div>
         </div>
 
@@ -275,17 +279,14 @@ export function SlipVerificationView({
         <div className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between text-xs text-[var(--muted)] font-medium">
             <span className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300 font-bold">
-              <ShieldCheck className="w-4 h-4 text-indigo-500" /> ป้องกันสลิปซ้ำ & สลิปปลอม
-            </span>
-            <span className="text-[10px] font-bold bg-indigo-500/15 text-indigo-600 px-2 py-0.5 rounded-full">
-              Active
+              <ShieldCheck className="w-4 h-4 text-indigo-500" /> สลิปไม่ผ่าน (ต้องตรวจสอบ)
             </span>
           </div>
           <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-2 font-mono">
-            100% ปลอดภัย
+            {rejectedSlipCount} บิล
           </div>
           <div className="text-[11px] text-[var(--muted)] mt-1 font-medium">
-            ตรวจเช็คเลขอ้างอิง TransRef ซ้ำทันที
+            สลิปซ้ำ ยอดไม่ตรง หรือตรวจไม่ผ่าน
           </div>
         </div>
       </div>

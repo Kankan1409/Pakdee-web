@@ -12,6 +12,7 @@ import {
   BranchSettingsDetail,
   DailyBooking,
   defaultRoomTypes,
+  tenantTypeOf,
 } from "@/types/dormitory";
 import {
   initialProperty,
@@ -957,7 +958,7 @@ export const DatabaseService = {
         if (
           (t.propertyId || "prop-1") === (targetRoom.propertyId || "prop-1") &&
           (t.roomNumber === targetRoom.roomNumber || t.roomId === targetRoom.id) &&
-          t.notes?.includes("[ผู้เข้าพักรายวัน]")
+          tenantTypeOf(t) === "daily"
         ) {
           return { ...t, roomNumber: undefined, roomId: undefined };
         }
@@ -1777,35 +1778,43 @@ export const DatabaseService = {
   ): Promise<ContractItem> {
     const propId = item.propertyId || this.getActivePropertyId();
     const all = getLocal<ContractItem[]>(KEYS.CONTRACTS, []);
+
+    // ผู้เช่าของสัญญา: ใช้ tenantId ที่ส่งมา · ถ้าไม่มี หาผู้เช่ารายเดือนชื่อเดียวกันในสาขาเดียวกัน
+    // (ไม่จับคู่ด้วยเลขห้องหรือเบอร์ — เดิมจับคู่ด้วยเลขห้อง ทำให้ผู้เข้าพักรายวันคนก่อนในห้องนั้น
+    //  ถูกดึงมาเป็นผู้เช่ารายเดือนของสัญญาใหม่)
+    const allRooms = this.getAllRawRooms();
+    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
+    const matchedTenant = item.tenantId
+      ? allTenants.find((t) => t.id === item.tenantId)
+      : allTenants.find(
+          (t) =>
+            (t.propertyId || "prop-1") === propId &&
+            tenantTypeOf(t) !== "daily" &&
+            t.fullName.trim() === (item.tenantName || "").trim()
+        );
+    const contractTenantId = matchedTenant?.id || item.tenantId || nextShortId("T", allTenants.map((t) => t.id));
+
     const newContract: ContractItem = {
       ...item,
       id: nextShortId("C", all.map((c) => c.id)),
       propertyId: propId,
+      tenantId: contractTenantId,
       contractNumber: `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
       createdAt: new Date().toISOString().slice(0, 10),
     };
     setLocal(KEYS.CONTRACTS, [newContract, ...all]);
 
-    // Synchronize Room to occupied in database (preserve existing tenant ID & details)
-    const allRooms = this.getAllRawRooms();
-    const allTenants = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const matchedTenant = allTenants.find(
-      (t) =>
-        (t.propertyId || "prop-1") === propId &&
-        ((t.roomNumber || "").trim() === (item.roomNumber || "").trim() ||
-          t.fullName.trim() === (item.tenantName || "").trim())
-    );
-
     const updatedRooms = allRooms.map((r) => {
       if ((r.propertyId || "prop-1") === propId && r.roomNumber === item.roomNumber) {
-        const baseTenant = matchedTenant || r.currentTenant;
+        const baseTenant = matchedTenant;
         return {
           ...r,
           status: "occupied" as RoomStatus,
           leaseEndDate: item.endDate,
           currentTenant: {
             ...(baseTenant || {}),
-            id: baseTenant?.id || nextShortId("T", allTenants.map((t) => t.id)),
+            id: contractTenantId,
+            tenantType: "monthly" as const,
             propertyId: propId,
             roomId: r.id,
             roomNumber: r.roomNumber,
@@ -2018,47 +2027,9 @@ export const DatabaseService = {
   async getDailyBookings(propertyId?: string): Promise<DailyBooking[]> {
     const targetPropId = propertyId || this.getActivePropertyId();
     const all = getLocal<DailyBooking[]>(KEYS.DAILY_BOOKINGS, []);
-    const branchBookings = all.filter((b) => (b.propertyId || "prop-1") === targetPropId);
-
-    // Auto-heal / Coherence: ตรวจสอบห้องที่มีสถานะ "daily" แต่ยังไม่มีรายการบันทึกการจอง
-    const allRooms = this.getAllRawRooms();
-    const branchDailyRooms = allRooms.filter(
-      (r) => (r.propertyId || "prop-1") === targetPropId && r.status === "daily"
-    );
-
-    const missingBookings: DailyBooking[] = [];
-    for (const r of branchDailyRooms) {
-      const hasBooking = branchBookings.some((b) => b.roomNumber === r.roomNumber);
-      if (!hasBooking) {
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-        const syntheticBooking: DailyBooking = {
-          id: nextShortId("D", [...all, ...missingBookings].map((b) => b.id)),
-          propertyId: targetPropId,
-          roomNumber: r.roomNumber,
-          guestName: r.currentTenant?.fullName || "ผู้เข้าพักรายวัน",
-          guestPhone: r.currentTenant?.phone || "-",
-          checkInDate: todayStr,
-          checkInTime: "14:00",
-          checkOutDate: tomorrowStr,
-          checkOutTime: "12:00",
-          nights: 1,
-          dailyRate: r.dailyRate || 650,
-          totalRoomPrice: r.dailyRate || 650,
-          keyDeposit: 500,
-          status: "checked_in",
-        };
-        missingBookings.push(syntheticBooking);
-      }
-    }
-
-    if (missingBookings.length > 0) {
-      const updated = [...missingBookings, ...all];
-      setLocal(KEYS.DAILY_BOOKINGS, updated);
-      return [...missingBookings, ...branchBookings];
-    }
-
-    return branchBookings;
+    // คืนเฉพาะการจองที่มีจริงในฐานข้อมูล (เดิมสร้างการจองปลอมให้ห้องสถานะ "daily" ที่ไม่มีการจอง
+    // ด้วยวันที่วันนี้/พรุ่งนี้ และมัดจำ 500 — ข้อมูลจำลองที่ไม่ได้มาจากผู้ใช้ จึงเอาออก)
+    return all.filter((b) => (b.propertyId || "prop-1") === targetPropId);
   },
 
   async addDailyBooking(booking: DailyBooking, propertyId?: string): Promise<DailyBooking> {
@@ -2110,15 +2081,21 @@ export const DatabaseService = {
    * บันทึกว่าผู้เข้าพักรายวันเช็คเอาท์แล้ว (วันที่ออกจริง) ลงใน notes ของทะเบียนผู้เช่า
    * เพราะการจองถูกลบตอนเช็คเอาท์ ทะเบียนผู้เช่าจึงต้องเก็บวันออกไว้เอง: "[เช็คเอาท์ YYYY-MM-DD]"
    */
-  async markDailyGuestCheckedOut(guestName: string, roomNumber: string, checkoutDate: string): Promise<Tenant[]> {
+  async markDailyGuestCheckedOut(booking: DailyBooking, checkoutDate: string): Promise<Tenant[]> {
     const all = getLocal<Tenant[]>(KEYS.TENANTS, []);
-    const name = (guestName || "").trim().toLowerCase();
+    const name = (booking.guestName || "").trim().toLowerCase();
+    const branch = booking.propertyId || this.getActivePropertyId();
     const updated = all.map((t) => {
-      const isDailyGuest = t.notes?.includes("[ผู้เข้าพักรายวัน]");
-      const sameName = (t.fullName || "").trim().toLowerCase() === name;
-      const sameRoom = t.roomNumber === roomNumber || Boolean(t.notes?.includes(`ห้อง ${roomNumber}`));
-      if (isDailyGuest && sameName && sameRoom && !t.notes?.includes("[เช็คเอาท์")) {
-        return { ...t, notes: `${t.notes} [เช็คเอาท์ ${checkoutDate}]` };
+      if (t.notes?.includes("[เช็คเอาท์")) return t;
+      // ผูกด้วย tenant_id ของการจอง · การจองเก่าที่ยังไม่มี tenant_id: ชื่อ + ห้อง + สาขาเดียวกัน (ไม่ใช้เบอร์)
+      const isThisGuest = booking.tenantId
+        ? t.id === booking.tenantId
+        : tenantTypeOf(t) === "daily" &&
+          (t.propertyId || "prop-1") === (branch || "prop-1") &&
+          (t.fullName || "").trim().toLowerCase() === name &&
+          (t.roomNumber === booking.roomNumber || Boolean(t.notes?.includes(`ห้อง ${booking.roomNumber}`)));
+      if (isThisGuest) {
+        return { ...t, tenantType: "daily" as const, notes: `${t.notes || ""} [เช็คเอาท์ ${checkoutDate}]`.trim() };
       }
       return t;
     });

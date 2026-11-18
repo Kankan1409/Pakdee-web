@@ -67,6 +67,7 @@ import {
   BranchSettingsDetail,
   BroadcastItem,
   defaultRoomTypes,
+  tenantTypeOf,
 } from "@/types/dormitory";
 import { formatCurrency, formatDateThai, formatMonthThai, cn } from "@/lib/utils";
 import {
@@ -1135,7 +1136,7 @@ export default function HomePage() {
       const isDailyRoom =
         targetRoom.status === "daily" ||
         dailyBookings.some((b) => b.roomNumber === targetRoom.roomNumber && (b.status === "confirmed" || b.status === "checked_in")) ||
-        targetRoom.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]");
+        tenantTypeOf(targetRoom.currentTenant) === "daily";
 
       if (isDailyRoom) {
         // รายวัน: ให้เปิดหน้าต่างเช็คเอาท์รายวัน (รูปที่ 2) โดยตรง ไม่ไปหน้าย้ายออกรายเดือน!
@@ -1912,6 +1913,7 @@ export default function HomePage() {
     }
 
     const created = await DatabaseService.createTenant({
+      tenantType: "monthly",
       fullName: newTenantForm.fullName,
       phone: newTenantForm.phone,
       idCard: newTenantForm.idCard,
@@ -2010,9 +2012,25 @@ export default function HomePage() {
     const roomDepositVal = Number(newBookingForm.roomDeposit) || 0;
     const totalAmount = totalNights * nightlyRateVal;
 
+    // บันทึกผู้เข้าพักรายวันเข้าทะเบียนผู้เช่าก่อน (tenant_type = daily) แล้วผูกการจองด้วย tenant_id
+    // ผู้เข้าพักแต่ละครั้งเป็นแถวของตัวเอง ไม่จับคู่กับคนอื่นด้วยเบอร์หรือชื่อ
+    const dailyTenant = await DatabaseService.createTenant({
+      tenantType: "daily",
+      propertyId: property.id,
+      fullName: newBookingForm.guestName.trim(),
+      phone: newBookingForm.guestPhone.trim(),
+      idCard: newBookingForm.idCard || "",
+      vehiclePlate: newBookingForm.vehiclePlate || "",
+      roomNumber: newBookingForm.roomNumber,
+      roomId: targetRoom.id,
+      notes: `[ผู้เข้าพักรายวัน] ห้อง ${newBookingForm.roomNumber} (${newBookingForm.checkInDate} ถึง ${newBookingForm.checkOutDate})`,
+      depositAmount: keyDepositVal + roomDepositVal,
+    });
+
     const newBooking: DailyBooking = {
       id: `b-${Date.now()}`,
       propertyId: property.id,
+      tenantId: dailyTenant?.id,
       roomNumber: newBookingForm.roomNumber,
       guestName: newBookingForm.guestName.trim(),
       guestPhone: newBookingForm.guestPhone.trim(),
@@ -2035,17 +2053,6 @@ export default function HomePage() {
     const saved = await DatabaseService.addDailyBooking(newBooking, property.id);
     setDailyBookings((prev) => [saved, ...prev]);
 
-    // บันทึกข้อมูลผู้เข้าพักรายวันเข้าสู่ระบบทะเบียนผู้เช่า (User Requirement 3)
-    const dailyTenant = await DatabaseService.createTenant({
-      fullName: newBooking.guestName,
-      phone: newBooking.guestPhone,
-      idCard: newBookingForm.idCard || "",
-      vehiclePlate: newBookingForm.vehiclePlate || "",
-      roomNumber: newBooking.roomNumber,
-      roomId: targetRoom.id,
-      notes: `[ผู้เข้าพักรายวัน] ห้อง ${newBooking.roomNumber} (${newBooking.checkInDate} ถึง ${newBooking.checkOutDate})`,
-      depositAmount: (newBooking.keyDeposit || 0) + (newBooking.roomDeposit || 0),
-    });
     if (dailyTenant) {
       setTenants((prev) => [dailyTenant, ...prev]);
     }
@@ -2062,6 +2069,7 @@ export default function HomePage() {
               status: "daily",
               currentTenant: dailyTenant || {
                 id: `t-${newBooking.id}`,
+                tenantType: "daily",
                 fullName: newBooking.guestName,
                 phone: newBooking.guestPhone,
                 idCard: newBookingForm.idCard,
@@ -2259,7 +2267,7 @@ export default function HomePage() {
       await DatabaseService.removeDailyBooking(booking.id, booking.roomNumber);
       // 2.1 เก็บวันที่ออกจริงไว้ในทะเบียนผู้เช่า (การจองถูกลบแล้ว)
       const checkoutDay = now.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
-      const tenantsAfterCheckout = await DatabaseService.markDailyGuestCheckedOut(booking.guestName, booking.roomNumber, checkoutDay);
+      const tenantsAfterCheckout = await DatabaseService.markDailyGuestCheckedOut(booking, checkoutDay);
       setTenants((prev) =>
         prev.map((t) => tenantsAfterCheckout.find((u) => u.id === t.id) || t)
       );
@@ -2330,11 +2338,13 @@ export default function HomePage() {
               status: "occupied",
               leaseEndDate: item.endDate,
               currentTenant: {
-                id: `t-${Date.now()}`,
+                ...(tenants.find((t) => t.id === item.tenantId) || {}),
+                id: item.tenantId || `t-${Date.now()}`,
+                tenantType: "monthly",
                 propertyId: property.id,
                 fullName: item.tenantName,
                 phone: item.tenantPhone,
-                idCard: "-",
+                idCard: tenants.find((t) => t.id === item.tenantId)?.idCard || "-",
               },
             }
           : r
@@ -2440,6 +2450,7 @@ export default function HomePage() {
   }) => {
     // 1. Create Tenant in Database
     const createdTenant = await DatabaseService.createTenant({
+      tenantType: "monthly",
       fullName: tenantData.fullName,
       phone: tenantData.phone,
       idCard: tenantData.idCard,
@@ -2470,6 +2481,7 @@ export default function HomePage() {
 
     const finalTenant: Tenant = createdTenant || {
       id: crypto.randomUUID(),
+      tenantType: "monthly",
       ...tenantData,
       depositAmount: tenantData.hasDeposit !== false ? tenantData.depositAmount : 0,
       hasTv: tenantData.hasTv,
@@ -2498,7 +2510,7 @@ export default function HomePage() {
         return;
       }
 
-      const leaseEndDate = tenantData.isContinuous ? "สัญญาต่อเนื่อง" : tenantData.endDate || "2027-10-28";
+      const leaseEndDate = tenantData.isContinuous ? "สัญญาต่อเนื่อง" : tenantData.endDate || "";
       setRooms((prev) =>
         prev.map((r) =>
           r.id === tenantData.roomId
@@ -2516,6 +2528,7 @@ export default function HomePage() {
       const newContract: ContractItem = {
         id: `ct-${Date.now()}`,
         propertyId: property.id,
+        tenantId: finalTenant.id,
         contractNumber: `CT-2026-${targetRoom?.roomNumber || "00"}-${String(contracts.length + 1).padStart(2, "0")}`,
         roomNumber: targetRoom?.roomNumber || "",
         tenantName: finalTenant.fullName,
@@ -3119,6 +3132,22 @@ export default function HomePage() {
     );
   }
 
+  // Lease document modal: the room tenant's own current contract (by tenant id)
+  const leaseModalContract = selectedLeaseRoom?.currentTenant
+    ? contracts.find(
+        (c) =>
+          c.tenantId === selectedLeaseRoom.currentTenant!.id &&
+          (c.status === "active" || c.status === "pending_signature")
+      ) ||
+      contracts.find(
+        (c) =>
+          !c.tenantId &&
+          c.roomNumber === selectedLeaseRoom.roomNumber &&
+          c.tenantName?.trim() === selectedLeaseRoom.currentTenant!.fullName?.trim() &&
+          (c.status === "active" || c.status === "pending_signature")
+      )
+    : undefined;
+
   return (
     <div className="h-screen flex overflow-hidden bg-[var(--background)] text-[var(--foreground)] antialiased">
       {/* 1. Left Sidebar */}
@@ -3604,7 +3633,7 @@ export default function HomePage() {
             const isDailyRoom =
               r.status === "daily" ||
               dailyBookings.some((b) => b.roomNumber === r.roomNumber && (b.status === "confirmed" || b.status === "checked_in")) ||
-              r.currentTenant?.notes?.includes("[ผู้เข้าพักรายวัน]");
+              tenantTypeOf(r.currentTenant) === "daily";
 
             if (isDailyRoom) {
               const b = dailyBookings.find((item) => item.roomNumber === r.roomNumber && (item.status === "confirmed" || item.status === "checked_in"));
@@ -3727,6 +3756,8 @@ export default function HomePage() {
         onClose={() => setIsSuperAdminOpen(false)}
         currentPlan={property.plan}
         onChangePlan={handleChangePlan}
+        branches={branches}
+        currentPropertyId={property.id}
       />
 
       {/* Add Tenant Modal (14 Fields) */}
@@ -4074,14 +4105,14 @@ export default function HomePage() {
                 <p>
                   สัญญานี้ทำขึ้นระหว่าง <strong>{property.name}</strong> (ผู้ให้เช่า) ฝ่ายหนึ่ง กับ{" "}
                   <strong>{selectedLeaseRoom.currentTenant?.fullName}</strong> เลขประจำตัวประชาชน{" "}
-                  <strong>{selectedLeaseRoom.currentTenant?.idCard || "1-1002-XXXXX-XX-X"}</strong> (ผู้เช่า) อีกฝ่ายหนึ่ง
+                  <strong>{selectedLeaseRoom.currentTenant?.idCard && selectedLeaseRoom.currentTenant.idCard !== "-" ? selectedLeaseRoom.currentTenant.idCard : "-"}</strong> (ผู้เช่า) อีกฝ่ายหนึ่ง
                 </p>
                 <p>
                   ตกลงเช่าห้องพักหมายเลข <strong>{selectedLeaseRoom.roomNumber}</strong> ชั้น {selectedLeaseRoom.floor} ในอัตราค่าเช่าเดือนละ{" "}
-                  <strong>{formatCurrency(selectedLeaseRoom.monthlyRate)}</strong> โดยมีกำหนดระยะเวลาการเช่า 1 ปี
+                  <strong>{formatCurrency(leaseModalContract?.monthlyRent || selectedLeaseRoom.monthlyRate)}</strong>{leaseModalContract ? ` ตั้งแต่ ${formatDateThai(leaseModalContract.startDate)}${leaseModalContract.isContinuous ? " (สัญญาต่อเนื่อง)" : ` ถึง ${formatDateThai(leaseModalContract.endDate)}`}` : ""}
                 </p>
                 <p>
-                  ผู้เช่าได้วางเงินประกันความเสียหายและเงินประกันการเช่าเป็นจำนวนเงิน <strong>5,000.00 บาท</strong> (ห้าพันบาทถ้วน)
+                  ผู้เช่าได้วางเงินประกันความเสียหายและเงินประกันการเช่าเป็นจำนวนเงิน <strong>{formatCurrency(leaseModalContract?.depositAmount ?? selectedLeaseRoom.currentTenant?.depositAmount ?? 0)}</strong>
                   ซึ่งผู้ให้เช่าจะคืนให้เมื่อสิ้นสุดสัญญาและหักค่าใช้จ่ายความเสียหาย ค่าน้ำ-ค่าไฟเรียบร้อยแล้ว
                 </p>
               </div>

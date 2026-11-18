@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Room, Tenant, ContractItem, Invoice, DailyBooking } from "@/types/dormitory";
+import { Room, Tenant, ContractItem, Invoice, DailyBooking, tenantTypeOf } from "@/types/dormitory";
+import { bookingsOfTenant, contractsOfTenant, roomOfTenant } from "@/lib/tenant-links";
 import { Users, Plus, Search, X, Eye } from "lucide-react";
 import { TenantDetailModal, TenantDetailTarget } from "@/components/tenants/tenant-detail-modal";
 
@@ -38,7 +39,7 @@ export function TenantsListView({
   rooms,
   tenants,
   contracts,
-  invoices,
+  // invoices: not used for linking (tenant ↔ bill is invoices.tenant_id)
   dailyBookings,
   onOpenNewTenant,
   onViewContract,
@@ -51,53 +52,8 @@ export function TenantsListView({
   const [detailTarget, setDetailTarget] = useState<TenantDetailTarget | null>(null);
 
   const { combinedList, filteredList, monthlyCount, dailyCount } = useMemo(() => {
-    // Map room numbers and room statuses to tenants (Multi-source: rooms, contracts, invoices)
-    const tenantRoomMap = new Map<string, string>();
-    const roomStatusMap = new Map<string, string>();
-
-    rooms.forEach((r) => {
-      if (r.roomNumber) {
-        roomStatusMap.set(r.roomNumber, r.status);
-      }
-      if (r.id) {
-        roomStatusMap.set(r.id, r.status);
-      }
-      if (r.currentTenant) {
-        if (r.currentTenant.id) tenantRoomMap.set(r.currentTenant.id, r.roomNumber);
-        if (r.currentTenant.fullName) tenantRoomMap.set(r.currentTenant.fullName, r.roomNumber);
-      }
-    });
-
-    contracts.forEach((c) => {
-      if (c.tenantName && c.roomNumber) {
-        if (!tenantRoomMap.has(c.tenantName)) tenantRoomMap.set(c.tenantName, c.roomNumber);
-      }
-    });
-
-    invoices.forEach((inv) => {
-      if (inv.tenantName && inv.roomNumber) {
-        if (!tenantRoomMap.has(inv.tenantName)) tenantRoomMap.set(inv.tenantName, inv.roomNumber);
-      }
-    });
-
-    // A daily booking belongs to a tenant only when it is in the same room and the
-    // name or phone also matches. Phone alone is not enough: several people (family
-    // members, or one booker for many rooms) can share the same phone number.
-    const normalize = (v?: string) => (v ? v.trim().toLowerCase() : "");
-    const digits = (v?: string) => (v ? v.replace(/\D/g, "") : "");
-    const bookingMatches = (b: DailyBooking, name: string, phone: string, room: string) => {
-      const guestName = normalize(b.guestName);
-      const guestPhone = digits(b.guestPhone);
-      const sameName = Boolean(name) && guestName === name;
-      const samePhone = Boolean(phone) && guestPhone === phone;
-      if (room && b.roomNumber) {
-        return b.roomNumber === room && (sameName || samePhone);
-      }
-      // No room on one side: require the name to match (and the phone, when both have one).
-      return sameName && (!phone || !guestPhone || samePhone);
-    };
-
-    // Combined list of monthly and daily tenants
+    // ประเภท (รายเดือน/รายวัน) มาจาก tenants.tenant_type ที่ตั้งตอนสร้างเท่านั้น
+    // ผู้เช่า ↔ ห้อง / สัญญา / การจอง ผูกกันด้วยรหัส (ดู src/lib/tenant-links.ts) ไม่ใช้เบอร์โทร
     const combined: Array<{
       id: string;
       type: "monthly" | "daily";
@@ -110,8 +66,6 @@ export function TenantsListView({
       vehiclePlate?: string;
       emergencyContact?: string;
       depositAmount?: number;
-      stayInfo?: string;
-      statusText?: string;
       moveInDate?: string;
       moveOutDate?: string;
       isActive: boolean;
@@ -122,88 +76,60 @@ export function TenantsListView({
 
     // Daily booking: active while confirmed / checked in; inactive once checked out or cancelled.
     const bookingIsActive = (b: DailyBooking) => b.status === "confirmed" || b.status === "checked_in";
+    const claimedBookings = new Set<string>();
 
     tenants.forEach((t) => {
-      const cleanPhone = t.phone ? t.phone.replace(/\D/g, "") : "";
-      const normalizedName = t.fullName ? t.fullName.trim().toLowerCase() : "";
+      const type = tenantTypeOf(t);
+      const liveRoom = roomOfTenant(t, rooms);
+      const noteRoom = t.notes?.match(/ห้อง\s*([A-Za-z0-9_-]+)/)?.[1] || "";
+      const knownRoom = liveRoom?.roomNumber || t.roomNumber || "";
+      const lineAcc = t.Line_Acc || t.lineAcc || t.lineDisplayName || t.lineId || "";
 
-      const noteRoomMatch = t.notes?.match(/ห้อง\s*([A-Za-z0-9_-]+)/);
-      const room =
-        t.roomNumber ||
-        tenantRoomMap.get(t.id) ||
-        tenantRoomMap.get(t.fullName) ||
-        (noteRoomMatch ? noteRoomMatch[1] : "");
+      if (type === "daily") {
+        const ownBookings = bookingsOfTenant(t, dailyBookings, knownRoom || noteRoom || undefined);
+        ownBookings.forEach((b) => claimedBookings.add(b.id));
+        const booking = ownBookings[0];
+        // Booking is deleted at checkout: read the stay "(YYYY-MM-DD ถึง YYYY-MM-DD)" and the
+        // checkout mark "[เช็คเอาท์ YYYY-MM-DD]" from notes.
+        const noteStay = t.notes?.match(/\((\d{4}-\d{2}-\d{2})\s*ถึง\s*(\d{4}-\d{2}-\d{2})\)/);
+        const noteCheckout = t.notes?.match(/\[เช็คเอาท์\s*(\d{4}-\d{2}-\d{2})\]/);
+        const stillStaying = !noteCheckout && liveRoom?.status === "daily";
+        const bookingDeposit = booking ? (booking.keyDeposit || 0) + (booking.roomDeposit || 0) : 0;
 
-      const matchingBooking = dailyBookings.find((b) => bookingMatches(b, normalizedName, cleanPhone, room));
+        combined.push({
+          id: t.id,
+          type: "daily",
+          roomNumber: knownRoom || booking?.roomNumber || noteRoom,
+          fullName: t.fullName,
+          phone: t.phone,
+          idCard: t.idCard || booking?.idCard || "",
+          lineAcc,
+          lineId: t.lineId,
+          vehiclePlate: t.vehiclePlate || booking?.vehiclePlate || "",
+          emergencyContact: t.emergencyContact,
+          depositAmount: bookingDeposit > 0 ? bookingDeposit : t.depositAmount,
+          moveInDate: booking?.checkInDate || noteStay?.[1],
+          moveOutDate: booking
+            ? booking.checkOutDate
+            : noteCheckout?.[1] || (stillStaying ? undefined : noteStay?.[2]),
+          isActive: booking ? bookingIsActive(booking) : stillStaying,
+          tenant: t,
+          booking,
+        });
+        return;
+      }
 
-      const targetRoomNumber = room || matchingBooking?.roomNumber || "";
-      const roomStatus = targetRoomNumber ? roomStatusMap.get(targetRoomNumber) : undefined;
-
-      const isDaily =
-        Boolean(t.notes?.includes("รายวัน")) ||
-        Boolean(matchingBooking) ||
-        roomStatus === "daily";
-
-      const matchingContract = contracts.find(
-        (c) =>
-          (c.tenantName && c.tenantName.trim().toLowerCase() === normalizedName) ||
-          (cleanPhone && c.tenantPhone && c.tenantPhone.replace(/\D/g, "") === cleanPhone) ||
-          (targetRoomNumber && c.roomNumber === targetRoomNumber)
-      );
-
-      const finalIdCard = t.idCard || matchingBooking?.idCard || "";
-      const finalPlate = t.vehiclePlate || matchingBooking?.vehiclePlate || (matchingContract as any)?.vehiclePlate || "";
-
-      const stayInfoText = isDaily
-        ? matchingBooking
-          ? `เข้าพัก ${matchingBooking.checkInDate} ถึง ${matchingBooking.checkOutDate}${matchingBooking.nights ? ` (${matchingBooking.nights} คืน)` : ""}`
-          : t.notes?.includes("รายวัน")
-          ? t.notes
-          : targetRoomNumber
-          ? `ผู้เข้าพักรายวัน (ห้อง ${targetRoomNumber})`
-          : "ผู้เข้าพักรายวัน"
-        : targetRoomNumber
-        ? `สัญญาเช่าห้อง ${targetRoomNumber}`
-        : "ผู้เช่าในระบบ";
-
-      const statusBadgeText = isDaily
-        ? matchingBooking?.status === "checked_in"
-          ? "กำลังเข้าพัก (รายวัน)"
-          : "ผู้เข้าพักรายวัน"
-        : "ผู้เช่ารายเดือน";
-
-      // Move-in / move-out dates and Active status (monthly: from this tenant's own contracts).
-      // Daily guests never use contracts. Match contracts by name first; phone only as a fallback,
-      // because several people can share one phone number.
-      const usableContracts = isDaily ? [] : contracts.filter((c) => c.status !== "draft");
-      const byName = usableContracts.filter(
-        (c) => c.tenantName && c.tenantName.trim().toLowerCase() === normalizedName
-      );
-      const ownContracts =
-        byName.length > 0
-          ? byName
-          : usableContracts.filter(
-              (c) => cleanPhone && c.tenantPhone && c.tenantPhone.replace(/\D/g, "") === cleanPhone
-            );
-      // Daily guest without a live booking (booking is deleted at checkout): read the stay
-      // "(YYYY-MM-DD ถึง YYYY-MM-DD)" and the checkout mark "[เช็คเอาท์ YYYY-MM-DD]" from notes.
-      const noteStay = t.notes?.match(/\((\d{4}-\d{2}-\d{2})\s*ถึง\s*(\d{4}-\d{2}-\d{2})\)/);
-      const noteCheckout = t.notes?.match(/\[เช็คเอาท์\s*(\d{4}-\d{2}-\d{2})\]/);
-      const dailyStillStaying = !noteCheckout && roomStatus === "daily";
-      const livesInRoom = rooms.some(
-        (r) =>
-          r.currentTenant &&
-          (r.currentTenant.id === t.id ||
-            (normalizedName && r.currentTenant.fullName?.trim().toLowerCase() === normalizedName))
-      );
+      // Monthly: dates and Active status from this tenant's own contracts.
+      const ownContracts = contractsOfTenant(t, contracts, knownRoom || undefined).filter((c) => c.status !== "draft");
+      const latestContract = [...ownContracts].sort((a, b) => (toDateKey(a.startDate) < toDateKey(b.startDate) ? 1 : -1))[0];
       const hasOpenContract = ownContracts.some((c) => c.status === "active" || c.status === "pending_signature");
-      const monthlyActive = livesInRoom || hasOpenContract;
+      const monthlyActive = Boolean(liveRoom) || hasOpenContract;
       const earliestStart = ownContracts
         .map((c) => toDateKey(c.startDate))
         .filter(Boolean)
         .sort()[0];
       const lastEnded = ownContracts
-        .filter((c) => c.status === "terminated" || c.status === "expired")
+        .filter((c) => c.status === "terminated" || c.status === "expired" || c.status === "superseded")
         .map((c) => toDateKey(c.movedOutAt || c.endDate))
         .filter(Boolean)
         .sort()
@@ -211,85 +137,40 @@ export function TenantsListView({
 
       combined.push({
         id: t.id,
-        type: isDaily ? "daily" : "monthly",
-        roomNumber: targetRoomNumber,
+        type: "monthly",
+        roomNumber: knownRoom || latestContract?.roomNumber || noteRoom,
         fullName: t.fullName,
         phone: t.phone,
-        idCard: finalIdCard,
-        lineAcc: t.Line_Acc || t.lineAcc || t.lineDisplayName || t.lineId || "",
+        idCard: t.idCard || "",
+        lineAcc,
         lineId: t.lineId,
-        vehiclePlate: finalPlate,
+        vehiclePlate: t.vehiclePlate || "",
         emergencyContact: t.emergencyContact,
-        depositAmount:
-          (matchingBooking && ((matchingBooking.keyDeposit || 0) + (matchingBooking.roomDeposit || 0) > 0))
-            ? (matchingBooking.keyDeposit || 0) + (matchingBooking.roomDeposit || 0)
-            : t.depositAmount,
-        stayInfo: stayInfoText,
-        statusText: statusBadgeText,
-        moveInDate: isDaily
-          ? matchingBooking?.checkInDate || noteStay?.[1]
-          : earliestStart,
-        moveOutDate: isDaily
-          ? matchingBooking
-            ? matchingBooking.checkOutDate
-            : noteCheckout?.[1] || (dailyStillStaying ? undefined : noteStay?.[2])
-          : monthlyActive
-            ? undefined
-            : lastEnded,
-        isActive: isDaily
-          ? matchingBooking
-            ? bookingIsActive(matchingBooking)
-            : dailyStillStaying
-          : monthlyActive,
+        depositAmount: t.depositAmount,
+        moveInDate: earliestStart,
+        moveOutDate: monthlyActive ? undefined : lastEnded,
+        isActive: monthlyActive,
         tenant: t,
-        booking: matchingBooking,
       });
     });
 
+    // Bookings whose guest is not in the tenant registry: their own daily row.
     dailyBookings.forEach((b) => {
-      const existingItem = combined.find((item) =>
-        bookingMatches(b, normalize(item.fullName), digits(item.phone), item.roomNumber)
-      );
-
-      if (existingItem) {
-        // Enforce daily classification and booking stay info
-        existingItem.type = "daily";
-        if (!existingItem.roomNumber && b.roomNumber) {
-          existingItem.roomNumber = b.roomNumber;
-        }
-        if (!existingItem.idCard && b.idCard) {
-          existingItem.idCard = b.idCard;
-        }
-        if (!existingItem.vehiclePlate && b.vehiclePlate) {
-          existingItem.vehiclePlate = b.vehiclePlate;
-        }
-        if ((!existingItem.depositAmount || existingItem.depositAmount === 0) && (b.keyDeposit || b.roomDeposit)) {
-          existingItem.depositAmount = (b.keyDeposit || 0) + (b.roomDeposit || 0);
-        }
-        existingItem.stayInfo = `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights || 1} คืน)`;
-        existingItem.statusText = b.status === "checked_in" ? "กำลังเข้าพัก (รายวัน)" : "ยืนยันการจองแล้ว";
-        existingItem.moveInDate = b.checkInDate;
-        existingItem.moveOutDate = b.checkOutDate;
-        existingItem.isActive = bookingIsActive(b);
-        existingItem.booking = b;
-      } else {
-        combined.push({
-          id: b.id,
-          type: "daily",
-          roomNumber: b.roomNumber,
-          fullName: b.guestName,
-          phone: b.guestPhone,
-          idCard: b.idCard || "",
-          vehiclePlate: b.vehiclePlate || "",
-          depositAmount: (b.keyDeposit || 0) + (b.roomDeposit || 0),
-          stayInfo: `เข้าพัก ${b.checkInDate} ถึง ${b.checkOutDate} (${b.nights || 1} คืน)`,
-          statusText: b.status === "checked_in" ? "กำลังเข้าพัก (รายวัน)" : "ยืนยันการจองแล้ว",
-          moveInDate: b.checkInDate,
-          moveOutDate: b.checkOutDate,
-          isActive: bookingIsActive(b),
-          booking: b,
-        });
-      }
+      if (claimedBookings.has(b.id)) return;
+      combined.push({
+        id: b.id,
+        type: "daily",
+        roomNumber: b.roomNumber,
+        fullName: b.guestName,
+        phone: b.guestPhone,
+        idCard: b.idCard || "",
+        vehiclePlate: b.vehiclePlate || "",
+        depositAmount: (b.keyDeposit || 0) + (b.roomDeposit || 0),
+        moveInDate: b.checkInDate,
+        moveOutDate: b.checkOutDate,
+        isActive: bookingIsActive(b),
+        booking: b,
+      });
     });
 
     const filtered = combined.filter((item) => {
@@ -326,7 +207,7 @@ export function TenantsListView({
       monthlyCount: mCount,
       dailyCount: dCount,
     };
-  }, [rooms, tenants, contracts, invoices, dailyBookings, filterTab, searchQuery, statusFilter, dateFrom, dateTo]);
+  }, [rooms, tenants, contracts, dailyBookings, filterTab, searchQuery, statusFilter, dateFrom, dateTo]);
 
   const hasExtraFilter = statusFilter !== "all" || Boolean(dateFrom) || Boolean(dateTo);
   const filterInputCls =

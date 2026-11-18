@@ -7,6 +7,7 @@
 import React from "react";
 import { ContractItem, DailyBooking, Room, Tenant } from "@/types/dormitory";
 import { formatCurrency, formatDateThai } from "@/lib/utils";
+import { contractsOfTenant, roomOfTenant } from "@/lib/tenant-links";
 import { X, FileSignature } from "lucide-react";
 
 export interface TenantDetailTarget {
@@ -85,24 +86,14 @@ export function TenantDetailModal({ target, onClose, rooms, contracts, onViewCon
   const b = target.booking;
   const name = t?.fullName || b?.guestName || target.fullName;
   const phone = t?.phone || b?.guestPhone || target.phone;
-  const normName = (name || "").trim().toLowerCase();
-  const digits = (phone || "").replace(/\D/g, "");
-
-  // Services/fees: tenant record first, then the room's current tenant (same person) as fallback
-  const room = rooms.find((r) => r.roomNumber === target.roomNumber);
-  const roomTenant =
-    room?.currentTenant && room.currentTenant.fullName?.trim().toLowerCase() === normName ? room.currentTenant : undefined;
+  // Services/fees: tenant record first, then the room's current tenant (same tenant id) as fallback
+  const roomTenant = t ? roomOfTenant(t, rooms)?.currentTenant : undefined;
   const svc = { ...(roomTenant || {}), ...(t || {}) } as Partial<Tenant>;
 
-  // Contracts of this person (name first; phone only when no name match — phones can be shared)
-  const byName = contracts.filter((c) => c.tenantName?.trim().toLowerCase() === normName);
-  const ownContracts = (
-    target.type === "daily"
-      ? []
-      : byName.length > 0
-        ? byName
-        : contracts.filter((c) => digits && c.tenantPhone?.replace(/\D/g, "") === digits)
-  ).sort((a, c) => revOf(a) - revOf(c) || (a.startDate < c.startDate ? -1 : 1));
+  // Contracts of this tenant (contracts.tenant_id; never by phone — phones can be shared)
+  const ownContracts = (target.type === "daily" ? [] : contractsOfTenant(t, contracts, target.roomNumber || undefined)).sort(
+    (a, c) => revOf(a) - revOf(c) || (a.startDate < c.startDate ? -1 : 1)
+  );
   const currentContract =
     ownContracts.find((c) => c.status === "active") ||
     ownContracts.find((c) => c.status === "pending_signature") ||
