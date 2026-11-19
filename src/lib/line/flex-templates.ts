@@ -6,6 +6,18 @@
 import { Invoice, Property, RepairItem, BranchSettingsDetail } from "@/types/dormitory";
 import { formatCurrency, formatDateThai } from "@/lib/utils";
 
+/** LINE Flex text nodes forbid empty strings and control characters. */
+function safeFlexText(value: unknown, fallback: string): string {
+  const cleaned = String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+/** LINE Flex altText must be 1..400 characters. */
+function clampAltText(text: string): string {
+  const normalized = safeFlexText(text, "แจ้งเตือนจากระบบหอพัก");
+  return normalized.length > 390 ? `${normalized.slice(0, 387)}...` : normalized;
+}
+
 /**
  * 1. สร้าง Flex Message การ์ดใบแจ้งหนี้แบบ 1:1 ถอดแบบจาก Template ใบแจ้งหนี้หน้าเว็บ (Invoice Modal)
  */
@@ -15,23 +27,26 @@ export function buildInvoiceFlexMessage(
   branchSettings?: BranchSettingsDetail | null,
   qrCodeUrl?: string
 ) {
-  const branchName = branchSettings?.branchName || property?.name || "หอพัก"; // LINE Flex ไม่รับ text ว่าง
-  const branchAddress = branchSettings?.address || property?.address || "";
-  const branchPhone = branchSettings?.phone || property?.phone || "";
-  const promptpayNumber = branchSettings?.promptpayNumber || property?.promptpayNumber || "";
-  const promptpayName = branchSettings?.promptpayName || property?.promptpayName || branchName;
-  const dueDateStr = invoice.dueDate || "2026-11-05";
-  const billingDateStr = invoice.billingDate || "2026-11-25";
-  const tenantPhone = invoice.tenantPhone || "-";
-  const buildingName = (property as any)?.buildingName || "อาคาร A";
+  // safeFlexText (origin/main): LINE Flex rejects empty / control-char text. Fallbacks are neutral,
+  // never sample branch names, PromptPay numbers or dates (pakdee: no mock data).
+  const branchName = safeFlexText(branchSettings?.branchName || property?.name, "หอพัก");
+  const branchAddress = safeFlexText(branchSettings?.address || property?.address, "");
+  const branchPhone = safeFlexText(branchSettings?.phone || property?.phone, "");
+  const promptpayNumber = safeFlexText(branchSettings?.promptpayNumber || property?.promptpayNumber, "");
+  const promptpayName = safeFlexText(branchSettings?.promptpayName || property?.promptpayName, branchName);
+  const safeRoom = safeFlexText(invoice.roomNumber, "-");
+  const dueDateStr = safeFlexText(invoice.dueDate, "-");
+  const billingDateStr = safeFlexText(invoice.billingDate, "-");
+  const tenantPhone = safeFlexText(invoice.tenantPhone, "-");
+  const buildingName = safeFlexText((property as any)?.buildingName, "-");
 
   // Build items rows (4 คอลัมน์เหมือนหน้าเว็บ: รายการ | หน่วยที่ใช้ | ราคา/หน่วย | จำนวนเงิน)
-  const itemRows = invoice.items.map((item) => {
-    const itemName = item.name || (item as any).description || "รายการ";
+  const itemRows = (invoice.items || []).map((item) => {
+    const itemName = safeFlexText(item.name || (item as any).description, "รายการ");
     const unitsStr = item.units !== undefined && item.units !== null ? `${item.units}` : "-";
     const rateVal = item.rate ?? (item as any).ratePerUnit;
     const rateStr = rateVal !== undefined && rateVal > 0 ? Number(rateVal).toFixed(2) : "-";
-    const amountStr = item.amount.toLocaleString("th-TH", {
+    const amountStr = Number(item.amount || 0).toLocaleString("th-TH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -84,7 +99,7 @@ export function buildInvoiceFlexMessage(
 
   return {
     type: "flex",
-    altText: `ใบแจ้งหนี้ห้อง ${invoice.roomNumber} (${formatCurrency(invoice.totalAmount)}) - ${branchName}`,
+    altText: clampAltText(`ใบแจ้งหนี้ห้อง ${safeRoom} (${formatCurrency(invoice.totalAmount)}) - ${branchName}`),
     contents: {
       type: "bubble",
       size: "giga",
@@ -501,9 +516,19 @@ export function buildReceiptFlexMessage(
   paidAmount: number,
   branchName = "หอพัก"
 ) {
+  const safeRoom = safeFlexText(invoice.roomNumber, "-");
+  const safeTenantName = safeFlexText(invoice.tenantName, "ผู้เช่า");
+  const safeReceiptNumber = safeFlexText(receiptNumber, safeFlexText(invoice.invoiceNumber, "REC"));
+  const safeBranchName = safeFlexText(branchName, "หอพัก");
+  const safePaidAmount = Number.isFinite(Number(paidAmount)) ? Number(paidAmount) : Number(invoice.totalAmount || 0);
+  const safePaidDate = safeFlexText(
+    new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }),
+    new Date().toISOString().slice(0, 10)
+  );
+
   return {
     type: "flex",
-    altText: `✅ ใบเสร็จรับเงิน ${receiptNumber} (ห้อง ${invoice.roomNumber}) - ชำระเงินเรียบร้อยแล้ว`,
+    altText: clampAltText(`✅ ใบเสร็จรับเงิน ${safeReceiptNumber} (ห้อง ${safeRoom}) - ชำระเงินเรียบร้อยแล้ว`),
     contents: {
       type: "bubble",
       size: "kilo",
@@ -519,14 +544,16 @@ export function buildReceiptFlexMessage(
             color: "#FFFFFF",
             size: "xs",
             weight: "bold",
+            wrap: true,
           },
           {
             type: "text",
-            text: `ใบเสร็จรับเงิน ${receiptNumber}`,
+            text: `ใบเสร็จรับเงิน ${safeReceiptNumber}`,
             color: "#ECFDF5",
             size: "sm",
             weight: "bold",
             margin: "xs",
+            wrap: true,
           },
         ],
       },
@@ -540,7 +567,7 @@ export function buildReceiptFlexMessage(
             layout: "horizontal",
             contents: [
               { type: "text", text: "ห้องพัก:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: `ห้อง ${invoice.roomNumber}`, size: "xs", weight: "bold", color: "#0F172A", flex: 7 },
+              { type: "text", text: `ห้อง ${safeRoom}`, size: "xs", weight: "bold", color: "#0F172A", flex: 7, wrap: true },
             ],
           },
           {
@@ -549,7 +576,7 @@ export function buildReceiptFlexMessage(
             margin: "xs",
             contents: [
               { type: "text", text: "ผู้เช่า:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: invoice.tenantName, size: "xs", color: "#0F172A", flex: 7 },
+              { type: "text", text: safeTenantName, size: "xs", color: "#0F172A", flex: 7, wrap: true },
             ],
           },
           {
@@ -558,7 +585,7 @@ export function buildReceiptFlexMessage(
             margin: "xs",
             contents: [
               { type: "text", text: "ยอดที่ชำระ:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: `฿${paidAmount.toLocaleString()}`, size: "sm", weight: "bold", color: "#10B981", flex: 7 },
+              { type: "text", text: `฿${safePaidAmount.toLocaleString("th-TH")}`, size: "sm", weight: "bold", color: "#10B981", flex: 7, wrap: true },
             ],
           },
           {
@@ -567,7 +594,7 @@ export function buildReceiptFlexMessage(
             margin: "xs",
             contents: [
               { type: "text", text: "วันที่ชำระ:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: new Date().toLocaleString("th-TH"), size: "xs", color: "#0F172A", flex: 7 },
+              { type: "text", text: safePaidDate, size: "xs", color: "#0F172A", flex: 7, wrap: true },
             ],
           },
           {
@@ -576,7 +603,7 @@ export function buildReceiptFlexMessage(
             margin: "xs",
             contents: [
               { type: "text", text: "สถานะ:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: "✓ ชำระครบถ้วน (Paid)", size: "xs", weight: "bold", color: "#059669", flex: 7 },
+              { type: "text", text: "✓ ชำระครบถ้วน (Paid)", size: "xs", weight: "bold", color: "#059669", flex: 7, wrap: true },
             ],
           },
           {
@@ -585,11 +612,12 @@ export function buildReceiptFlexMessage(
           },
           {
             type: "text",
-            text: `ขอบคุณที่ชำระเงินตรงเวลาครับ — ${branchName}`,
+            text: `ขอบคุณที่ชำระเงินตรงเวลาครับ — ${safeBranchName}`,
             size: "xxs",
             color: "#64748B",
             margin: "md",
             align: "center",
+            wrap: true,
           },
         ],
       },
@@ -604,9 +632,13 @@ export function buildRepairTicketFlexMessage(
   repair: RepairItem,
   branchName = "หอพัก"
 ) {
+  const safeRoom = safeFlexText(repair.roomNumber, "-");
+  const safeRepairId = safeFlexText(repair.id, "REQ");
+  const safeTitle = safeFlexText(repair.title, "แจ้งซ่อมทั่วไป");
+  const safeBranchName = safeFlexText(branchName, "หอพัก");
   return {
     type: "flex",
-    altText: `🔧 รับเรื่องแจ้งซ่อมห้อง ${repair.roomNumber} เรียบร้อยแล้ว (รหัส: ${repair.id})`,
+    altText: clampAltText(`🔧 รับเรื่องแจ้งซ่อมห้อง ${safeRoom} เรียบร้อยแล้ว (รหัส: ${safeRepairId})`),
     contents: {
       type: "bubble",
       size: "kilo",
@@ -625,10 +657,11 @@ export function buildRepairTicketFlexMessage(
           },
           {
             type: "text",
-            text: `รหัสคำขอ: ${repair.id}`,
+            text: `รหัสคำขอ: ${safeRepairId}`,
             color: "#DBEAFE",
             size: "xs",
             margin: "xs",
+            wrap: true,
           },
         ],
       },
@@ -642,7 +675,7 @@ export function buildRepairTicketFlexMessage(
             layout: "horizontal",
             contents: [
               { type: "text", text: "ห้องพัก:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: `ห้อง ${repair.roomNumber}`, size: "xs", weight: "bold", color: "#0F172A", flex: 7 },
+              { type: "text", text: `ห้อง ${safeRoom}`, size: "xs", weight: "bold", color: "#0F172A", flex: 7, wrap: true },
             ],
           },
           {
@@ -651,7 +684,7 @@ export function buildRepairTicketFlexMessage(
             margin: "xs",
             contents: [
               { type: "text", text: "รายการซ่อม:", size: "xs", color: "#64748B", flex: 3 },
-              { type: "text", text: repair.title, size: "xs", weight: "bold", color: "#1E293B", flex: 7, wrap: true },
+              { type: "text", text: safeTitle, size: "xs", weight: "bold", color: "#1E293B", flex: 7, wrap: true },
             ],
           },
           ...(repair.description
@@ -662,7 +695,7 @@ export function buildRepairTicketFlexMessage(
                   margin: "xs",
                   contents: [
                     { type: "text", text: "รายละเอียด:", size: "xs", color: "#64748B", flex: 3 },
-                    { type: "text", text: repair.description, size: "xs", color: "#475569", flex: 7, wrap: true },
+                    { type: "text", text: safeFlexText(repair.description, "-"), size: "xs", color: "#475569", flex: 7, wrap: true },
                   ],
                 },
               ]
@@ -682,7 +715,7 @@ export function buildRepairTicketFlexMessage(
           },
           {
             type: "text",
-            text: `ฝ่ายอาคารได้รับเรื่องแล้ว และจะประสานงานช่างติดต่อกลับโดยเร็วครับ — ${branchName}`,
+            text: `ฝ่ายอาคารได้รับเรื่องแล้ว และจะประสานงานช่างติดต่อกลับโดยเร็วครับ — ${safeBranchName}`,
             size: "xxs",
             color: "#64748B",
             margin: "md",
@@ -978,4 +1011,25 @@ export function getDefaultQuickReply() {
       },
     ],
   };
+}
+
+/**
+ * LINE Messaging API only renders quickReply attached to the LAST message object in `messages[]`.
+ */
+export function attachQuickReplyToLast<T extends Record<string, any>>(
+  messages: T[],
+  quickReply = getDefaultQuickReply()
+): T[] {
+  const valid = (Array.isArray(messages) ? messages : []).filter(Boolean);
+  if (valid.length === 0) return [];
+  return valid.map((msg, idx) => {
+    if (idx === valid.length - 1) {
+      return { ...msg, quickReply: msg.quickReply ?? quickReply };
+    }
+    if ("quickReply" in msg) {
+      const { quickReply: _ignored, ...rest } = msg;
+      return rest as T;
+    }
+    return msg;
+  });
 }

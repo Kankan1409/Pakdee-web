@@ -1094,7 +1094,8 @@ export async function syncAllToRelationalTables(memoryDb: Record<string, any>): 
 export async function loadCoreContextFromSupabase(
   existingMemoryDb: Record<string, any> = {}
 ): Promise<{ hasCoreData: boolean; data: Record<string, any> }> {
-  const { hasRelationalData, data } = await loadFromRelationalTables(existingMemoryDb);
+  // Only the 4 core tables are queried (server endpoints do not need bills, meters, logs, ...)
+  const { hasRelationalData, data } = await loadFromRelationalTables(existingMemoryDb, { coreOnly: true });
   const core: Record<string, any> = {};
   for (const [key, value] of Object.entries(data || {})) {
     if (key === "properties" || key === "tenants" || key === "rooms" || key.startsWith("branch_settings")) {
@@ -1109,8 +1110,11 @@ export async function loadCoreContextFromSupabase(
  * any extended JSON fields in memoryDb.
  */
 export async function loadFromRelationalTables(
-  existingMemoryDb: Record<string, any>
+  existingMemoryDb: Record<string, any>,
+  options: { coreOnly?: boolean } = {}
 ): Promise<{ hasRelationalData: boolean; data: Record<string, any> }> {
+  const nonCore = (query: () => PromiseLike<any>): PromiseLike<any> =>
+    options.coreOnly ? Promise.resolve({ data: null, error: null }) : query();
   const result: Record<string, any> = {};
   let hasRelationalData = false;
 
@@ -1133,14 +1137,15 @@ export async function loadFromRelationalTables(
       supabase.from("branch_settings").select("*"),
       supabase.from("tenants").select("*"),
       supabase.from("rooms").select("*"),
-      supabase.from("contracts").select("*"),
-      supabase.from("invoices").select("*"),
-      supabase.from("invoice_items").select("*"),
-      supabase.from("meter_readings").select("*").order("recorded_at", { ascending: false }),
-      supabase.from("repairs").select("*"),
-      supabase.from("expenses").select("*"),
-      supabase.from("daily_bookings").select("*"),
-      supabase.from("activity_logs").select("*").order("created_at", { ascending: false }).limit(50),
+      // coreOnly: the other tables are not queried (loadCoreContextFromSupabase does not return them)
+      nonCore(() => supabase.from("contracts").select("*")),
+      nonCore(() => supabase.from("invoices").select("*")),
+      nonCore(() => supabase.from("invoice_items").select("*")),
+      nonCore(() => supabase.from("meter_readings").select("*").order("recorded_at", { ascending: false })),
+      nonCore(() => supabase.from("repairs").select("*")),
+      nonCore(() => supabase.from("expenses").select("*")),
+      nonCore(() => supabase.from("daily_bookings").select("*")),
+      nonCore(() => supabase.from("activity_logs").select("*").order("created_at", { ascending: false }).limit(50)),
     ]);
 
     const responses = { properties: propsRes, branch_settings: settingsRes,
@@ -1281,6 +1286,10 @@ export async function loadFromRelationalTables(
         gender: (tRow.gender || existingMatch?.gender || "MALE") as "MALE" | "FEMALE" | "OTHER",
         age: Number(tRow.age ?? existingMatch?.age ?? 25),
         lineId: tRow.line_id ?? existingMatch?.lineId ?? "",
+        // LINE user id (tenants.line_id holds it once the tenant binds LINE) — restored from origin/main
+        lineUserId:
+          existingMatch?.lineUserId ||
+          (typeof tRow.line_id === "string" && tRow.line_id.trim().startsWith("U") ? tRow.line_id.trim() : undefined),
         Line_Acc: tRow.Line_Acc ?? tRow.line_acc ?? tRow.line_Acc ?? tRow.LineAcc ?? existingMatch?.Line_Acc ?? existingMatch?.lineAcc ?? "",
         lineAcc: tRow.Line_Acc ?? tRow.line_acc ?? tRow.line_Acc ?? tRow.LineAcc ?? existingMatch?.Line_Acc ?? existingMatch?.lineAcc ?? "",
         taxId: tRow.tax_id || existingMatch?.taxId || "",

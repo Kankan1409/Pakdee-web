@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
-import { buildReceiptFlexMessage, getDefaultQuickReply } from "@/lib/line/flex-templates";
+import { getDefaultQuickReply } from "@/lib/line/flex-templates";
+import { pushReceiptToTenantLine, findTenantLineUserId } from "@/lib/line/receipt-delivery";
 import { toUuid } from "@/lib/supabase-relational";
 
 export const runtime = "nodejs";
@@ -40,29 +41,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 });
     }
 
-    // ค้นหาผู้เช่าของห้องนี้ (รองรับทั้งจากทะเบียนผู้เช่าและห้องพักปัจจุบัน)
     const allTenants = await DatabaseService.getTenants(activePropId);
     const allRooms = await DatabaseService.getRooms(activePropId);
-    const room = allRooms.find(
-      (r) =>
-        r.roomNumber === invoice.roomNumber ||
-        DatabaseService.isRoomNumberMatch(r.roomNumber, invoice.roomNumber)
-    );
-    const tenant = allTenants.find(
-      (t) =>
-        (room?.currentTenant?.id && t.id === room.currentTenant.id) ||
-        t.roomNumber === invoice.roomNumber ||
-        DatabaseService.isRoomNumberMatch(t.roomNumber || "", invoice.roomNumber)
-    );
+    const recipientUserId = findTenantLineUserId(allTenants, allRooms, invoice.roomNumber);
 
-    const candidateLineId =
-      tenant?.lineUserId ||
-      room?.currentTenant?.lineUserId ||
-      tenant?.lineId ||
-      room?.currentTenant?.lineId;
-    const recipientUserId = candidateLineId?.trim();
-
-    if (!recipientUserId || !recipientUserId.startsWith("U")) {
+    if (!recipientUserId) {
       console.log(`[NOTIFY-SLIP] Tenant in room ${invoice.roomNumber} has not linked LINE (lineUserId missing)`);
       return NextResponse.json({
         success: true,
@@ -73,32 +56,26 @@ export async function POST(req: NextRequest) {
 
     if (action === "approve") {
       // 1. กรณีแอดมินอนุมัติสลิป: ส่งใบเสร็จรับเงิน Digital Receipt ให้ผู้เช่า
-      const receiptNo = `REC-${new Date().toISOString().slice(0, 7).replace("-", "")}-${invoice.roomNumber}`;
-      const paidAmount = invoice.paidAmount || invoice.totalAmount;
-      const receiptFlex = buildReceiptFlexMessage(
-        { ...invoice, paidAmount },
-        receiptNo,
-        paidAmount,
-        branchName
-      );
-
-      const messages: any[] = [
-        {
-          type: "text",
-          text: `✅ เจ้าหน้าที่ ${branchName} ได้ตรวจสอบยอดเงินและอนุมัติการชำระเงินบิลห้อง ${invoice.roomNumber} เรียบร้อยแล้วครับ!\n\nขอบคุณที่ชำระค่าบริการตรงเวลาครับ 🙏✨`,
-          quickReply: getDefaultQuickReply(),
-        },
-        receiptFlex,
-      ];
-
-      const pushResult = await pushLineMessage(channelAccessToken, recipientUserId, messages);
-      console.log(`[NOTIFY-SLIP] Approved slip push sent to user=${recipientUserId} result=`, pushResult.success);
+      const introText = `✅ เจ้าหน้าที่ ${branchName} ได้ตรวจสอบยอดเงินและอนุมัติการชำระเงินบิลห้อง ${invoice.roomNumber} เรียบร้อยแล้วครับ!\n\nขอบคุณที่ชำระค่าบริการตรงเวลาครับ 🙏✨`;
+      const pushResult = await pushReceiptToTenantLine({
+        propertyId: activePropId,
+        invoice,
+        paidAmount: invoice.paidAmount || invoice.totalAmount,
+        introText,
+        recipientUserId,
+        property,
+        settings,
+      });
+      console.log(`[NOTIFY-SLIP] Approved slip push sent to user=${recipientUserId} result=`, pushResult.notified, pushResult.error || "");
 
       return NextResponse.json({
         success: true,
-        notified: pushResult.success,
+        notified: pushResult.notified,
         action: "approve",
         recipient: recipientUserId,
+        method: pushResult.method,
+        statusCode: pushResult.statusCode,
+        error: pushResult.error,
       });
     } else if (action === "reject") {
       // 2. กรณีแอดมินปฏิเสธสลิป: แจ้งเหตุผลให้ผู้เช่าทราบ

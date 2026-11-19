@@ -36,6 +36,12 @@ function loadTsModule(filePath, mocks = {}) {
     globalThis: {},
     require(name) {
       if (mocks[name]) return mocks[name];
+      // "@/x" → src/x.ts(x), loaded with the same mocks (the app code imports these at runtime)
+      if (name.startsWith("@/")) {
+        const base = "src/" + name.slice(2);
+        const file = [".ts", ".tsx", "/index.ts"].map((ext) => base + ext).find((p) => fs.existsSync(p));
+        if (file) return loadTsModule(file, mocks);
+      }
       return require(name);
     },
   });
@@ -191,7 +197,9 @@ test('loadFromRelationalTables preserves branch property_id, tenant_name, lineUs
 
   assert.equal(hasRelationalData, true);
   assert.equal(data.tenants[0].lineUserId, 'U1234567890abcdef');
-  assert.equal(data.meter_readings[0].property_id, 'prop-kh-1');
+  // pakdee: branches are identified by their database id (P0001), same id as the loaded branch
+  assert.equal(data.meter_readings[0].property_id, data.properties[0].id);
+  assert.equal(data.properties[0].id, propUuid);
   assert.equal(data.meter_readings[0].room_number, 'A2');
   assert.equal(data.meter_readings[0].tenant_name, 'คุณบี');
   assert.equal(data.meter_readings[0].electric_units, 25);

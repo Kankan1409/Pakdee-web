@@ -71,10 +71,19 @@ let isServerSynced = false;
 
 const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 const pendingRelationalValues: Record<string, any> = {};
+const pendingServerSyncs = new Map<string, Promise<void>>();
+
 function scheduleRelationalSync(normKey: string, value: any): void {
   if (normKey === "activity_logs" || normKey === "active_property_id") return;
   if (typeof window === "undefined") {
-    syncKeyToRelationalTable(normKey, value, memoryDb).catch(() => {});
+    const syncPromise = syncKeyToRelationalTable(normKey, value, memoryDb)
+      .catch(() => {})
+      .finally(() => {
+        if (pendingServerSyncs.get(normKey) === syncPromise) {
+          pendingServerSyncs.delete(normKey);
+        }
+      });
+    pendingServerSyncs.set(normKey, syncPromise);
     return;
   }
   if (relationalSyncTimers[normKey]) {
@@ -100,6 +109,15 @@ async function flushRelationalSync(): Promise<void> {
       await syncKeyToRelationalTable(normKey, value, memoryDb);
     } catch {}
   }
+}
+
+async function flushPendingServerSync(normKey?: string): Promise<void> {
+  if (typeof window !== "undefined") return;
+  if (normKey) {
+    await (pendingServerSyncs.get(normKey) || Promise.resolve());
+    return;
+  }
+  await Promise.all(Array.from(pendingServerSyncs.values()));
 }
 
 // Safe Supabase-Synchronized Storage Helper
@@ -1416,6 +1434,8 @@ export const DatabaseService = {
       return r;
     });
     setLocal(KEYS.ROOMS, updatedRooms);
+    await flushPendingServerSync("tenants");
+    await flushPendingServerSync("rooms");
 
     await this.logActivity("UPDATE", "TENANT", `ผูก LINE ผู้เช่าห้อง ${cleanRoom} (${activeName})`, propId);
     return targetTenant;
@@ -1673,6 +1693,7 @@ export const DatabaseService = {
         : inv
     );
     setLocal(KEYS.INVOICES, updated);
+    await flushPendingServerSync("invoices");
 
     // Record into Payment Ledger if payment was made
     if (actualPaid > 0) {
@@ -2265,6 +2286,9 @@ export const DatabaseService = {
     const branchSettingsKey = this.getBranchSettingsKey(propId);
     let saved = stripLegacySampleSettings(getLocal<BranchSettingsDetail | null>(branchSettingsKey, null));
     if (!saved) {
+      saved = stripLegacySampleSettings(getLocal<BranchSettingsDetail | null>(`${KEYS.BRANCH_SETTINGS}_${propId}`, null));
+    }
+    if (!saved) {
       saved = stripLegacySampleSettings(getLocal<BranchSettingsDetail | null>(KEYS.BRANCH_SETTINGS, null));
     }
 
@@ -2343,13 +2367,13 @@ export const DatabaseService = {
             electric_rate: updated.electricRate,
             water_rate: updated.waterRate,
           })
-          .eq("name", updated.branchName || "วิภาวรรณ 1")
+          .eq("id", toUuid(propId))
           .then(() => {});
 
         supabase
           .from("properties")
           .select("id")
-          .eq("name", updated.branchName || "วิภาวรรณ 1")
+          .eq("id", toUuid(propId))
           .maybeSingle()
           .then(({ data: propRow }: any) => {
             if (propRow?.id) {

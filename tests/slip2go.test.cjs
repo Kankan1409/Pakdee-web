@@ -14,14 +14,14 @@ const options = { qrCode: 'qr-test', expectedAmount: 200, receiverAccount: '0812
 const valid = { code: '200200', data: { amount: 200, transRef: 'REAL-REF', dateTime: '2026-11-06T01:00:00Z', receiver: { account: { name: 'Receiver' } } } };
 test('provider verdicts explain duplicate, fraud and mismatches without conflating them', async () => {
   for (const [code, phrase] of Object.entries({
-    '200501':'สลิปซ้ำ', '200500':'สลิปปลอม', '200401':'บัญชีผู้รับไม่ตรง',
+    '200501':'สลิปซ้ำ', '200500':'ไม่ใช่สลิปจริง', '200401':'บัญชีผู้รับไม่ตรง',
     '200402':'ยอดโอนไม่ตรง', '200403':'วันที่โอนไม่ตรง', '200404':'ไม่พบข้อมูลธุรกรรม',
   })) {
     const api=load('src/lib/slip2go.ts',{fetch:async()=>({ok:true,status:200,json:async()=>({code})})});
     const result=await api.verifyWithSlip2Go('test',options);
     assert.equal(result.success,false);
     assert.ok(result.error.includes(phrase));
-    if(code!=='200500') assert.ok(!result.error.includes('สลิปปลอม'));
+    if(code!=='200500') assert.ok(!result.error.includes('ไม่ใช่สลิปจริง') && !result.error.includes('สลิปปลอม'));
   }
 });
 test('HTTP errors do not report a definitive fraud verdict', async () => {

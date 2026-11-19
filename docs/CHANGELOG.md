@@ -43,6 +43,31 @@
 
 ---
 
+## 2026-11-19
+
+### 🟡 รวม origin/main (4 commit: ระบบส่งใบเสร็จ LINE, webhook หลายสาขา, Tailwind production build) เข้า pakdee เพื่อเตรียม merge เข้า main
+- **วิธี:** merge main เข้า pakdee ก่อน แก้ conflict + ทดสอบบน pakdee แล้วค่อย fast-forward main (main ไม่เคยอยู่ในสถานะพัง)
+- **Conflict ที่แก้:**
+  - `webhook/route.ts`: ใช้ของ main (หาสาขาจาก LINE secret ที่ตรง signature) + คงสถานะบิล `partial`/`deferred` ของ pakdee ในรายการบิลที่ชำระได้ + ใส่ import `replyLineMessage` กลับ · เอาค่าสำรองตัวอย่าง "พักดี แมนชั่น" / "0812345678" ออก
+  - `database.service.ts`: เก็บทั้งสองฝั่ง (`flushRelationalSync` ของ pakdee + `flushPendingServerSync` ของ main) · `getBranchSettings` ลองคีย์ `_${propId}` ของ main แล้วล้างค่าตัวอย่างเหมือนเดิม
+  - `verify-payment.ts`: เทียบยอดเป็นสตางค์ (main) + รับบิล `deferred` (pakdee)
+  - `flex-templates.ts`: ใช้ `safeFlexText` ของ main แต่ค่าสำรองเป็นกลาง (ไม่ใช่ "วิภาวรรณ 1", "0854625145", วันที่ตัวอย่าง, "อาคาร A")
+  - `mock-data.ts`: ลบตาม pakdee (main แค่ล้าง LINE secret ในไฟล์นี้ — pakdee ใช้ `defaults.ts` แทนแล้ว)
+- **แก้เพิ่มระหว่าง merge:**
+  - 🐞 `updateBranchSettings` อัปเดตตาราง `properties` โดยหาจาก **ชื่อสาขา** (สำรอง "วิภาวรรณ 1") → สาขา/บัญชีอื่นที่ชื่อเดียวกันถูกเขียนทับ · เปลี่ยนเป็นหาจาก id สาขา
+  - 🐞 ตอนโหลดผู้เช่า pakdee ไม่ได้ตั้ง `lineUserId` จาก `tenants.line_id` (main ตั้ง) → ใส่กลับ
+  - `loadCoreContextFromSupabase` กลับมา query แค่ 4 ตาราง (properties, branch_settings, tenants, rooms) ตาม main ผ่านตัวเลือก `coreOnly`
+  - Super Admin หัวข้อ "พักดี แมนชั่น (สาขา 1)" → ชื่อสาขาที่เปิดอยู่ · `receipt-delivery.ts` / ใบเสร็จ LINE ค่าสำรอง "พักดี แมนชั่น" → "หอพัก"
+- **Test:** main ผ่าน 38/38 แต่ pakdee เดิม **ไม่ผ่าน 9 ข้อ** (ก่อน merge) — แก้ให้ผ่านครบ 37/37:
+  - ตัวโหลด TS ใน test resolve `@/...` เป็นไฟล์จริงได้ (`meter-and-months`, `line-receipt`)
+  - `line-receipt`: ตรวจ LINE secret ว่างใน `defaults.ts` แทน `mock-data.ts`
+  - `meter-and-months`: สาขาใช้ id จากฐานข้อมูล (P0001) และต้องตรงกับสาขาที่โหลด
+  - `payment-slips`: เขียนใหม่ตามการหาบิลด้วย `invoice_number + property_id` (ตาราง buildings ถูกลบแล้ว) — 2 test แบบ legacy buildings ถูกแทนด้วย test "หาบิลไม่สำเร็จต้องปฏิเสธ (503)"
+  - `slip2go`: ข้อความสลิปปลอมเปลี่ยนเป็น "ไม่ใช่สลิปจริงจากธนาคาร" (test ยังตรวจว่าแยกจาก error อื่น)
+- ผ่าน `tsc`, eslint (0 error), `npm run build` · `next build` เตือนว่า Next.js เวอร์ชันนี้มีช่องโหว่ความปลอดภัยที่รู้จักแล้ว — ยังไม่ได้อัปเกรด
+- ⏳ ยังไม่ได้ทดสอบบนเบราว์เซอร์จริง · SQL ที่ค้าง (`supabase_branch_isolation.sql`, `supabase_tenant_links.sql` ฯลฯ) ยังต้องรันเหมือนเดิม — โค้ดใช้ได้ทั้งก่อนและหลังรัน
+- ⏳ `scripts/sync_to_usertest.js` ยังอ้างถึง `src/lib/mock-data.ts` ที่ไม่มีแล้ว
+
 ## 2026-11-17
 
 ### 🟡 ทะเบียนผู้เช่า: แยกรายวัน/รายเดือนด้วยคอลัมน์จริง + ผูกผู้เช่า↔สัญญา↔การจองด้วยรหัส + ลบข้อมูลจำลอง

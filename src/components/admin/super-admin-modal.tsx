@@ -68,7 +68,7 @@ export function SuperAdminModal({
           {/* Quick Plan Switcher for Current Dorm */}
           <div className="bg-[var(--subtle)] p-4 rounded-2xl border border-[var(--border)] space-y-3">
             <div className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">
-              ⚡ สลับแพ็กเกจให้หอพัก: พักดี แมนชั่น (สาขา 1)
+              ⚡ สลับแพ็กเกจให้หอพัก: {branches.find((b) => b.id === currentPropertyId)?.name || "สาขาที่เปิดอยู่"}
             </div>
 
             <div className="grid grid-cols-3 gap-3">

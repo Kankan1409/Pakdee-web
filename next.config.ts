@@ -22,14 +22,6 @@ const nextConfig: NextConfig = {
     // Cloudflare quick tunnel (ที่อยู่เปลี่ยนทุกครั้ง) — ให้หน้าเซ็นสัญญาที่ผู้เช่าเปิดจาก LINE โหลด JavaScript ได้ตอน npm run dev
     "*.trycloudflare.com",
   ],
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
   async rewrites() {
     return [
       { source: "/branches", destination: "/" },
