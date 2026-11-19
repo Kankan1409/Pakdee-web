@@ -35,7 +35,10 @@ import {
   syncRoomsToSupabase,
   toUuid,
   deletePropertiesCascade,
+  isColumnMissing,
+  getRemoteShortIds,
 } from "@/lib/supabase-relational";
+import { getSessionUser, isUnclaimedBranch, userOwnsBranch } from "@/lib/branch-ownership";
 
 /**
  * PAKDEE LOCAL-FIRST DATABASE ENGINE
@@ -120,25 +123,14 @@ async function flushPendingServerSync(normKey?: string): Promise<void> {
   await Promise.all(Array.from(pendingServerSyncs.values()));
 }
 
-// Safe Supabase-Synchronized Storage Helper
-function getCurrentSessionUser(): { id: string; phone?: string; email?: string } | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("pakdee_auth_session_v1");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.id) return parsed;
-  } catch {}
-  return null;
-}
+// สิทธิ์เข้าถึงสาขาตามบัญชี: ดู src/lib/branch-ownership.ts
+const getCurrentSessionUser = getSessionUser;
 
-function isCustomRegisteredUser(user: { id: string; phone?: string; email?: string } | null): boolean {
-  if (!user || !user.id) return false;
-  return user.id !== "usr-owner-01" && user.id !== "usr-mgr-01" && user.id !== "U0001" && user.id !== "U0002";
-}
-
-function nextShortId(prefix: string, existingIds: (string | undefined)[]): string {
+function nextShortId(prefix: string, localIds: (string | undefined)[]): string {
   const p = prefix.toUpperCase().slice(0, 1);
+  // รวมรหัสที่มีใน Supabase ของทุกบัญชี (เครื่องนี้โหลดเฉพาะข้อมูลของบัญชีตัวเอง
+  // ถ้าดูแค่รหัสในเครื่อง จะออกรหัสซ้ำกับของบัญชีอื่นแล้ว upsert ทับแถวนั้น)
+  const existingIds = [...localIds, ...getRemoteShortIds(p)];
   let maxNum = 0;
   for (const id of existingIds) {
     if (!id) continue;
@@ -390,6 +382,25 @@ export const DatabaseService = {
               }
             });
 
+            // ลบตั้งค่าสาขาที่ค้างในเครื่องแต่ไม่ใช่ของบัญชีนี้ (เช่น บัญชีก่อนหน้าที่เคยล็อกอินในเบราว์เซอร์เดียวกัน)
+            if (typeof window !== "undefined") {
+              const keepIds = new Set(
+                (Array.isArray(relationalData["properties"]) ? relationalData["properties"] : []).map((p: any) => String(p.id))
+              );
+              const staleOf = (key: string) => {
+                const m = key.match(/^(?:pakdee_(?:dev|test)_)?branch_settings_(.+)$/);
+                return m && !keepIds.has(m[1]) ? key : null;
+              };
+              for (const key of Object.keys(memoryDb)) {
+                if (staleOf(key)) delete memoryDb[key];
+              }
+              try {
+                for (const key of Object.keys(localStorage)) {
+                  if (staleOf(key)) localStorage.removeItem(key);
+                }
+              } catch {}
+            }
+
             // Auto-heal activePropertyId if browser localStorage had a pre-migration ID
             const loadedProps: any[] = Array.isArray(relationalData["properties"]) ? relationalData["properties"] : [];
             const loadedRooms: any[] = Array.isArray(relationalData["rooms"]) ? relationalData["rooms"] : [];
@@ -546,27 +557,16 @@ export const DatabaseService = {
     const allRooms = this.getAllRawRooms();
 
     const sessionUser = getCurrentSessionUser();
-    const isCustomUser = isCustomRegisteredUser(sessionUser);
 
     if (!props || props.length === 0) {
       return [];
     }
 
-    // Filter branches by account owner so newly registered accounts start with their own branches
+    // แต่ละบัญชีเห็นเฉพาะสาขาของตัวเอง (เดิม: สาขาที่ไม่มี owner_id โชว์ให้ทุกบัญชี
+    // และจับคู่ด้วยเบอร์ติดต่อของสาขา → สองบัญชีเห็นสาขาเดียวกัน)
     const userScopedProps = props.filter((p: any) => {
       if (typeof window === "undefined") return true;
-      const isLegacyDemoOwner = p.ownerId === "usr-owner-01" || p.ownerId === "usr-mgr-01";
-      if (!p.ownerId || isLegacyDemoOwner) return true;
-      // A user always sees branches they created themselves. (Previously users whose id is
-      // U0001/U0002 were treated as demo accounts and their own new branches were hidden
-      // until a manual page reload dropped the ownerId from memory.)
-      if (sessionUser && p.ownerId === sessionUser.id) return true;
-      if (isCustomUser && sessionUser) {
-        const cleanUserPhone = String(sessionUser.phone || "").replace(/\D/g, "");
-        const cleanPropPhone = String(p.phone || p.ownerPhone || "").replace(/\D/g, "");
-        return cleanUserPhone.length >= 9 && cleanPropPhone.length >= 9 && cleanUserPhone === cleanPropPhone;
-      }
-      return false;
+      return userOwnsBranch(p, sessionUser);
     });
 
     if (userScopedProps.length === 0) {
@@ -681,7 +681,7 @@ export const DatabaseService = {
       totalRooms: 0,
       buildingName: "อาคาร 1",
       imageUrl: branchData.imageUrl || undefined,
-      ownerId: sessionUser?.id || "U0001",
+      ownerId: sessionUser?.id || undefined,
       ownerPhone: sessionUser?.phone,
     };
 
@@ -719,6 +719,32 @@ export const DatabaseService = {
       newId
     );
     return newBranch;
+  },
+
+  /** สาขาเก่าที่ยังไม่มีเจ้าของ (ไม่มี owner_id/owner_phone) — ให้บัญชีกด "ยืนยันว่าเป็นสาขาของฉัน" */
+  getUnclaimedBranches(): BranchItem[] {
+    if (typeof window === "undefined") return [];
+    return getLocal<BranchItem[]>(KEYS.PROPERTIES, []).filter((p) => isUnclaimedBranch(p));
+  },
+
+  /** ผูกสาขาที่ยังไม่มีเจ้าของเข้ากับบัญชีที่ล็อกอินอยู่ (บันทึก owner_id + owner_phone ลง Supabase) */
+  async claimBranch(propertyId: string): Promise<{ ok: boolean; ownerColumnMissing?: boolean }> {
+    const sessionUser = getCurrentSessionUser();
+    if (!sessionUser?.id) return { ok: false };
+    const rawProps = getLocal<BranchItem[]>(KEYS.PROPERTIES, []);
+    const target = rawProps.find((p) => p.id === propertyId);
+    if (!target || !isUnclaimedBranch(target)) return { ok: false }; // มีเจ้าของแล้ว ห้ามแย่ง
+    const updated = rawProps.map((p) =>
+      p.id === propertyId ? { ...p, ownerId: sessionUser.id, ownerPhone: sessionUser.phone || "" } : p
+    );
+    await this.persistBatch({ [KEYS.PROPERTIES]: updated });
+    await flushRelationalSync();
+    return { ok: true, ownerColumnMissing: this.isOwnerColumnMissing() };
+  },
+
+  /** properties.owner_id ยังไม่มีใน Supabase → การแยกบัญชีจะหายเมื่อเปิดจากเครื่องอื่น/ล้างแคช */
+  isOwnerColumnMissing(): boolean {
+    return isColumnMissing("properties", "owner_id") || isColumnMissing("properties", "owner_phone");
   },
 
   async deleteBranch(propertyId: string): Promise<boolean> {
@@ -2266,7 +2292,7 @@ export const DatabaseService = {
     const newLog: ActivityLogItem = {
       id: nextShortId("L", all.map((l) => l.id)),
       propertyId: propId,
-      userName: "คุณพักดี มีสุข (เจ้าของหอพัก)",
+      userName: getSessionUser()?.name || "ผู้ใช้งาน",
       action,
       entity,
       description,

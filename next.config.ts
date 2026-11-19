@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       { source: "/branches", destination: "/" },
+      { source: "/branches/:accountId", destination: "/" },
       { source: "/dashboard", destination: "/" },
       { source: "/rooms", destination: "/" },
       { source: "/room-grid", destination: "/" },

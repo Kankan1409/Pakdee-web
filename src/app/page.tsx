@@ -606,7 +606,8 @@ export default function HomePage() {
     if (clean === "/login") {
       return { tab: "login", isBranches: false };
     }
-    if (!clean || clean === "" || clean === "/branches") {
+    // /branches หรือ /branches/<รหัสบัญชี>
+    if (!clean || clean === "" || clean === "/branches" || clean.startsWith("/branches/")) {
       return { tab: "branches", isBranches: true };
     }
     if (clean === "/rooms" || clean === "/room-grid") {
@@ -639,6 +640,11 @@ export default function HomePage() {
     return { tab: "branches", isBranches: true };
   }, []);
 
+  // หน้าเลือกสาขาแสดงรหัสบัญชีใน URL: /branches/<รหัสบัญชี> (เช่น /branches/U0002)
+  // เป็นแค่ป้ายบอกว่ากำลังใช้บัญชีไหน — ข้อมูลที่เห็นยังกรองตามบัญชีที่ล็อกอินเสมอ
+  // ถ้าพิมพ์รหัสบัญชีอื่นใน URL จะถูกเปลี่ยนกลับเป็นของตัวเอง
+  const branchesPath = currentUser?.id ? `/branches/${encodeURIComponent(currentUser.id)}` : "/branches";
+
   // Navigation & Browser History Synchronization (Clean URLs & Dynamic Page Titles)
   const syncNavigation = useCallback(
     (tab: string, branchesOpen: boolean, push: boolean = true) => {
@@ -649,7 +655,7 @@ export default function HomePage() {
         const config = branchesOpen
           ? ROUTE_CONFIG["branches"]
           : ROUTE_CONFIG[tab] || ROUTE_CONFIG["room-grid"];
-        const targetPath = config ? config.path : "/rooms";
+        const targetPath = branchesOpen ? branchesPath : config ? config.path : "/rooms";
         const pageTitle = config
           ? branchesOpen
             ? `${config.title} | พักดี (PAKDEE)`
@@ -670,7 +676,7 @@ export default function HomePage() {
         }
       }
     },
-    [property.name]
+    [property.name, branchesPath]
   );
 
   const handleTabChange = useCallback(
@@ -701,7 +707,7 @@ export default function HomePage() {
     const config = initial.isBranches
       ? ROUTE_CONFIG["branches"]
       : ROUTE_CONFIG[initial.tab] || ROUTE_CONFIG["room-grid"];
-    const targetPath = config ? config.path : "/branches";
+    const targetPath = initial.isBranches ? branchesPath : config ? config.path : branchesPath;
 
     document.title = initial.isBranches
       ? "เลือกสาขาหอพัก | พักดี (PAKDEE)"
@@ -745,6 +751,15 @@ export default function HomePage() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [parseRouteFromUrl, property.name]);
+
+  // ล็อกอินเสร็จ/สลับบัญชี → แก้ URL หน้าเลือกสาขาให้เป็นรหัสบัญชีที่ใช้อยู่
+  useEffect(() => {
+    if (typeof window === "undefined" || !isBranchSelectorOpen) return;
+    const clean = window.location.pathname.replace(/\/$/, "");
+    if (clean !== branchesPath && (clean === "" || clean === "/branches" || clean.startsWith("/branches/"))) {
+      window.history.replaceState({ tab: "branches", isBranchSelectorOpen: true }, "", branchesPath);
+    }
+  }, [branchesPath, isBranchSelectorOpen]);
 
   // Handler: Add room (supports both single room & batch loop from AddRoomModal)
   const handleAddRoom = async (roomData: {
@@ -3114,6 +3129,7 @@ export default function HomePage() {
           onDeleteBranch={handleDeleteBranch}
           onLogout={handleLogoutPrompt}
           onClose={handleCloseBranchSelector}
+          onBranchesChanged={async () => setBranches(await DatabaseService.getAllProperties())}
         />
         {/* Global Bento Confirmation Modal (Rendered here so it shows on branch screen!) */}
         <ConfirmModal

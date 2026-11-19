@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { accountBranchIds, getSessionUser } from "@/lib/branch-ownership";
 import {
   tenantTypeOf,
   Property,
@@ -199,6 +200,11 @@ const missingColumnsCache: Record<string, Set<string>> =
     tenants: new Set<string>(),
   });
 
+/** true เมื่อ safeUpsert พบว่าตารางนี้ใน Supabase ยังไม่มีคอลัมน์นี้ (เช่น properties.owner_id ยังไม่ได้รัน SQL) */
+export function isColumnMissing(table: string, column: string): boolean {
+  return Boolean(missingColumnsCache[table]?.has(column));
+}
+
 function stripMissingColumns(table: string, rows: Record<string, any>[]): Record<string, any>[] {
   const missing = missingColumnsCache[table];
   if (!missing || missing.size === 0) return rows;
@@ -376,6 +382,10 @@ export async function pruneOrphanRows(table: string, keepIds: string[], scopePro
       if (!res.error) {
         existing = res.data || [];
         scoped = true;
+      } else {
+        // ตารางยังไม่มี property_id: แต่ละบัญชีโหลดเฉพาะข้อมูลของตัวเอง ถ้าลบแบบไม่จำกัดสาขา
+        // จะลบข้อมูลของบัญชีอื่นทิ้ง → ข้ามการลบไปเลย (รัน docs/supabase_branch_isolation.sql ก่อน)
+        return;
       }
     }
     if (!existing) {
@@ -968,6 +978,8 @@ export async function syncActivityLogsToSupabase(logs: ActivityLogItem[]): Promi
     action: (l.action || "UPDATE").slice(0, 20),
     entity: (l.entity || "ROOM").slice(0, 30),
     description: l.description || "",
+    // ผูก log กับสาขา (→ บัญชี) — ถ้ายังไม่ได้รัน docs/supabase_account_scope.sql คอลัมน์นี้จะถูกตัดทิ้งเอง
+    property_id: l.propertyId && l.propertyId !== "prop-1" ? toUuid(l.propertyId) : null,
   }));
 
   await safeUpsert("activity_logs", rows, "id");
@@ -985,9 +997,12 @@ export async function syncKeyToRelationalTable(
     const rooms: Room[] = Array.isArray(memoryDb["rooms"]) ? memoryDb["rooms"] : [];
     const tenants: Tenant[] = Array.isArray(memoryDb["tenants"]) ? memoryDb["tenants"] : [];
     const contracts: ContractItem[] = Array.isArray(memoryDb["contracts"]) ? memoryDb["contracts"] : [];
-    // Branches this user has loaded: deletions (prune) never touch rows of any other branch
-    const scope: string[] = (Array.isArray(memoryDb["properties"]) ? memoryDb["properties"] : [])
-      .map((p: Property) => toUuid(p.id))
+    // ขอบเขตการลบ (prune) = เฉพาะสาขาของบัญชีที่ล็อกอิน (+ สาขาเก่าที่ยังไม่มีเจ้าของ)
+    // ไม่แตะแถวของบัญชีอื่นเด็ดขาด แม้ในแคชเครื่องจะยังมีสาขาของบัญชีอื่นค้างอยู่
+    const scope: string[] = Array.from(
+      accountBranchIds(Array.isArray(memoryDb["properties"]) ? memoryDb["properties"] : [], getSessionUser())
+    )
+      .map((id) => toUuid(id))
       .filter(Boolean);
 
     if (normKey === "properties" && Array.isArray(value)) {
@@ -1209,6 +1224,17 @@ export async function loadFromRelationalTables(
       } satisfies Property;
     });
 
+    // แถวที่ไม่รู้สาขา: เดิมโยนเข้า "สาขาแรกในฐานข้อมูล" ซึ่งอาจเป็นของบัญชีอื่น
+    // - เบราว์เซอร์ + ตารางมีคอลัมน์ property_id แต่เป็น NULL → ไม่ผูกกับสาขาไหน (ไม่โชว์ และไม่ถูกลบ)
+    // - ตารางยังไม่มีคอลัมน์ property_id (ยังไม่รัน SQL) → สาขาแรกของบัญชีนี้ (พฤติกรรมเดิม แต่ไม่ข้ามบัญชี)
+    // - ฝั่งเซิร์ฟเวอร์ → สาขาแรกเหมือนเดิม
+    const isBrowser = typeof window !== "undefined";
+    const accountDefaultPropId = isBrowser
+      ? Array.from(accountBranchIds(result["properties"], getSessionUser()))[0] || ""
+      : defaultPropId;
+    const fallbackPropFor = (row: any): string =>
+      isBrowser && row && Object.prototype.hasOwnProperty.call(row, "property_id") ? "" : accountDefaultPropId;
+
     // Map branch_settings
     if (settingsRes.data && settingsRes.data.length > 0) {
       for (const sRow of settingsRes.data) {
@@ -1279,7 +1305,7 @@ export async function loadFromRelationalTables(
         propertyId:
           branchOf(tRow.property_id) ||
           branchOf(roomRows.find((r: any) => String(r.current_tenant_id || "").toLowerCase() === rowUuid)?.property_id) ||
-          (existingMatch?.propertyId && /^[A-Z]\d{4}$/i.test(existingMatch.propertyId) ? existingMatch.propertyId : defaultPropId),
+          (existingMatch?.propertyId && /^[A-Z]\d{4}$/i.test(existingMatch.propertyId) ? existingMatch.propertyId : fallbackPropFor(tRow)),
         fullName: tRow.full_name || "ไม่ระบุชื่อ",
         phone: tRow.phone || "-",
         idCard: tRow.id_card || existingMatch?.idCard || "",
@@ -1314,7 +1340,7 @@ export async function loadFromRelationalTables(
     const uuidToRoomNumber = new Map<string, string>();
     result["rooms"] = roomRows.filter(belongsToKnownBranch).map((rRow: any) => {
       const rowUuid = String(rRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
+      const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || fallbackPropFor(rRow));
       const existingRoom = existingRooms.find(
         (er) =>
           toUuid(er.id).toLowerCase() === rowUuid ||
@@ -1354,7 +1380,7 @@ export async function loadFromRelationalTables(
       : [];
     result["contracts"] = contractRows.filter(belongsToKnownBranch).map((cRow: any) => {
       const rowUuid = String(cRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || String(cRow.property_id || defaultPropId);
+      const propId = uuidToPropId.get(String(cRow.property_id || "").toLowerCase()) || String(cRow.property_id || fallbackPropFor(cRow));
       const existingContract = existingContracts.find(
         (ec) => toUuid(ec.id).toLowerCase() === rowUuid || (ec.contractNumber === cRow.contract_number && (ec.propertyId || defaultPropId) === propId)
       );
@@ -1407,7 +1433,7 @@ export async function loadFromRelationalTables(
     const itemRows = invoiceItemsRes.data || [];
     result["invoices"] = invRows.filter(belongsToKnownBranch).map((iRow: any) => {
       const rowUuid = String(iRow.id).toLowerCase();
-      const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || String(iRow.property_id || defaultPropId);
+      const propId = uuidToPropId.get(String(iRow.property_id || "").toLowerCase()) || String(iRow.property_id || fallbackPropFor(iRow));
       const existingInv = existingInvoices.find(
         (ei) => toUuid(ei.id).toLowerCase() === rowUuid || (ei.invoiceNumber === iRow.invoice_number && (ei.propertyId || defaultPropId) === propId)
       );
@@ -1474,7 +1500,7 @@ export async function loadFromRelationalTables(
 
         return {
           id: existingMeter?.id || String(mRow.id),
-          property_id: room?.propertyId || existingMeter?.property_id || defaultPropId,
+          property_id: room?.propertyId || existingMeter?.property_id || fallbackPropFor(mRow),
           room_id: existingMeter?.room_id || String(mRow.room_id || ""),
           room_number: room?.roomNumber || uuidToRoomNumber.get(rUuid) || mRow.room_number || existingMeter?.room_number || "",
           tenant_name: mRow.tenant_name || room?.currentTenant?.fullName || existingMeter?.tenant_name || "",
@@ -1497,7 +1523,7 @@ export async function loadFromRelationalTables(
         : [];
       result["repairs"] = repairsRes.data.filter(belongsToKnownBranch).map((rRow: any) => {
         const rowUuid = String(rRow.id).toLowerCase();
-        const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || defaultPropId);
+        const propId = uuidToPropId.get(String(rRow.property_id || "").toLowerCase()) || String(rRow.property_id || fallbackPropFor(rRow));
         const existingRep = existingRepairs.find((er) => toUuid(er.id).toLowerCase() === rowUuid);
         return {
           ...(existingRep || {}),
@@ -1524,7 +1550,7 @@ export async function loadFromRelationalTables(
         : [];
       result["expenses"] = expensesRes.data.filter(belongsToKnownBranch).map((eRow: any) => {
         const rowUuid = String(eRow.id).toLowerCase();
-        const propId = uuidToPropId.get(String(eRow.property_id || "").toLowerCase()) || String(eRow.property_id || defaultPropId);
+        const propId = uuidToPropId.get(String(eRow.property_id || "").toLowerCase()) || String(eRow.property_id || fallbackPropFor(eRow));
         const existingExp = existingExpenses.find((ee) => toUuid(ee.id).toLowerCase() === rowUuid);
         return {
           ...(existingExp || {}),
@@ -1554,7 +1580,7 @@ export async function loadFromRelationalTables(
           // Branch: daily_bookings.property_id (docs/supabase_branch_isolation.sql) → this device → first branch
           propertyId:
             branchOf(dRow.property_id) ||
-            (existingDb?.propertyId && /^[A-Z]\d{4}$/i.test(existingDb.propertyId) ? existingDb.propertyId : defaultPropId),
+            (existingDb?.propertyId && /^[A-Z]\d{4}$/i.test(existingDb.propertyId) ? existingDb.propertyId : fallbackPropFor(dRow)),
           tenantId: dRow.tenant_id ? String(dRow.tenant_id) : existingDb?.tenantId,
           roomNumber: String(dRow.room_number),
           guestName: dRow.guest_name,
@@ -1579,7 +1605,7 @@ export async function loadFromRelationalTables(
     if (logsRes.data) {
       result["activity_logs"] = logsRes.data.map((lRow: any) => ({
         id: String(lRow.id),
-        propertyId: "prop-1",
+        propertyId: branchOf(lRow.property_id) || "",
         userName: lRow.user_name,
         action: lRow.action as ActivityLogItem["action"],
         entity: lRow.entity as ActivityLogItem["entity"],
@@ -1592,6 +1618,72 @@ export async function loadFromRelationalTables(
     throw e;
   }
 
+  scopeLoadedDataToAccount(result);
   return { hasRelationalData, data: result };
+}
+
+/** ตารางที่ผูกกับสาขาด้วย propertyId (สาขา → บัญชีด้วย owner_id) */
+const ACCOUNT_SCOPED_KEYS = [
+  "tenants",
+  "rooms",
+  "contracts",
+  "invoices",
+  "meter_readings",
+  "repairs",
+  "expenses",
+  "daily_bookings",
+  "activity_logs",
+];
+
+/**
+ * เบราว์เซอร์: เก็บไว้เฉพาะข้อมูลของบัญชีที่ล็อกอิน (สาขาของตัวเอง + สาขาเก่าที่ยังไม่มีเจ้าของ)
+ * ข้อมูลของบัญชีอื่นไม่ถูกเก็บในหน่วยความจำ/localStorage ของเครื่องนี้เลย
+ * แถวที่ไม่รู้ว่าเป็นของสาขาไหน (ไม่มี propertyId) ก็ไม่ถูกเก็บ — และไม่ถูกลบจาก Supabase (อยู่นอกขอบเขต prune)
+ * ฝั่งเซิร์ฟเวอร์ (API/LINE webhook) ไม่มี session → ได้ข้อมูลทั้งหมดเหมือนเดิม แล้วกรองเองตามสาขา
+ */
+// รหัสสั้นของทุกแถวใน Supabase (ทุกบัญชี — เก็บแค่รหัส ไม่เก็บข้อมูล) แยกตามตัวอักษรนำหน้า
+// ใช้ตอนออกรหัสใหม่ (T0005, I0012, ...) ไม่ให้ชนกับรหัสของบัญชีอื่นที่เครื่องนี้มองไม่เห็น
+// (ชนกัน = upsert ทับแถวของบัญชีอื่น)
+const remoteShortIds: Record<string, Set<string>> = {};
+
+/** รหัสสั้นที่มีอยู่แล้วใน Supabase สำหรับตัวอักษรนำหน้านี้ (รวมของบัญชีอื่น) */
+export function getRemoteShortIds(prefix: string): string[] {
+  return Array.from(remoteShortIds[prefix.toUpperCase().slice(0, 1)] || []);
+}
+
+function rememberRemoteShortIds(result: Record<string, any>): void {
+  for (const value of Object.values(result)) {
+    if (!Array.isArray(value)) continue;
+    for (const row of value) {
+      const id = String(row?.id || "");
+      const m = id.match(/^([A-Za-z])\d+$/);
+      if (!m) continue;
+      const p = m[1].toUpperCase();
+      (remoteShortIds[p] ||= new Set()).add(id);
+      toUuid(id); // ให้ตัวนับของ toUuid (รหัสที่แปลงจากรหัสยาว) ข้ามรหัสนี้ด้วย
+    }
+  }
+}
+
+function scopeLoadedDataToAccount(result: Record<string, any>): void {
+  if (typeof window === "undefined") return;
+  rememberRemoteShortIds(result);
+  const allowed = accountBranchIds(Array.isArray(result["properties"]) ? result["properties"] : [], getSessionUser());
+  if (Array.isArray(result["properties"])) {
+    result["properties"] = result["properties"].filter((p: any) => allowed.has(String(p.id)));
+  }
+  for (const key of Object.keys(result)) {
+    if (key.startsWith("branch_settings_") && !allowed.has(key.slice("branch_settings_".length))) {
+      delete result[key];
+    }
+  }
+  for (const key of ACCOUNT_SCOPED_KEYS) {
+    if (Array.isArray(result[key])) {
+      result[key] = result[key].filter((row: any) => {
+        const branchId = row?.propertyId || row?.property_id; // meter_readings ใช้ property_id
+        return Boolean(branchId) && allowed.has(String(branchId));
+      });
+    }
+  }
 }
 

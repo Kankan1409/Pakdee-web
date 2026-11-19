@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Property } from "@/types/dormitory";
+import { DatabaseService } from "@/lib/database.service";
 import { PakdeeLogo } from "@/components/ui/pakdee-logo";
 import { useAuth } from "@/lib/auth-context";
 import { globalPopup } from "@/lib/popup-context";
@@ -61,6 +62,8 @@ interface BranchSelectorViewProps {
   onDeleteBranch?: (branchId: string) => Promise<boolean>;
   onClose?: () => void;
   onLogout?: () => void;
+  /** เรียกหลังผูกสาขาเก่าเข้าบัญชี เพื่อให้หน้าหลักโหลดรายการสาขาใหม่ */
+  onBranchesChanged?: () => void | Promise<void>;
 }
 
 export function BranchSelectorView({
@@ -73,8 +76,38 @@ export function BranchSelectorView({
   onDeleteBranch,
   onClose,
   onLogout,
+  onBranchesChanged,
 }: BranchSelectorViewProps) {
   const { currentUser, logout: authLogout, verifyPassword } = useAuth();
+
+  // สาขาเก่าที่ยังไม่มีเจ้าของ (ไม่มี owner_id/owner_phone) — ไม่โชว์ให้ทุกบัญชีเห็นอีกแล้ว ต้องกดยืนยันก่อน
+  const [unclaimedBranches, setUnclaimedBranches] = useState<BranchItem[]>([]);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [ownerColumnMissing, setOwnerColumnMissing] = useState(false);
+  useEffect(() => {
+    setUnclaimedBranches(DatabaseService.getUnclaimedBranches() as BranchItem[]);
+    setOwnerColumnMissing(DatabaseService.isOwnerColumnMissing());
+  }, [branches]);
+
+  const handleClaimBranch = (b: BranchItem) => {
+    globalPopup.warning(
+      "ยืนยันว่าเป็นสาขาของบัญชีนี้?",
+      `สาขา "${b.name}" จะผูกกับบัญชี ${currentUser?.name || ""} และบัญชีอื่นจะมองไม่เห็นสาขานี้อีก (ตรวจให้แน่ใจว่าเป็นสาขาของคุณจริง)`,
+      () => void doClaimBranch(b)
+    );
+  };
+
+  const doClaimBranch = async (b: BranchItem) => {
+    setClaimingId(b.id);
+    try {
+      const res = await DatabaseService.claimBranch(b.id);
+      setOwnerColumnMissing(Boolean(res.ownerColumnMissing));
+      setUnclaimedBranches(DatabaseService.getUnclaimedBranches() as BranchItem[]);
+      await onBranchesChanged?.();
+    } finally {
+      setClaimingId(null);
+    }
+  };
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingBranch, setEditingBranch] = useState<BranchItem | null>(null);
@@ -362,6 +395,48 @@ export function BranchSelectorView({
               <span>+ เพิ่มสาขาใหม่</span>
             </button>
           </div>
+
+          {ownerColumnMissing && (
+            <div className="mb-5 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                ฐานข้อมูลยังไม่มีคอลัมน์ <strong>properties.owner_id / owner_phone</strong> — การแยกสาขาตามบัญชีจะหายเมื่อเปิดจากเครื่องอื่น
+                กรุณารันส่วนท้ายของ <code>docs/supabase_schema_short_ids.sql</code> ใน Supabase SQL Editor
+              </div>
+            </div>
+          )}
+
+          {/* สาขาเก่าที่ยังไม่มีเจ้าของ — ต้องกดยืนยันก่อนถึงจะเข้าบัญชีนี้ */}
+          {unclaimedBranches.length > 0 && (
+            <div className="mb-6 p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 space-y-3">
+              <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5 mb-0.5">
+                  <Info className="w-4 h-4" />
+                  <span>สาขาเดิมที่ยังไม่ระบุบัญชีเจ้าของ ({unclaimedBranches.length} สาขา)</span>
+                </div>
+                สาขาเหล่านี้สร้างก่อนมีระบบแยกบัญชี ถ้าเป็นของคุณ กด &quot;เป็นสาขาของฉัน&quot; แล้วบัญชีอื่นจะมองไม่เห็นอีก
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {unclaimedBranches.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800/60 rounded-xl pl-3 pr-1.5 py-1.5 text-xs"
+                  >
+                    <span className="font-bold text-slate-800 dark:text-slate-100">{b.name}</span>
+                    <span className="text-slate-400 font-mono">{b.id}</span>
+                    <button
+                      type="button"
+                      disabled={claimingId !== null}
+                      onClick={() => handleClaimBranch(b)}
+                      className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold px-2.5 py-1 rounded-lg transition cursor-pointer"
+                    >
+                      {claimingId === b.id ? "กำลังบันทึก..." : "เป็นสาขาของฉัน"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
