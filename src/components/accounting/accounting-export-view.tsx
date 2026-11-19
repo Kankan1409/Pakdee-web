@@ -49,8 +49,8 @@ export function AccountingExportView({
   onDeleteExpense,
 }: AccountingExportViewProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "expenses" | "receipts" | "invoices" | "utilities">("overview");
-  const [selectedMonth, setSelectedMonth] = useState<string>("11");
-  const [selectedYear, setSelectedYear] = useState<string>("2569");
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => String(new Date().getMonth() + 1).padStart(2, "0"));
+  const [selectedYear, setSelectedYear] = useState<string>(() => String(new Date().getFullYear() + 543));
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedExpenseCategory, setSelectedExpenseCategory] = useState<string>("all");
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);

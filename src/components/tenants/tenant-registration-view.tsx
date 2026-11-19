@@ -216,7 +216,7 @@ export function TenantRegistrationView({
   // Feature Toggles: Deposit, TV, Fridge, Common Fee, WiFi, Parking
   const [hasDeposit, setHasDeposit] = useState<boolean>(true);
   const [depositAmount, setDepositAmount] = useState<number>(
-    defaultRoom ? defaultRoom.monthlyRate * 2 : 8000
+    defaultRoom ? defaultRoom.monthlyRate * 2 : 0
   );
 
   const [hasTv, setHasTv] = useState<boolean>(false);
@@ -1755,7 +1755,7 @@ export function TenantRegistrationView({
                       roomNumber: selectedRoom?.roomNumber || "103",
                       floor: selectedRoom?.floor || 1,
                       roomType: selectedRoom?.type || "ห้องแอร์",
-                      monthlyRate: selectedRoom?.monthlyRate || 4000,
+                      monthlyRate: selectedRoom?.monthlyRate || 0,
                       fullName: fullName.trim() || "คุณนวรัตน์ มงคลสุข",
                       phone: phone.trim() || "089-456-7890",
                       idCard: idCard.trim() || "1-1005-01234-56-7",

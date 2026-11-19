@@ -20,7 +20,7 @@ import {
   Check,
   FileCheck,
 } from "lucide-react";
-import { formatCurrency, formatDateThai } from "@/lib/utils";
+import { formatCurrency, formatDateThai, localDateISO } from "@/lib/utils";
 import { isDateAfter, isValidThaiPhone, formatThaiPhone } from "@/lib/validators";
 import { numberToThaiBahtText, STANDARD_14_CLAUSES } from "@/components/contracts/contract-print-view";
 import { requestContractSign } from "@/lib/payment-slips-client";
@@ -178,14 +178,14 @@ export function ContractManagementView({
   const [hasSignatureDrawn, setHasSignatureDrawn] = useState<boolean>(false);
 
   // New Contract Form
-  const [roomNumber, setRoomNumber] = useState<string>(rooms[0]?.roomNumber || "101");
+  const [roomNumber, setRoomNumber] = useState<string>(rooms[0]?.roomNumber || "");
   const [tenantName, setTenantName] = useState<string>(rooms[0]?.currentTenant?.fullName || "");
   const [tenantPhone, setTenantPhone] = useState<string>(rooms[0]?.currentTenant?.phone || "");
-  const [startDate, setStartDate] = useState<string>("2026-11-01");
-  const [endDate, setEndDate] = useState<string>("2027-10-31");
-  const [monthlyRent, setMonthlyRent] = useState<number>(rooms[0]?.monthlyRate || 4000);
-  const [depositAmount, setDepositAmount] = useState<number>(8000);
-  const [advanceRent, setAdvanceRent] = useState<number>(4000);
+  const [startDate, setStartDate] = useState<string>(() => localDateISO());
+  const [endDate, setEndDate] = useState<string>(() => localDateISO(1));
+  const [monthlyRent, setMonthlyRent] = useState<number>(rooms[0]?.monthlyRate || 0);
+  const [depositAmount, setDepositAmount] = useState<number>((rooms[0]?.monthlyRate || 0) * 2);
+  const [advanceRent, setAdvanceRent] = useState<number>(rooms[0]?.monthlyRate || 0);
   const [status, setStatus] = useState<ContractItem["status"]>("active");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -1325,9 +1325,9 @@ export function ContractManagementView({
                           hasDeposit: depositVal > 0,
                           depositAmount: depositVal,
                           hasTv: Boolean(previewContract.hasTv),
-                          tvRentalFee: Number(previewContract.tvRentalFee) || 300,
+                          tvRentalFee: Number(previewContract.tvRentalFee) || 0,
                           hasFridge: Boolean(previewContract.hasFridge),
-                          fridgeRentalFee: Number(previewContract.fridgeRentalFee) || 300,
+                          fridgeRentalFee: Number(previewContract.fridgeRentalFee) || 0,
                           additionalFees: previewContract.additionalFees || [],
                           noticeDays,
                           depositRefundDays: refundDays,

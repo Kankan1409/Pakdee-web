@@ -17,7 +17,7 @@ import {
   ArrowDownRight,
   TrendingDown,
 } from "lucide-react";
-import { formatCurrency, formatDateThai } from "@/lib/utils";
+import { formatCurrency, formatDateThai, localDateISO } from "@/lib/utils";
 
 interface ExpenseManagementViewProps {
   expenses: ExpenseItem[];
@@ -36,7 +36,7 @@ export function ExpenseManagementView({
   const [category, setCategory] = useState<ExpenseItem["category"]>("electric");
   const [title, setTitle] = useState<string>("");
   const [amount, setAmount] = useState<number>(0);
-  const [date, setDate] = useState<string>("2026-10-28");
+  const [date, setDate] = useState<string>(() => localDateISO());
   const [paidTo, setPaidTo] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 

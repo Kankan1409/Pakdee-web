@@ -83,8 +83,8 @@ export function DailyCheckoutModal({
 
   if (!isOpen || !booking) return null;
 
-  const totalRoomPrice = Number(booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 650);
-  const keyDeposit = Number(booking.keyDeposit || 500);
+  const totalRoomPrice = Number(booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 0);
+  const keyDeposit = Number(booking.keyDeposit || 0);
   const roomDeposit = Number(booking.roomDeposit || 0);
   const totalDeposit = keyDeposit + roomDeposit;
 
@@ -179,7 +179,7 @@ export function DailyCheckoutModal({
               <div className="flex items-center gap-1.5 col-span-2">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
                 <span>
-                  {booking.checkInDate} ถึง {booking.checkOutDate} ({formatCurrency(booking.dailyRate || 650)}/คืน)
+                  {booking.checkInDate} ถึง {booking.checkOutDate} ({formatCurrency(booking.dailyRate || 0)}/คืน)
                 </span>
               </div>
             </div>
@@ -196,7 +196,7 @@ export function DailyCheckoutModal({
               <div>
                 <div className="font-semibold text-[var(--foreground)]">ค่าห้องพักรายวัน</div>
                 <div className="text-[11px] text-[var(--muted)]">
-                  {booking.nights || 1} คืน x {formatCurrency(booking.dailyRate || 650)}
+                  {booking.nights || 1} คืน x {formatCurrency(booking.dailyRate || 0)}
                 </div>
               </div>
               <span className="font-bold text-sm text-[var(--foreground)]">

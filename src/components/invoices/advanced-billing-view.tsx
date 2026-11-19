@@ -48,11 +48,13 @@ export function AdvancedBillingView({
 
   // New Invoice Modals
   const [modalMode, setModalMode] = useState<"monthly" | "move_in" | "custom" | null>(null);
-  const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>(rooms[0]?.roomNumber || "101");
-  const [customTitle, setCustomTitle] = useState<string>("ค่าล้างเครื่องปรับอากาศ");
-  const [customAmount, setCustomAmount] = useState<number>(500);
-  const [depositAmount, setDepositAmount] = useState<number>(8000);
-  const [advanceAmount, setAdvanceAmount] = useState<number>(4000);
+  const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>(rooms[0]?.roomNumber || "");
+  const [customTitle, setCustomTitle] = useState<string>("");
+  const [customAmount, setCustomAmount] = useState<number>(0);
+  // ค่าเริ่มต้นมาจากค่าเช่าของห้องที่เลือก (ไม่ฝังตัวเลขตัวอย่าง 8,000/4,000/300 อีกต่อไป)
+  const [depositAmount, setDepositAmount] = useState<number>((rooms[0]?.monthlyRate || 0) * 2);
+  const [advanceAmount, setAdvanceAmount] = useState<number>(rooms[0]?.monthlyRate || 0);
+  const [keyFee, setKeyFee] = useState<number>(0);
 
   // Status Counts
   const unpaidCount = invoices.filter((i) => i.status === "unpaid").length;
@@ -113,9 +115,9 @@ export function AdvancedBillingView({
       items: [
         { name: "เงินประกันความเสียหาย (Deposit)", amount: depositAmount, units: 1, rate: depositAmount },
         { name: "ค่าเช่าห้องพักล่วงหน้าเดือนแรก", amount: advanceAmount, units: 1, rate: advanceAmount },
-        { name: "ค่าคีย์การ์ดและกุญแจห้อง", amount: 300, units: 1, rate: 300 },
+        ...(keyFee > 0 ? [{ name: "ค่าคีย์การ์ดและกุญแจห้อง", amount: keyFee, units: 1, rate: keyFee }] : []),
       ],
-      totalAmount: depositAmount + advanceAmount + 300,
+      totalAmount: depositAmount + advanceAmount + keyFee,
       status: "unpaid",
       invoiceType: "move_in",
     });
@@ -462,7 +464,12 @@ export function AdvancedBillingView({
                 <label className="block text-[var(--muted)] mb-1">ห้องพัก *</label>
                 <select
                   value={selectedRoomNumber}
-                  onChange={(e) => setSelectedRoomNumber(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedRoomNumber(e.target.value);
+                    const rate = rooms.find((r) => r.roomNumber === e.target.value)?.monthlyRate || 0;
+                    setDepositAmount(rate * 2);
+                    setAdvanceAmount(rate);
+                  }}
                   className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-bold"
                 >
                   {rooms.map((r) => (
@@ -497,8 +504,19 @@ export function AdvancedBillingView({
                 />
               </div>
 
+              <div>
+                <label className="block text-[var(--muted)] mb-1">ค่าคีย์การ์ด/กุญแจห้อง (ถ้ามี)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={keyFee}
+                  onChange={(e) => setKeyFee(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-bold"
+                />
+              </div>
+
               <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-right">
-                ยอดรวมแรกเข้า: ฿{(depositAmount + advanceAmount + 300).toLocaleString()}
+                ยอดรวมแรกเข้า: ฿{(depositAmount + advanceAmount + keyFee).toLocaleString()}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t">

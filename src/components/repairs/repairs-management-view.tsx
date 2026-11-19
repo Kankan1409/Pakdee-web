@@ -38,7 +38,7 @@ export function RepairsManagementView({
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
   // New repair form state
-  const [roomNumber, setRoomNumber] = useState<string>(rooms[0]?.roomNumber || "101");
+  const [roomNumber, setRoomNumber] = useState<string>(rooms[0]?.roomNumber || "");
   const [category, setCategory] = useState<RepairItem["category"]>("air");
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");

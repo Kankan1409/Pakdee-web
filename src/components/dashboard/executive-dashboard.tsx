@@ -387,10 +387,7 @@ export function ExecutiveDashboard({
             {occupancyRate}%
           </div>
           <div className="text-xs text-[var(--muted)] mt-1.5 flex items-center gap-1.5">
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center">
-              <ArrowUpRight className="w-3.5 h-3.5" /> +3%
-            </span>
-            <span>เทียบกับเดือนก่อน ({totalOccupied}/{totalRooms} ห้อง)</span>
+            <span>มีผู้เข้าพัก {totalOccupied}/{totalRooms} ห้อง</span>
           </div>
         </div>
 

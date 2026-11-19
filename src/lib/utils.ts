@@ -98,3 +98,11 @@ export function formatMeterTimestampThai(val?: string | null): string {
   }
   return raw;
 }
+
+/** วันที่ตามเวลาเครื่อง (YYYY-MM-DD) — ใช้แทนวันที่ตัวอย่างที่เคยฝังไว้ในฟอร์ม; addYears ใช้ตั้งวันสิ้นสุดสัญญา 1 ปี */
+export function localDateISO(addYears = 0, base: Date = new Date()): string {
+  const d = new Date(base.getFullYear() + addYears, base.getMonth(), base.getDate());
+  if (addYears) d.setDate(d.getDate() - 1); // สัญญา 1 ปี สิ้นสุดก่อนวันครบรอบ 1 วัน
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}

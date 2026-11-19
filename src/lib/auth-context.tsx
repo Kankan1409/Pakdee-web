@@ -40,43 +40,6 @@ interface StoredRegisteredUser {
   createdAt: string;
 }
 
-export const PRESET_USERS: Record<UserRole, AuthUser> = {
-  owner: {
-    id: "usr-owner-01",
-    name: "คุณพักดี มีสุข",
-    email: "owner@pakdee.com",
-    role: "owner",
-    roleTitle: "เจ้าของหอพัก (Owner / Super Admin)",
-    avatarText: "พด",
-    phone: "081-999-8888",
-    assignedBranches: ["all"],
-    permissions: {
-      canDeleteBranch: true,
-      canEditBankSettings: true,
-      canViewExecutivePL: true,
-      canResetSystem: true,
-      canManageManagers: true,
-    },
-  },
-  manager: {
-    id: "usr-mgr-01",
-    name: "สมศักดิ์ บริหาร",
-    email: "manager@pakdee.com",
-    role: "manager",
-    roleTitle: "ผู้จัดการหอพัก (Manager / Branch Admin)",
-    avatarText: "สบ",
-    phone: "089-777-6666",
-    assignedBranches: ["branch-1"],
-    permissions: {
-      canDeleteBranch: false,
-      canEditBankSettings: false,
-      canViewExecutivePL: false,
-      canResetSystem: false,
-      canManageManagers: false,
-    },
-  },
-};
-
 interface AuthContextType {
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
@@ -303,16 +266,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: "รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร" };
     }
 
-    // Check duplicate against preset accounts
-    const ownerPhoneClean = (PRESET_USERS.owner.phone || "").replace(/[-\s]/g, "");
-    const managerPhoneClean = (PRESET_USERS.manager.phone || "").replace(/[-\s]/g, "");
-    if (cleanPhone === ownerPhoneClean || cleanPhone === managerPhoneClean) {
-      return {
-        success: false,
-        error: "เบอร์โทรศัพท์นี้เป็นบัญชีตั้งต้นในระบบแล้ว กรุณาเข้าสู่ระบบหรือใช้เบอร์อื่น",
-      };
-    }
-
     try {
       // Clear any legacy localStorage user cache so Supabase `user_profiles` is the 100% single source of truth
       try {
@@ -405,8 +358,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const stored = localStorage.getItem("pakdee_user_password");
       if (stored && stored === pass) return true;
-      if (currentUser?.email === PRESET_USERS.owner.email && pass === "pakdee2026") return true;
-      if (currentUser?.email === PRESET_USERS.manager.email && pass === "manager2026") return true;
     } catch {}
     return false;
   };

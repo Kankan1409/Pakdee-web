@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { PakdeeLogo } from "@/components/ui/pakdee-logo";
 import { useAuth } from "@/lib/auth-context";
@@ -16,15 +16,11 @@ import {
   Sun,
   FileText,
   Zap,
-  CheckCircle2,
   AlertCircle,
   Clock,
   X,
   KeyRound,
-  MessageSquare,
   HelpCircle,
-  RefreshCw,
-  Check,
   UserPlus,
 } from "lucide-react";
 
@@ -36,102 +32,10 @@ export function LoginView() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Forgot Password System States
+  // ลืมรหัสผ่าน: ยังไม่มีระบบส่ง SMS OTP จริง จึงไม่จำลอง OTP/บัญชีตั้งต้นอีกต่อไป
+  // (ของเดิมโชว์ OTP บนจอ + เขียนรหัสใหม่ลง localStorage ที่ไม่มีใครอ่าน — รีเซ็ตไม่ได้จริง)
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
-  const [forgotStep, setForgotStep] = useState<"phone" | "otp" | "new_password" | "success">("phone");
-  const [forgotPhone, setForgotPhone] = useState("");
-  const [forgotOtp, setForgotOtp] = useState("");
-  const [generatedOtp, setGeneratedOtp] = useState("");
-  const [forgotNewPassword, setForgotNewPassword] = useState("");
-  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [forgotError, setForgotError] = useState<string | null>(null);
-  const [forgotTimer, setForgotTimer] = useState(60);
-  const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
-  const [forgotTab, setForgotTab] = useState<"reset" | "support">("reset");
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isForgotModalOpen && forgotStep === "otp" && forgotTimer > 0) {
-      interval = setInterval(() => {
-        setForgotTimer((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isForgotModalOpen, forgotStep, forgotTimer]);
-
-  const handleOpenForgotModal = () => {
-    setForgotPhone(phone.trim() || "081-999-8888");
-    setForgotStep("phone");
-    setForgotOtp("");
-    setForgotNewPassword("");
-    setForgotConfirmPassword("");
-    setForgotError(null);
-    setForgotTimer(60);
-    setForgotTab("reset");
-    setIsForgotModalOpen(true);
-  };
-
-  const handleSendOtp = () => {
-    setForgotError(null);
-    if (!forgotPhone.trim()) {
-      setForgotError("กรุณากรอกเบอร์โทรศัพท์ที่ลงทะเบียนในระบบ");
-      return;
-    }
-    setIsForgotSubmitting(true);
-    setTimeout(() => {
-      // Simulate generating 6-digit OTP
-      const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(randomOtp);
-      setForgotStep("otp");
-      setForgotTimer(60);
-      setIsForgotSubmitting(false);
-    }, 600);
-  };
-
-  const handleVerifyOtp = () => {
-    setForgotError(null);
-    if (!forgotOtp.trim()) {
-      setForgotError("กรุณากรอกรหัส OTP 6 หลัก");
-      return;
-    }
-    // Only the OTP generated for this request (the fixed demo OTP "123456" was removed)
-    if (!generatedOtp || forgotOtp.trim() !== generatedOtp) {
-      setForgotError("รหัส OTP ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
-      return;
-    }
-    setForgotStep("new_password");
-  };
-
-  const handleResetPassword = () => {
-    setForgotError(null);
-    if (!forgotNewPassword) {
-      setForgotError("กรุณากำหนดรหัสผ่านใหม่");
-      return;
-    }
-    if (forgotNewPassword.length < 4) {
-      setForgotError("รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร");
-      return;
-    }
-    if (forgotNewPassword !== forgotConfirmPassword) {
-      setForgotError("รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน");
-      return;
-    }
-
-    setIsForgotSubmitting(true);
-    setTimeout(() => {
-      // Update in localStorage if needed or update login state
-      try {
-        localStorage.setItem(`pakdee_pwd_${forgotPhone.replace(/\D/g, "")}`, forgotNewPassword);
-      } catch {
-        // ignore
-      }
-      setPassword(forgotNewPassword);
-      setPhone(forgotPhone);
-      setForgotStep("success");
-      setIsForgotSubmitting(false);
-    }, 600);
-  };
+  const handleOpenForgotModal = () => setIsForgotModalOpen(true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -397,295 +301,25 @@ export function LoginView() {
               </button>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex border-b border-slate-100 bg-slate-50/80 px-4 pt-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setForgotTab("reset")}
-                className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
-                  forgotTab === "reset"
-                    ? "border-emerald-600 text-emerald-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>รีเซ็ตผ่านเบอร์โทรศัพท์ (SMS OTP)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setForgotTab("support")}
-                className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
-                  forgotTab === "support"
-                    ? "border-emerald-600 text-emerald-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>ช่วยเหลือ / บัญชีตั้งต้น</span>
-              </button>
-            </div>
-
             {/* Modal Body */}
-            <div className="p-6">
-              {forgotTab === "support" ? (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200/80 space-y-2">
-                    <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-amber-600" />
-                      <span>บัญชีผู้ดูแลระบบตั้งต้น (Default Admin Accounts)</span>
-                    </div>
-                    <p className="text-[11px] text-amber-800 leading-relaxed">
-                      หากท่านทดสอบระบบ หรือยังไม่ได้เปลี่ยนรหัสผ่าน สามารถเข้าสู่ระบบด้วยบัญชีต่อไปนี้:
-                    </p>
-                    <div className="space-y-1.5 pt-1">
-                      <div className="p-2.5 bg-white/90 rounded-xl border border-amber-200 text-xs flex justify-between items-center">
-                        <div>
-                          <div className="font-bold text-slate-800">เจ้าของหอพัก (Owner)</div>
-                          <div className="text-slate-500 text-[11px]">081-999-8888</div>
-                        </div>
-                        <div className="font-mono font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px]">
-                          P12345
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white/90 rounded-xl border border-amber-200 text-xs flex justify-between items-center">
-                        <div>
-                          <div className="font-bold text-slate-800">ผู้จัดการหอพัก (Manager)</div>
-                          <div className="text-slate-500 text-[11px]">089-777-6666</div>
-                        </div>
-                        <div className="font-mono font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px]">
-                          P12345
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
-                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>ติดต่อศูนย์ช่วยเหลือ PAKDEE Support</span>
-                    </div>
-                    <div className="text-slate-600 text-[11px] leading-relaxed">
-                      หากไม่สามารถรับ OTP หรือจำเบอร์โทรศัพท์ที่ลงทะเบียนไม่ได้ กรุณาติดต่อ Call Center: <strong>02-888-9999</strong> หรือ LINE Official: <strong>@pakdee_dorm</strong>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhone("081-999-8888");
-                      setPassword("P12345");
-                      setIsForgotModalOpen(false);
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
-                  >
-                    <span>นำบัญชีเจ้าของหอพัก (081-999-8888) ไปกรอกในฟอร์มทันที</span>
-                  </button>
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed space-y-2">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <HelpCircle className="w-4 h-4 text-emerald-600" />
+                  <span>ต้องการรีเซ็ตรหัสผ่าน?</span>
                 </div>
-              ) : (
-                <>
-                  {/* Error Notification */}
-                  {forgotError && (
-                    <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in">
-                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                      <div className="leading-snug">{forgotError}</div>
-                    </div>
-                  )}
-
-                  {/* Step 1: Phone Verification */}
-                  {forgotStep === "phone" && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                          เบอร์โทรศัพท์ที่ลงทะเบียนในระบบ <span className="text-rose-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                          <input
-                            type="tel"
-                            value={forgotPhone}
-                            onChange={(e) => setForgotPhone(e.target.value)}
-                            placeholder="เช่น 081-999-8888"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-emerald-600 font-medium"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-1.5">
-                          ระบบจะส่งรหัสความปลอดภัย OTP 6 หลักผ่าน SMS ไปยังเบอร์ที่ระบุ
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isForgotSubmitting}
-                        onClick={handleSendOtp}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        {isForgotSubmitting ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>กำลังส่งรหัส OTP...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>ส่งรหัสยืนยัน OTP</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Step 2: OTP Verification */}
-                  {forgotStep === "otp" && (
-                    <div className="space-y-4">
-                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-1">
-                        <div className="font-bold flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>ส่งรหัส OTP เรียบร้อยแล้ว</span>
-                        </div>
-                        <div className="text-[11px] text-emerald-700">
-                          ส่งไปยังเบอร์ <strong>{forgotPhone}</strong> (รหัสทดสอบ Sandbox: <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-1 rounded">{generatedOtp}</span>)
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                          กรอกรหัส OTP 6 หลัก <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          maxLength={6}
-                          value={forgotOtp}
-                          onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ""))}
-                          placeholder="••••••"
-                          autoFocus
-                          className="w-full tracking-widest text-center text-lg font-mono font-black bg-slate-50 border border-slate-200 rounded-xl py-2 text-slate-900 focus:outline-emerald-600"
-                        />
-                        <div className="flex justify-between items-center text-[11px] text-slate-500 mt-2">
-                          <span>
-                            {forgotTimer > 0 ? (
-                              <span>ขอรหัสใหม่ได้ใน <strong className="text-emerald-700">{forgotTimer}s</strong></span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={handleSendOtp}
-                                className="text-emerald-600 hover:underline font-bold cursor-pointer"
-                              >
-                                ส่งรหัส OTP ใหม่อีกครั้ง
-                              </button>
-                            )}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setForgotStep("phone")}
-                            className="text-slate-400 hover:text-slate-700 cursor-pointer"
-                          >
-                            เปลี่ยนเบอร์โทร
-                          </button>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleVerifyOtp}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        <span>ยืนยันรหัส OTP</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Step 3: New Password */}
-                  {forgotStep === "new_password" && (
-                    <div className="space-y-4">
-                      <div className="text-xs text-slate-600 font-medium">
-                        ยืนยันตัวตนสำเร็จ กรุณากำหนดรหัสผ่านใหม่สำหรับเบอร์ <strong>{forgotPhone}</strong>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                          รหัสผ่านใหม่ (New Password) <span className="text-rose-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                          <input
-                            type={showNewPassword ? "text" : "password"}
-                            value={forgotNewPassword}
-                            onChange={(e) => setForgotNewPassword(e.target.value)}
-                            placeholder="อย่างน้อย 4 ตัวอักษร"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 focus:outline-emerald-600 font-medium"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowNewPassword(!showNewPassword)}
-                            className="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-700"
-                          >
-                            {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                          ยืนยันรหัสผ่านใหม่อีกครั้ง (Confirm Password) <span className="text-rose-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                          <input
-                            type={showNewPassword ? "text" : "password"}
-                            value={forgotConfirmPassword}
-                            onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                            placeholder="พิมพ์รหัสผ่านใหม่อีกครั้ง"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-emerald-600 font-medium"
-                          />
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isForgotSubmitting}
-                        onClick={handleResetPassword}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        {isForgotSubmitting ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>กำลังบันทึกรหัสผ่านใหม่...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check className="w-3.5 h-3.5" />
-                            <span>บันทึกรหัสผ่านใหม่และเข้าสู่ระบบ</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Step 4: Success */}
-                  {forgotStep === "success" && (
-                    <div className="text-center py-4 space-y-4">
-                      <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
-                        <CheckCircle2 className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <h4 className="text-base font-black text-slate-900">รีเซ็ตรหัสผ่านสำเร็จเรียบร้อย!</h4>
-                        <p className="text-xs text-slate-600 mt-1">
-                          รหัสผ่านใหม่สำหรับเบอร์ <strong>{forgotPhone}</strong> ได้รับการอัปเดตแล้ว พร้อมเข้าสู่ระบบ
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsForgotModalOpen(false)}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
-                      >
-                        <span>กลับสู่หน้าเข้าสู่ระบบ</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
+                <p>
+                  กรุณาติดต่อเจ้าของหอพักหรือผู้ดูแลระบบของสาขา เพื่อให้ตั้งรหัสผ่านใหม่ให้กับบัญชีของคุณ
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsForgotModalOpen(false)}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <span>กลับสู่หน้าเข้าสู่ระบบ</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>

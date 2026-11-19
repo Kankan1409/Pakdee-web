@@ -849,7 +849,7 @@ export const DatabaseService = {
       floor: roomData.floor,
       type: roomData.type,
       monthlyRate: roomData.monthlyRate,
-      dailyRate: roomData.dailyRate || 650,
+      dailyRate: roomData.dailyRate || 0,
       status: roomData.status || "vacant",
       currentElectricMeter: existingIdx >= 0 ? allRooms[existingIdx].currentElectricMeter : 0,
       currentWaterMeter: existingIdx >= 0 ? allRooms[existingIdx].currentWaterMeter : 0,
@@ -914,7 +914,7 @@ export const DatabaseService = {
         floor: rData.floor,
         type: rData.type,
         monthlyRate: rData.monthlyRate,
-        dailyRate: rData.dailyRate || 650,
+        dailyRate: rData.dailyRate || 0,
         status: rData.status || "vacant",
         currentElectricMeter: existingIdx >= 0 ? currentAll[existingIdx].currentElectricMeter : 0,
         currentWaterMeter: existingIdx >= 0 ? currentAll[existingIdx].currentWaterMeter : 0,
@@ -1503,7 +1503,7 @@ export const DatabaseService = {
             ...r,
             status: "occupied" as RoomStatus,
             currentTenant: enrichedTenant,
-            leaseEndDate: leaseEndDate || r.leaseEndDate || "2027-10-31",
+            leaseEndDate: leaseEndDate || r.leaseEndDate || "",
           }
         : r
     );
@@ -1820,7 +1820,7 @@ export const DatabaseService = {
       id: nextShortId("C", all.map((c) => c.id)),
       propertyId: propId,
       tenantId: contractTenantId,
-      contractNumber: `CT-2026-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
+      contractNumber: `CT-${new Date().getFullYear()}-${item.roomNumber}-${Math.floor(100 + Math.random() * 900)}`,
       createdAt: new Date().toISOString().slice(0, 10),
     };
     setLocal(KEYS.CONTRACTS, [newContract, ...all]);

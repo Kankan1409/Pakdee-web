@@ -392,8 +392,8 @@ export default function HomePage() {
               checkOutDate: tomorrowStr,
               checkOutTime: "12:00",
               nights: 1,
-              dailyRate: dr.dailyRate || 650,
-              totalRoomPrice: dr.dailyRate || 650,
+              dailyRate: dr.dailyRate || 0,
+              totalRoomPrice: dr.dailyRate || 0,
               keyDeposit: 500,
               status: "checked_in",
             };
@@ -797,7 +797,7 @@ export default function HomePage() {
           type: roomData.type,
           rentalType: "monthly",
           monthlyRate: roomData.monthlyRate,
-          dailyRate: roomData.dailyRate || 650,
+          dailyRate: roomData.dailyRate || 0,
           status: roomData.status || "vacant",
           currentElectricMeter: 0,
           currentWaterMeter: 0,
@@ -1142,7 +1142,7 @@ export default function HomePage() {
         // รายวัน: ให้เปิดหน้าต่างเช็คเอาท์รายวัน (รูปที่ 2) โดยตรง ไม่ไปหน้าย้ายออกรายเดือน!
         const booking = dailyBookings.find((b) => b.roomNumber === targetRoom.roomNumber && (b.status === "confirmed" || b.status === "checked_in"));
         const bookingId = booking?.id || `b-${targetRoom.roomNumber}`;
-        const keyDeposit = booking?.keyDeposit || 500;
+        const keyDeposit = booking?.keyDeposit || 0;
         setSelectedRoom(null);
         handleDailyCheckOut(bookingId, targetRoom.roomNumber, keyDeposit);
         return;
@@ -1158,7 +1158,7 @@ export default function HomePage() {
           setCheckoutWaterPrev(targetRoom.currentWaterMeter);
           setCheckoutWaterCurr(targetRoom.currentWaterMeter);
           const act = contracts.find((c) => c.roomNumber === targetRoom.roomNumber && c.status === "active");
-          const dep = act?.depositAmount || (targetRoom as any).depositAmount || targetRoom.currentTenant?.depositAmount || (targetRoom.monthlyRate * 2) || 8000;
+          const dep = act?.depositAmount || (targetRoom as any).depositAmount || targetRoom.currentTenant?.depositAmount || (targetRoom.monthlyRate * 2);
           setCheckoutDepositAmount(dep);
           setSelectedRoom(null);
           handleTabChange("checkout");
@@ -2007,7 +2007,7 @@ export default function HomePage() {
     }
     const diffTime = checkOut.getTime() - checkIn.getTime();
     const totalNights = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
-    const nightlyRateVal = Number(newBookingForm.nightlyRate) || 650;
+    const nightlyRateVal = Number(newBookingForm.nightlyRate) || 0;
     const keyDepositVal = Number(newBookingForm.depositAmount) || 0;
     const roomDepositVal = Number(newBookingForm.roomDeposit) || 0;
     const totalAmount = totalNights * nightlyRateVal;
@@ -2153,9 +2153,9 @@ export default function HomePage() {
       checkOutDate: new Date().toISOString().slice(0, 10),
       checkOutTime: "12:00",
       nights: 1,
-      dailyRate: targetRoom?.dailyRate || 650,
-      totalRoomPrice: targetRoom?.dailyRate || 650,
-      keyDeposit: keyDeposit || 500,
+      dailyRate: targetRoom?.dailyRate || 0,
+      totalRoomPrice: targetRoom?.dailyRate || 0,
+      keyDeposit: keyDeposit || 0,
       roomDeposit: 500,
       electricCheckIn: targetRoom?.currentElectricMeter ?? 0,
       waterCheckIn: targetRoom?.currentWaterMeter ?? 0,
@@ -2198,7 +2198,7 @@ export default function HomePage() {
     const dateStr = now.toISOString().slice(0, 10);
     const invoiceNumber = `INV-D-${dateStr.replace(/-/g, "")}-${booking.roomNumber}`;
     const utilityAmount = 0; // Daily stays include water and electricity.
-    const totalAmount = (booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 650) + (extraCharges || 0) + utilityAmount;
+    const totalAmount = (booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 0) + (extraCharges || 0) + utilityAmount;
 
     const targetRoom = rooms.find((r) => r.roomNumber === booking.roomNumber);
     const elecUnits = passedElecUnits !== undefined ? passedElecUnits : Math.max(0, (electricCurr ?? 0) - (electricPrev ?? 0));
@@ -2207,7 +2207,7 @@ export default function HomePage() {
     const items: InvoiceItem[] = [
       {
         name: `ค่าห้องพักรายวัน (${booking.nights || 1} คืน: ${booking.checkInDate} ถึง ${booking.checkOutDate})`,
-        amount: booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 650,
+        amount: booking.totalRoomPrice || (booking.dailyRate * (booking.nights || 1)) || 0,
       },
     ];
 
@@ -2522,7 +2522,7 @@ export default function HomePage() {
 
       // Create contract record
       const actualDeposit = tenantData.hasDeposit !== false
-        ? (tenantData.depositAmount !== undefined ? tenantData.depositAmount : (targetRoom?.monthlyRate || 4000) * 2)
+        ? (tenantData.depositAmount !== undefined ? tenantData.depositAmount : (targetRoom?.monthlyRate || 0) * 2)
         : 0;
 
       const newContract: ContractItem = {
@@ -2535,9 +2535,9 @@ export default function HomePage() {
         tenantPhone: finalTenant.phone,
         startDate: tenantData.startDate || new Date().toISOString().split("T")[0],
         endDate: leaseEndDate,
-        monthlyRent: targetRoom?.monthlyRate || 4000,
+        monthlyRent: targetRoom?.monthlyRate || 0,
         depositAmount: actualDeposit,
-        advanceRent: targetRoom?.monthlyRate || 4000,
+        advanceRent: targetRoom?.monthlyRate || 0,
         hasTv: tenantData.hasTv,
         tvRentalFee: tenantData.hasTv ? tenantData.tvRentalFee : 0,
         hasFridge: tenantData.hasFridge,
@@ -2605,7 +2605,7 @@ export default function HomePage() {
     );
 
     const totalDeductions = elecCost + waterCost + cleaningFee + damageFee + unpaidBillsAmount;
-    const deposit = data ? data.depositAmount : (checkoutDepositAmount !== "" ? Number(checkoutDepositAmount) : (targetRoom.monthlyRate * 2 || 8000));
+    const deposit = data ? data.depositAmount : (checkoutDepositAmount !== "" ? Number(checkoutDepositAmount) : (targetRoom.monthlyRate * 2));
     const netRefund = deposit - totalDeductions;
 
     setConfirmDialog({
@@ -3335,7 +3335,7 @@ export default function HomePage() {
                   vehiclePlate: "",
                   checkInDate: new Date().toISOString().slice(0, 10),
                   checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-                  nightlyRate: firstVacant?.dailyRate || 650,
+                  nightlyRate: firstVacant?.dailyRate || 0,
                   depositAmount: 500,
                   roomDeposit: 500,
                 });
@@ -3620,7 +3620,7 @@ export default function HomePage() {
             vehiclePlate: "",
             checkInDate: new Date().toISOString().slice(0, 10),
             checkOutDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-            nightlyRate: sel?.dailyRate || 650,
+            nightlyRate: sel?.dailyRate || 0,
             depositAmount: 500,
             roomDeposit: 500,
           });
@@ -3638,7 +3638,7 @@ export default function HomePage() {
             if (isDailyRoom) {
               const b = dailyBookings.find((item) => item.roomNumber === r.roomNumber && (item.status === "confirmed" || item.status === "checked_in"));
               setSelectedRoom(null);
-              handleDailyCheckOut(b?.id || `b-${r.roomNumber}`, r.roomNumber, b?.keyDeposit || 500);
+              handleDailyCheckOut(b?.id || `b-${r.roomNumber}`, r.roomNumber, b?.keyDeposit || 0);
               return;
             }
 
@@ -3648,7 +3648,7 @@ export default function HomePage() {
             setCheckoutWaterPrev(r.currentWaterMeter);
             setCheckoutWaterCurr(r.currentWaterMeter);
             const act = contracts.find((c) => c.roomNumber === r.roomNumber && c.status === "active");
-            const dep = act?.depositAmount || (r as any).depositAmount || r.currentTenant?.depositAmount || (r.monthlyRate * 2) || 8000;
+            const dep = act?.depositAmount || (r as any).depositAmount || r.currentTenant?.depositAmount || (r.monthlyRate * 2);
             setCheckoutDepositAmount(dep);
           }
           setSelectedRoom(null);
@@ -3838,7 +3838,7 @@ export default function HomePage() {
                             setNewBookingForm({
                               ...newBookingForm,
                               roomNumber: e.target.value,
-                              nightlyRate: selRoom?.dailyRate || 650,
+                              nightlyRate: selRoom?.dailyRate || 0,
                             });
                           }}
                           className="w-full p-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] font-medium"
@@ -3846,7 +3846,7 @@ export default function HomePage() {
                           <option value="">-- กรุณาเลือกห้องพักว่าง --</option>
                           {availableRooms.map((r) => (
                             <option key={r.id} value={r.roomNumber}>
-                              ห้อง {r.roomNumber} ({r.type}) • รายวัน {formatCurrency(r.dailyRate || 650)}/คืน — [ห้องว่าง ✨]
+                              ห้อง {r.roomNumber} ({r.type}) • รายวัน {formatCurrency(r.dailyRate || 0)}/คืน — [ห้องว่าง ✨]
                             </option>
                           ))}
                         </select>

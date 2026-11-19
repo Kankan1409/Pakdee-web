@@ -53,7 +53,7 @@ export function DocumentViewerModal({
   const tenantName = tenant?.fullName || invoice?.tenantName || "ผู้เช่าห้องพัก";
   const tenantPhone = tenant?.phone || invoice?.tenantPhone || "-";
   const idCard = tenant?.idCard || "-";
-  const monthlyRate = room?.monthlyRate || 4000;
+  const monthlyRate = room?.monthlyRate || 0;
   const deposit = monthlyRate * 2;
   const advance = monthlyRate;
 

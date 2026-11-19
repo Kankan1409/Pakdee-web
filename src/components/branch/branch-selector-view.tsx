@@ -210,7 +210,7 @@ export function BranchSelectorView({
 
     // Verify Password with login password
     if (!verifyPassword(deletePassword)) {
-      setDeleteError("รหัสผ่านไม่ถูกต้อง กรุณาระบุรหัสผ่านเข้าสู่ระบบของคุณ (เช่น P12345)");
+      setDeleteError("รหัสผ่านไม่ถูกต้อง กรุณาระบุรหัสผ่านเข้าสู่ระบบของคุณ");
       return;
     }
 
@@ -1104,7 +1104,7 @@ export function BranchSelectorView({
                       setDeletePassword(e.target.value);
                       setDeleteError(null);
                     }}
-                    placeholder="รหัสผ่านเข้าเว็บ (เช่น P12345)"
+                    placeholder="รหัสผ่านเข้าเว็บ"
                     className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl pl-3.5 pr-10 py-2.5 focus:outline-rose-500 font-mono"
                     required
                     autoFocus
@@ -1118,7 +1118,7 @@ export function BranchSelectorView({
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  * ใช้รหัสผ่านเดียวกับที่ท่านใช้ล็อกอินเข้าสู่ระบบ (เช่น P12345)
+                  * ใช้รหัสผ่านเดียวกับที่ท่านใช้ล็อกอินเข้าสู่ระบบ
                 </p>
               </div>
 

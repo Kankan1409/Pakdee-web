@@ -27,6 +27,7 @@ import {
   isDateAfter,
 } from "@/lib/validators";
 import { globalPopup } from "@/lib/popup-context";
+import { localDateISO } from "@/lib/utils";
 
 interface AddTenantModalProps {
   isOpen: boolean;
@@ -86,9 +87,11 @@ export function AddTenantModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Lease term and single lump-sum deposit
-  const [startDate, setStartDate] = useState<string>("2026-10-28");
-  const [endDate, setEndDate] = useState<string>("2027-10-28");
-  const [depositAmount, setDepositAmount] = useState<number>(8000);
+  const [startDate, setStartDate] = useState<string>(() => localDateISO());
+  const [endDate, setEndDate] = useState<string>(() => localDateISO(1));
+  const [depositAmount, setDepositAmount] = useState<number>(
+    (rooms.find((r) => r.id === defaultRoomId)?.monthlyRate || 0) * 2
+  );
 
   // ID Card Upload & Smart OCR State
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,7 +132,7 @@ export function AddTenantModal({
 
       if (targetRoom) {
         setRoomId(targetRoom.id);
-        setDepositAmount((targetRoom.monthlyRate || 4000) * 2);
+        setDepositAmount((targetRoom.monthlyRate || 0) * 2);
       } else {
         setRoomId("");
       }
@@ -346,7 +349,7 @@ export function AddTenantModal({
                   setRoomId(e.target.value);
                   const selRoom = rooms.find((rm) => rm.id === e.target.value);
                   if (selRoom) {
-                    setDepositAmount((selRoom.monthlyRate || 4000) * 2);
+                    setDepositAmount((selRoom.monthlyRate || 0) * 2);
                   }
                 }}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--subtle)] border border-[var(--border)] text-xs text-[var(--foreground)] font-bold focus:outline-emerald-500"
