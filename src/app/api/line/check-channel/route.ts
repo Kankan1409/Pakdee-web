@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
 import { branchOwnerKey } from "@/lib/branch-ownership";
 import { branchLineSecret, branchLineToken } from "@/lib/line/branch-line-config";
+import { dbKeyFromRequest, runWithDb } from "@/lib/db-context-server";
+import { listDatabases } from "@/lib/db-registry";
 
 export const runtime = "nodejs";
 
@@ -12,6 +14,7 @@ export const runtime = "nodejs";
  * (ผู้เช่าลงทะเบียน/ส่งสลิปแล้วไปเจอบิลผิดหอ) — สาขาหลายสาขาของบัญชีเดียวกันใช้ OA เดียวกันได้
  *
  * ต้องตรวจฝั่งเซิร์ฟเวอร์ เพราะเบราว์เซอร์ของแต่ละบัญชีโหลดเฉพาะข้อมูลของตัวเอง
+ * ตรวจทุกฐานข้อมูลที่ตั้งค่าไว้ — สาขาในฐานอื่นเป็นของบัญชีอื่นเสมอ (สาขาทั้งหมดของบัญชีหนึ่งอยู่ฐานเดียวกัน)
  * ตอบกลับแค่ว่าชนหรือไม่ — ไม่บอกว่าชนกับสาขา/บัญชีไหน
  */
 export async function POST(req: NextRequest) {
@@ -24,21 +27,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ conflict: false });
     }
 
-    await DatabaseService.initCoreOnly();
-    const branches = await DatabaseService.getAllProperties();
-    const target = branches.find((b) => b.id === propertyId);
-    const targetOwner = branchOwnerKey(target);
+    const requestDb = dbKeyFromRequest(req);
+    const sameChannel = (settings: any) =>
+      Boolean((secret && branchLineSecret(settings) === secret) || (token && branchLineToken(settings) === token));
 
-    for (const other of branches) {
-      if (other.id === propertyId) continue;
-      const settings = await DatabaseService.getBranchSettings(other, other.id);
-      const sameChannel =
-        (secret && branchLineSecret(settings) === secret) || (token && branchLineToken(settings) === token);
-      if (!sameChannel) continue;
-      const sameAccount = Boolean(targetOwner) && branchOwnerKey(other) === targetOwner;
-      if (!sameAccount) {
-        return NextResponse.json({ conflict: true });
-      }
+    for (const db of listDatabases()) {
+      const conflict = await runWithDb(db.key, async () => {
+        await DatabaseService.initCoreOnly();
+        const branches = await DatabaseService.getAllProperties();
+        const target = db.key === requestDb ? branches.find((b) => b.id === propertyId) : undefined;
+        const targetOwner = branchOwnerKey(target);
+        for (const other of branches) {
+          if (db.key === requestDb && other.id === propertyId) continue;
+          const settings = await DatabaseService.getBranchSettings(other, other.id);
+          if (!sameChannel(settings)) continue;
+          // ฐานเดียวกัน + เจ้าของเดียวกัน = สาขาอื่นของบัญชีเดียวกัน ใช้ OA ร่วมกันได้
+          const sameAccount = db.key === requestDb && Boolean(targetOwner) && branchOwnerKey(other) === targetOwner;
+          if (!sameAccount) return true;
+        }
+        return false;
+      });
+      if (conflict) return NextResponse.json({ conflict: true });
     }
     return NextResponse.json({ conflict: false });
   } catch (e: any) {

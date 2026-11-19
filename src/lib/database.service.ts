@@ -26,6 +26,7 @@ import {
 } from "@/lib/defaults";
 import { BranchItem } from "@/components/branch/branch-selector-view";
 import { supabase } from "@/lib/supabase";
+import { currentDbKey } from "@/lib/db-registry";
 import {
   syncKeyToRelationalTable,
   syncAllToRelationalTables,
@@ -68,13 +69,40 @@ const KEYS = {
   DAILY_BOOKINGS: "pakdee_dev_daily_bookings",
 };
 
-// In-Memory Supabase Cloud Synchronized Cache (data/db_port3000.json completely disabled)
-const memoryDb: Record<string, any> = {};
-let isServerSynced = false;
+// In-Memory Supabase Cloud Synchronized Cache — แยกต่อฐานข้อมูล (หลาย Supabase project ในเว็บเดียว)
+// เซิร์ฟเวอร์อาจทำงานให้หลายฐานพร้อมกัน (LINE จากหอ A และหอ B) จึงต้องมีแคช/สถานะคนละชุด
+interface DbRuntimeState {
+  memoryDb: Record<string, any>;
+  isServerSynced: boolean;
+  activeInitPromise: Promise<boolean> | null;
+  activeCoreInitPromise: Promise<boolean> | null;
+  pendingServerSyncs: Map<string, Promise<void>>;
+}
+const dbStates = new Map<string, DbRuntimeState>();
+function dbState(): DbRuntimeState {
+  const key = currentDbKey();
+  let st = dbStates.get(key);
+  if (!st) {
+    st = { memoryDb: {}, isServerSynced: false, activeInitPromise: null, activeCoreInitPromise: null, pendingServerSyncs: new Map() };
+    dbStates.set(key, st);
+  }
+  return st;
+}
+/** แคชของฐานปัจจุบัน (ใช้เหมือน object ธรรมดา) */
+const memoryDb: Record<string, any> = new Proxy({} as Record<string, any>, {
+  get: (_t, p) => (dbState().memoryDb as any)[p],
+  set: (_t, p, v) => { (dbState().memoryDb as any)[p] = v; return true; },
+  deleteProperty: (_t, p) => { delete (dbState().memoryDb as any)[p]; return true; },
+  has: (_t, p) => p in dbState().memoryDb,
+  ownKeys: () => Reflect.ownKeys(dbState().memoryDb),
+  getOwnPropertyDescriptor: (_t, p) => {
+    const d = Object.getOwnPropertyDescriptor(dbState().memoryDb, p);
+    return d ? { ...d, configurable: true } : undefined;
+  },
+});
 
 const relationalSyncTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 const pendingRelationalValues: Record<string, any> = {};
-const pendingServerSyncs = new Map<string, Promise<void>>();
 
 function scheduleRelationalSync(normKey: string, value: any): void {
   if (normKey === "activity_logs" || normKey === "active_property_id") return;
@@ -82,11 +110,12 @@ function scheduleRelationalSync(normKey: string, value: any): void {
     const syncPromise = syncKeyToRelationalTable(normKey, value, memoryDb)
       .catch(() => {})
       .finally(() => {
-        if (pendingServerSyncs.get(normKey) === syncPromise) {
-          pendingServerSyncs.delete(normKey);
+        const pending = dbState().pendingServerSyncs;
+        if (pending.get(normKey) === syncPromise) {
+          pending.delete(normKey);
         }
       });
-    pendingServerSyncs.set(normKey, syncPromise);
+    dbState().pendingServerSyncs.set(normKey, syncPromise);
     return;
   }
   if (relationalSyncTimers[normKey]) {
@@ -117,10 +146,10 @@ async function flushRelationalSync(): Promise<void> {
 async function flushPendingServerSync(normKey?: string): Promise<void> {
   if (typeof window !== "undefined") return;
   if (normKey) {
-    await (pendingServerSyncs.get(normKey) || Promise.resolve());
+    await (dbState().pendingServerSyncs.get(normKey) || Promise.resolve());
     return;
   }
-  await Promise.all(Array.from(pendingServerSyncs.values()));
+  await Promise.all(Array.from(dbState().pendingServerSyncs.values()));
 }
 
 // สิทธิ์เข้าถึงสาขาตามบัญชี: ดู src/lib/branch-ownership.ts
@@ -245,7 +274,6 @@ function setLocal<T>(key: string, value: T): void {
 
 // Realtime Channel Handle for Supabase Live Cloud Updates (Singleton Safe)
 let realtimeChannel: any = null;
-let activeInitPromise: Promise<boolean> | null = null;
 
 function setupRealtimeSync(): void {
   if (typeof window === "undefined") return;
@@ -296,6 +324,43 @@ function setupRealtimeSync(): void {
   }
 }
 
+const CACHE_DB_MARK = "pakdee_cache_db";
+const DATA_KEY_NAMES = new Set(
+  Object.values(KEYS).flatMap((k) => [k, k.replace(/^pakdee_(dev|test)_/, "")]).concat(["active_property_id"])
+);
+
+/**
+ * localStorage เก็บข้อมูลหอของ "ฐานที่ใช้ล่าสุด" — ถ้าบัญชีที่ล็อกอินอยู่ใช้อีกฐาน ต้องล้างทิ้งก่อนโหลด
+ * ไม่งั้นข้อมูลของฐานเดิมโผล่ หรือถูกบันทึกทับลงฐานใหม่ (ไม่ลบข้อมูลล็อกอิน)
+ */
+function clearBrowserCacheIfDbChanged(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const dbKey = currentDbKey();
+    const cachedFor = localStorage.getItem(CACHE_DB_MARK);
+    if (cachedFor === dbKey) return;
+    if (cachedFor !== null) {
+      for (const key of Object.keys(localStorage)) {
+        if (
+          key.startsWith("pakdee_dev_") ||
+          key.startsWith("pakdee_test_") ||
+          key.startsWith("branch_settings") ||
+          DATA_KEY_NAMES.has(key)
+        ) {
+          localStorage.removeItem(key);
+        }
+      }
+      for (const key of Object.keys(dbState().memoryDb)) delete dbState().memoryDb[key];
+      if (realtimeChannel) {
+        try { realtimeChannel.unsubscribe(); } catch {}
+        realtimeChannel = null;
+        (window as any).__PAKDEE_REALTIME_CHANNEL__ = null;
+      }
+    }
+    localStorage.setItem(CACHE_DB_MARK, dbKey);
+  } catch {}
+}
+
 function cacheRelationalEntries(entries: Record<string, any>): void {
   Object.entries(entries).forEach(([key, value]) => {
     memoryDb[key] = value;
@@ -310,7 +375,6 @@ function cacheRelationalEntries(entries: Record<string, any>): void {
   });
 }
 
-let activeCoreInitPromise: Promise<boolean> | null = null;
 
 export const DatabaseService = {
   /**
@@ -318,8 +382,9 @@ export const DatabaseService = {
    * such as /api/line/broadcast so they do not wait on heavy historical tables.
    */
   async initCoreOnly(): Promise<boolean> {
-    if (activeCoreInitPromise) return activeCoreInitPromise;
-    activeCoreInitPromise = (async () => {
+    const st = dbState();
+    if (st.activeCoreInitPromise) return st.activeCoreInitPromise;
+    st.activeCoreInitPromise = (async () => {
       try {
         const timeoutPromise = new Promise<{ hasCoreData: boolean; data: Record<string, any> }>((resolve) =>
           setTimeout(() => resolve({ hasCoreData: false, data: {} }), 2500)
@@ -337,10 +402,10 @@ export const DatabaseService = {
         console.warn("[Supabase Core Init] warning:", err?.message);
         return false;
       } finally {
-        activeCoreInitPromise = null;
+        st.activeCoreInitPromise = null;
       }
     })();
-    return activeCoreInitPromise;
+    return st.activeCoreInitPromise;
   },
 
   /**
@@ -348,12 +413,15 @@ export const DatabaseService = {
    * Local file data/db_port3000.json is completely disabled.
    */
   async init(): Promise<boolean> {
-    if (activeInitPromise) {
-      return activeInitPromise;
+    const st = dbState();
+    if (st.activeInitPromise) {
+      return st.activeInitPromise;
     }
 
-    activeInitPromise = (async () => {
+    st.activeInitPromise = (async () => {
       try {
+        // 0. เบราว์เซอร์เปลี่ยนไปใช้อีกฐาน (ล็อกอินบัญชีที่อยู่คนละฐาน) → ล้างข้อมูลหอที่แคชไว้ของฐานเดิม
+        clearBrowserCacheIfDbChanged();
         // 1. Activate live real-time subscription on Supabase Cloud (browser only)
         if (typeof window !== "undefined") {
           setupRealtimeSync();
@@ -430,7 +498,7 @@ export const DatabaseService = {
             }
 
             cacheRelationalEntries(relationalData);
-            isServerSynced = true;
+            st.isServerSynced = true;
             console.log(`[Supabase Relational Direct] Successfully loaded ${Object.keys(relationalData).length} entities directly from Supabase Relational Tables`);
             return true;
           }
@@ -440,15 +508,15 @@ export const DatabaseService = {
 
         return false;
       } finally {
-        activeInitPromise = null;
+        st.activeInitPromise = null;
       }
     })();
 
-    return activeInitPromise;
+    return st.activeInitPromise;
   },
 
   isServerSynced(): boolean {
-    return isServerSynced;
+    return dbState().isServerSynced;
   },
 
   /** Save all pending changes to Supabase, then reload everything fresh from Supabase. */
@@ -456,9 +524,10 @@ export const DatabaseService = {
     await flushRelationalSync();
     // A load that started before the flush would return data without the new changes,
     // so wait for it to finish and then start a fresh load.
-    if (activeInitPromise) {
+    const pendingInit = dbState().activeInitPromise;
+    if (pendingInit) {
       try {
-        await activeInitPromise;
+        await pendingInit;
       } catch {}
     }
     return this.init();
@@ -550,7 +619,7 @@ export const DatabaseService = {
   },
 
   async getAllProperties(): Promise<BranchItem[]> {
-    if (!isServerSynced && typeof window !== "undefined") {
+    if (!dbState().isServerSynced && typeof window !== "undefined") {
       await this.init();
     }
     const props = getLocal<BranchItem[] | null>(KEYS.PROPERTIES, null);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withRequestDb } from "@/lib/db-context-server";
 import { syncKeyToRelationalTable, loadFromRelationalTables } from "@/lib/supabase-relational";
 
 function normalizeKey(k: string): string {
@@ -6,7 +7,7 @@ function normalizeKey(k: string): string {
 }
 
 // GET: Read current database state directly from Supabase Relational Tables (pakdee_store completely removed)
-export async function GET() {
+async function handleGET() {
   try {
     const { hasRelationalData, data: relationalData } = await loadFromRelationalTables({});
 
@@ -35,7 +36,7 @@ export async function GET() {
 }
 
 // POST: Save key/value or batch data directly to Supabase Relational Tables (pakdee_store completely removed)
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const body = await req.json();
 
@@ -62,3 +63,9 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// ทำงานกับฐานข้อมูลของบัญชีที่ส่งคำขอมา (header x-pakdee-db)
+export const GET = withRequestDb(handleGET);
+
+// ทำงานกับฐานข้อมูลของบัญชีที่ส่งคำขอมา (header x-pakdee-db)
+export const POST = withRequestDb(handlePOST);

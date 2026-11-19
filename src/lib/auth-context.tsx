@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
+// บัญชีผู้ใช้ทุกคนอยู่ในฐานหลักเสมอ (ข้อมูลหอของแต่ละบัญชีอาจอยู่คนละฐาน — ดู user_profiles.data_db)
+import { supabaseMain as supabase } from "@/lib/supabase";
 import { toUuid } from "@/lib/supabase-relational";
 
 export type UserRole = "owner" | "manager";
@@ -15,6 +16,8 @@ export interface AuthUser {
   avatarText: string;
   phone?: string;
   assignedBranches?: string[]; // สาขาที่ได้รับอนุญาตให้ดูแล
+  /** ฐานข้อมูลหอของบัญชีนี้ (user_profiles.data_db) — ว่าง = ฐานหลัก */
+  dataDb?: string;
   permissions?: {
     canDeleteBranch: boolean;
     canEditBankSettings: boolean;
@@ -224,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               : "ผู้จัดการหอพัก (Manager / Branch Admin)",
             avatarText: getAvatarInitials(matchedSb.full_name || "พด"),
             assignedBranches: isOwner ? ["all"] : ["branch-1"],
+            dataDb: matchedSb.data_db ? String(matchedSb.data_db) : undefined,
             permissions: {
               canDeleteBranch: isOwner,
               canEditBankSettings: isOwner,

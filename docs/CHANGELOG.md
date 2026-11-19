@@ -47,6 +47,19 @@
 
 ## 2026-11-19
 
+### 🟡 เว็บเดียวต่อหลายฐานข้อมูล (หลาย Supabase project) — branch `feature/multi-database`
+- **แนวคิด:** ฐานหลัก (`main` = ค่าเดิมใน `.env`) เก็บบัญชีผู้ใช้ทุกคน; ข้อมูลหอของแต่ละบัญชีอยู่ฐานที่ระบุใน `user_profiles.data_db` (ว่าง = main) — ไม่ตั้งฐานเพิ่ม = ทำงานเหมือนเดิมทุกอย่าง
+- **ตั้งค่า (`.env`):** `NEXT_PUBLIC_EXTRA_DATABASES` (JSON: key/url/anonKey) + `SUPABASE_EXTRA_SERVICE_KEYS` (JSON: service key ต่อฐาน, ฝั่งเซิร์ฟเวอร์) — ตัวอย่างใน `.env.example`
+- **ไฟล์ใหม่:** `src/lib/db-registry.ts` (รายชื่อฐาน, ฐานปัจจุบัน), `src/lib/db-context-server.ts` (ฐานของแต่ละคำขอด้วย AsyncLocalStorage — LINE จากหอ A/B พร้อมกันไม่ปนกัน), `docs/supabase_multi_database.sql` (คอลัมน์ `data_db`)
+- **เบราว์เซอร์:** `supabase` (src/lib/supabase.ts) เปลี่ยนเป็นตัวสลับฐานตามบัญชีที่ล็อกอิน + `supabaseMain` สำหรับบัญชีผู้ใช้; ทุกคำขอ `/api/...` แนบ header `x-pakdee-db`; ล็อกอินบัญชีที่อยู่คนละฐาน → ล้างแคชข้อมูลหอใน localStorage ก่อนโหลด (`clearBrowserCacheIfDbChanged`)
+- **`database.service.ts`:** แคช (`memoryDb`) และสถานะโหลด (`init` / `initCoreOnly` / งานซิงก์ค้าง) แยกต่อฐาน
+- **ฝั่งเซิร์ฟเวอร์:** ทุก API route ทำงานในฐานของคำขอ (`withRequestDb`); LINE webhook หาฐานเองจากลายเซ็น OA (ฐานเดียว = ทางเดิมไม่เปลี่ยน); ลิงก์เซ็นสัญญา (ผู้เช่าไม่ได้ล็อกอิน) หาฐานจาก token; ตรวจ OA ซ้ำ (`check-channel`) ตรวจทุกฐาน; แจ้งเตือนอัตโนมัติ (`instrumentation.ts`) วนทุกฐาน; `scripts/dev-with-bot.mjs` ตั้ง webhook ให้ OA ของทุกฐาน
+- **สิทธิ์:** `authorizeSlipRequest` อ่านบัญชีจากฐานหลัก, ข้อมูลสาขา/สลิปจากฐานของคำขอ และปฏิเสธถ้า header ขอฐานที่ไม่ใช่ของบัญชีนั้น; จำคอลัมน์ที่ไม่มีแยกต่อฐาน (`mcKey`)
+- **Test:** `tests/multi-database.test.cjs` (7 เคส: อ่าน config, ค่าผิดรูปแบบ, service key, คำขอพร้อมกันไม่ปนฐาน, header, วนทุกฐาน) + ปรับ `payment-slips.test.cjs` → 49/49, tsc, build ผ่าน
+- **สรุปสำหรับอ่าน:** `docs/PAKDEE_ระบบหลายฐานข้อมูล.pdf` (ภาพรวม, วิธีเปิดใช้ 5 ขั้น, ข้อควรรู้)
+- ⏳ **ยังไม่ได้ทดสอบกับ Supabase 2 project จริงในเบราว์เซอร์** / ยังไม่ commit
+- ⏳ **ต้องทำ:** รัน `docs/supabase_multi_database.sql` ในฐานหลัก; สร้างฐานใหม่ด้วย `docs/setup_new_database.sql`; ใส่ค่าใน `.env`; `UPDATE user_profiles SET data_db='db2' WHERE id=...`; ย้ายข้อมูลเดิมของบัญชีนั้น (ยังไม่มีสคริปต์ — บัญชีจะเริ่มจากฐานว่าง)
+
 ### 🟡 ไฟล์สร้างฐานข้อมูลใหม่ทั้งชุด `docs/setup_new_database.sql`
 - สำหรับ Supabase project ใหม่ที่ยังว่าง: สร้าง 16 ตารางตามโครงสร้างที่โค้ดปัจจุบันใช้ในครั้งเดียว (= ผลของ `docs/supabase_*.sql` ทุกไฟล์ + `docs/migrations/*payment_slips*`) รหัสสั้นแบบเดิม, ไม่มีข้อมูลตัวอย่าง, ค่าเริ่มต้นราคา/ค่าธรรมเนียมเป็น 0, รันซ้ำได้
 - สิทธิ์เหมือนฐานเดิม (anon อ่าน/เขียนตารางของแอป; payment_slips / contract_sign_requests / line_reminder_logs ใช้ผ่านเซิร์ฟเวอร์เท่านั้น) + เปิด Realtime 12 ตาราง

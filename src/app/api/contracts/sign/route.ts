@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbKeyFromRequest, runWithDb } from "@/lib/db-context-server";
+import { listDatabases, MAIN_DB_KEY } from "@/lib/db-registry";
 import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { createHash, randomBytes } from "node:crypto";
 import { authorizeSlipRequest, slipDatabase, SlipError } from "@/lib/payment-slips-server";
@@ -68,7 +70,7 @@ function publicView(row: Record<string, any>) {
  *   - get:  contract to read and sign
  *   - sign: JSON {phoneLast4, signatureDataUrl, accepted: true}
  */
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const action = request.nextUrl.searchParams.get("action") || "";
 
@@ -351,4 +353,35 @@ export async function POST(request: NextRequest) {
       { status, headers: privateHeaders }
     );
   }
+}
+
+/**
+ * ผู้เช่าเปิดลิงก์เซ็นสัญญาโดยไม่ได้ล็อกอิน → ไม่รู้ว่าเป็นของฐานไหน
+ * หาจาก token (สุ่ม ไม่ซ้ำกันข้ามฐาน) ในทุกฐานที่ตั้งค่าไว้
+ */
+async function findDatabaseForToken(token: string): Promise<string> {
+  const databases = listDatabases();
+  if (databases.length <= 1 || !/^[A-Za-z0-9_-]{20,64}$/.test(token)) return MAIN_DB_KEY;
+  for (const db of databases) {
+    const found = await runWithDb(db.key, async () => {
+      try {
+        const { data } = await slipDatabase().from("contract_sign_requests").select("token").eq("token", token).maybeSingle();
+        return Boolean(data);
+      } catch {
+        return false;
+      }
+    });
+    if (found) return db.key;
+  }
+  return MAIN_DB_KEY;
+}
+
+export async function POST(request: NextRequest) {
+  const action = request.nextUrl.searchParams.get("action") || "";
+  // ผู้เช่า (get/sign): หาฐานจาก token · เจ้าของหอ (create/status): ฐานของบัญชีที่ล็อกอิน
+  const dbKey =
+    action === "get" || action === "sign"
+      ? await findDatabaseForToken(request.nextUrl.searchParams.get("token") || "")
+      : dbKeyFromRequest(request);
+  return runWithDb(dbKey, () => handlePOST(request));
 }

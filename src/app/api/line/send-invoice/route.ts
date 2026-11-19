@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withRequestDb } from "@/lib/db-context-server";
 import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
@@ -8,7 +9,7 @@ import { Invoice } from "@/types/dormitory";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     await DatabaseService.init();
     const body = await req.json().catch(() => ({}));
@@ -152,3 +153,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// ทำงานกับฐานข้อมูลของบัญชีที่ส่งคำขอมา (header x-pakdee-db)
+export const POST = withRequestDb(handlePOST);

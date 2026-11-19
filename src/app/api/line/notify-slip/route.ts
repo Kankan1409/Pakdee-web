@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withRequestDb } from "@/lib/db-context-server";
 import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
@@ -13,7 +14,7 @@ export const runtime = "nodejs";
  * Two-way Admin Notification -> LINE Push
  * ส่งข้อความแจ้งเตือนเข้ามือถือผู้เช่าเมื่อแอดมินกด "อนุมัติ" หรือ "ปฏิเสธ" สลิปที่หน้าเว็บ
  */
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const { invoiceId, action, reason, propertyId } = body;
@@ -109,3 +110,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
+// ทำงานกับฐานข้อมูลของบัญชีที่ส่งคำขอมา (header x-pakdee-db)
+export const POST = withRequestDb(handlePOST);

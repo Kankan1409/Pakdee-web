@@ -1,4 +1,6 @@
 import { rememberPublicOrigin } from "@/lib/public-origin";
+import { runWithDb } from "@/lib/db-context-server";
+import { listDatabases, MAIN_DB_KEY } from "@/lib/db-registry";
 import { branchLineToken, branchLineSecret } from "@/lib/line/branch-line-config";
 import { CONTRACT_SIGN_POSTBACK } from "@/lib/line/contract-signing";
 import { NextRequest, NextResponse } from "next/server";
@@ -101,7 +103,7 @@ export async function GET() {
 /**
  * POST: LINE Webhook Receiver (รับ Event จาก LINE Platform)
  */
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   // จำที่อยู่ tunnel ปัจจุบันไว้ ใช้สร้างลิงก์ส่งให้ผู้เช่า (เช่น ลิงก์เซ็นสัญญา)
   rememberPublicOrigin(req);
   let rawBody = "";
@@ -471,4 +473,44 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * LINE ไม่ได้บอกว่าข้อความเป็นของฐานข้อมูลไหน (หลาย Supabase project ในเว็บเดียว)
+ * → หาฐานที่มีสาขาใช้ Channel Secret ตรงกับลายเซ็นของข้อความนี้ แล้วประมวลผลในฐานนั้น
+ * มีฐานเดียว (main) ก็ทำงานเหมือนเดิมทุกอย่าง
+ */
+async function findDatabaseForWebhook(rawBody: string, signature: string): Promise<string> {
+  const databases = listDatabases();
+  if (databases.length <= 1 || !signature) return MAIN_DB_KEY;
+  for (const db of databases) {
+    const matched = await runWithDb(db.key, async () => {
+      try {
+        await DatabaseService.initCoreOnly();
+        const resolved = await resolveWebhookBranchContext(rawBody, signature);
+        return resolved.ok;
+      } catch {
+        return false;
+      }
+    });
+    if (matched) return db.key;
+  }
+  return MAIN_DB_KEY; // ไม่ตรงฐานไหน → ฐานหลักตอบ 401 ตามเดิม
+}
+
+export async function POST(req: NextRequest) {
+  // ฐานเดียว: ทำงานเหมือนเดิมทุกอย่าง (ไม่ต้องอ่าน body ล่วงหน้า)
+  if (listDatabases().length <= 1) return runWithDb(MAIN_DB_KEY, () => handlePOST(req));
+
+  let rawBody = "";
+  try {
+    rawBody = await req.text();
+  } catch (readErr: any) {
+    console.warn("[LINE-WEBHOOK] Failed to read request body:", readErr?.message);
+    return NextResponse.json({ error: "Failed to read request body" }, { status: 400 });
+  }
+  const dbKey = await findDatabaseForWebhook(rawBody, req.headers.get("x-line-signature") || "");
+  // อ่าน body ไปแล้ว → สร้างคำขอใหม่ที่มี body เดิมให้ handler อ่านซ้ำได้
+  const replay = new NextRequest(req.url, { method: req.method, headers: req.headers, body: rawBody });
+  return runWithDb(dbKey, () => handlePOST(replay));
 }

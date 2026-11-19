@@ -19,12 +19,16 @@ export async function register() {
     running = true;
     try {
       const { runLineReminders } = await import("@/lib/line/reminders");
-      const result = await runLineReminders();
-      const sent = result.items.filter((i) => i.status === "sent").length;
-      const failed = result.items.filter((i) => i.status === "failed").length;
-      if (sent || failed) {
-        console.log(`[LINE-REMINDERS] ${result.today} ${result.time}: sent ${sent}, failed ${failed}`);
-      }
+      const { forEachDatabase } = await import("@/lib/db-context-server");
+      // ทุกฐานข้อมูลที่ตั้งค่าไว้ (หลาย Supabase project) — แต่ละฐานทำงานแยกกัน ฐานหนึ่งล้มไม่กระทบฐานอื่น
+      await forEachDatabase(async (dbKey) => {
+        const result = await runLineReminders();
+        const sent = result.items.filter((i) => i.status === "sent").length;
+        const failed = result.items.filter((i) => i.status === "failed").length;
+        if (sent || failed) {
+          console.log(`[LINE-REMINDERS] [${dbKey}] ${result.today} ${result.time}: sent ${sent}, failed ${failed}`);
+        }
+      });
     } catch (e: any) {
       console.error("[LINE-REMINDERS] run failed:", e?.message || e);
     } finally {

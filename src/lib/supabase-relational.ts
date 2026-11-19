@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { accountBranchIds, getSessionUser } from "@/lib/branch-ownership";
+import { MAIN_DB_KEY, currentDbKey } from "@/lib/db-registry";
 import {
   tenantTypeOf,
   Property,
@@ -202,11 +203,17 @@ const missingColumnsCache: Record<string, Set<string>> =
 
 /** true เมื่อ safeUpsert พบว่าตารางนี้ใน Supabase ยังไม่มีคอลัมน์นี้ (เช่น properties.owner_id ยังไม่ได้รัน SQL) */
 export function isColumnMissing(table: string, column: string): boolean {
-  return Boolean(missingColumnsCache[table]?.has(column));
+  return Boolean(missingColumnsCache[mcKey(table)]?.has(column));
+}
+
+/** แต่ละฐานอาจมีคอลัมน์ไม่ครบไม่เท่ากัน จึงจำแยกต่อฐาน (main ใช้ชื่อตารางเฉย ๆ เหมือนเดิม) */
+function mcKey(table: string): string {
+  const db = currentDbKey();
+  return db === MAIN_DB_KEY ? table : `${db}:${table}`;
 }
 
 function stripMissingColumns(table: string, rows: Record<string, any>[]): Record<string, any>[] {
-  const missing = missingColumnsCache[table];
+  const missing = missingColumnsCache[mcKey(table)];
   if (!missing || missing.size === 0) return rows;
   return rows.map((row) => {
     const copy: Record<string, any> = {};
@@ -229,8 +236,8 @@ export async function safeUpsert(
   onConflict = "id"
 ): Promise<boolean> {
   if (!rows || rows.length === 0) return true;
-  if (!missingColumnsCache[table]) {
-    missingColumnsCache[table] = new Set();
+  if (!missingColumnsCache[mcKey(table)]) {
+    missingColumnsCache[mcKey(table)] = new Set();
   }
 
   let currentConflict = onConflict;
@@ -254,7 +261,7 @@ export async function safeUpsert(
       msg.match(/column "([^"]+)" of relation "[^"]+" does not exist/i);
     if (colMatch && colMatch[1]) {
       const badCol = colMatch[1];
-      missingColumnsCache[table].add(badCol);
+      missingColumnsCache[mcKey(table)].add(badCol);
       currentRows = stripMissingColumns(table, currentRows);
       continue;
     }

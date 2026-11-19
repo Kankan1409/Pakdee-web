@@ -3,16 +3,27 @@ import { timingSafeEqual, createHash } from "node:crypto";
 import { toUuid } from "@/lib/supabase-relational";
 import { validateImageSignature } from "@/lib/slip-verification";
 import { isUnclaimedBranch, userOwnsBranch } from "@/lib/branch-ownership";
+import { MAIN_DB_KEY, currentDbKey, getDbConfig, normalizeDbKey, serviceKeyFor } from "@/lib/db-registry";
 
 export class SlipError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
-export function slipDatabase() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+function serviceDatabase(dbKey: string) {
+  const key = serviceKeyFor(dbKey);
+  const url = getDbConfig(dbKey).url;
   if (!key || !url) throw new SlipError("ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูลสลิปฝั่งเซิร์ฟเวอร์", 503);
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+/** ฐานข้อมูลหอของคำขอนี้ (service role — ข้าม RLS) */
+export function slipDatabase() {
+  return serviceDatabase(currentDbKey());
+}
+
+/** ฐานหลัก: บัญชีผู้ใช้ทุกคน (user_profiles) อยู่ที่นี่ */
+function accountsDatabase() {
+  return serviceDatabase(MAIN_DB_KEY);
 }
 
 // Validate the existing account credentials on the server. Never trust client roles.
@@ -25,8 +36,9 @@ export async function authorizeSlipRequest(request: Request, propertyId: string)
   const password = decoded.slice(split + 1);
   if (split < 1 || !password || !propertyId) throw new SlipError("ข้อมูลเข้าสู่ระบบไม่ถูกต้อง", 401);
   const db = slipDatabase();
-  const { data: user, error } = await db.from("user_profiles")
-    .select("id,phone,role,is_active,assigned_branch_ids").eq("id", userId).maybeSingle();
+  // select("*"): ฐานหลักที่ยังไม่ได้รัน docs/supabase_multi_database.sql ไม่มีคอลัมน์ data_db
+  const { data: user, error } = await accountsDatabase().from("user_profiles")
+    .select("*").eq("id", userId).maybeSingle();
   if (error) throw new SlipError("ตรวจสอบบัญชีไม่สำเร็จ", 503);
   const tags: string[] = Array.isArray(user?.assigned_branch_ids) ? user.assigned_branch_ids : [];
   const expected = tags.find(tag => tag.startsWith("pwd:"))?.slice(4);
@@ -34,6 +46,8 @@ export async function authorizeSlipRequest(request: Request, propertyId: string)
   const expectedBytes = Buffer.from(expected || "");
   if (!user?.is_active || !expected || actualBytes.length !== expectedBytes.length ||
       !timingSafeEqual(actualBytes, expectedBytes)) throw new SlipError("บัญชีหรือรหัสผ่านไม่ถูกต้อง", 401);
+  // บัญชีใช้ได้เฉพาะฐานของตัวเอง (กันส่ง header x-pakdee-db เป็นฐานของคนอื่น)
+  if (normalizeDbKey(user.data_db) !== currentDbKey()) throw new SlipError("ไม่มีสิทธิ์เข้าถึงฐานข้อมูลนี้", 403);
 
   const { data: rows, error: propertyError } = await db.from("properties").select("*");
   if (propertyError) throw new SlipError("ตรวจสอบสิทธิ์สาขาไม่สำเร็จ", 503);

@@ -11,6 +11,13 @@ function loadBranchOwnership() {
   return exports;
 }
 
+// ทะเบียนฐานข้อมูลตัวจริง (มีฐานหลักฐานเดียว = เหมือนก่อนมีหลายฐาน)
+function loadDbRegistry(env) {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/db-registry.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, { exports, process: { env }, console, globalThis: {} });
+  return exports;
+}
+
 function setup(results, configured = true) {
   const calls = [];
   const db = { from(table) {
@@ -28,13 +35,15 @@ function setup(results, configured = true) {
     return query;
   }};
   const exports = {};
+  const env = configured ? { SUPABASE_SERVICE_ROLE_KEY: 'test', NEXT_PUBLIC_SUPABASE_URL: 'https://example.test' } : { NEXT_PUBLIC_SUPABASE_URL: '' };
   const source = fs.readFileSync('src/lib/payment-slips-server.ts', 'utf8');
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
-    exports, Buffer, process: { env: configured ? { SUPABASE_SERVICE_ROLE_KEY: 'test', NEXT_PUBLIC_SUPABASE_URL: 'https://example.test' } : {} },
+    exports, Buffer, process: { env },
     require(name) {
       if (name === '@supabase/supabase-js') return { createClient: () => db };
       if (name === '@/lib/supabase-relational') return { toUuid: id => 'uuid-' + id };
       if (name === '@/lib/branch-ownership') return loadBranchOwnership();
+      if (name === '@/lib/db-registry') return loadDbRegistry(env);
       if (name === '@/lib/slip-verification') return { validateImageSignature: () => ({ isValid: true, format: 'png' }) };
       return require(name);
     },

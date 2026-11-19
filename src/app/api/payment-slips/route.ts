@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withRequestDb } from "@/lib/db-context-server";
 import { authorizeSlipRequest, decodeSlipImage, savePaymentSlip, SlipError } from "@/lib/payment-slips-server";
 import { validateImageSignature } from "@/lib/slip-verification";
 import { verifyStoredPayment } from "@/lib/line/verify-payment";
@@ -29,7 +30,7 @@ async function notifyReceiptIfPassed(
 export const runtime = "nodejs";
 const privateHeaders = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const propertyId = request.nextUrl.searchParams.get("propertyId") || "";
     const action = request.nextUrl.searchParams.get("action") || "list";
@@ -91,3 +92,6 @@ export async function POST(request: NextRequest) {
       { status: error instanceof SlipError ? error.status : 500, headers: privateHeaders });
   }
 }
+
+// ทำงานกับฐานข้อมูลของบัญชีที่ส่งคำขอมา (header x-pakdee-db)
+export const POST = withRequestDb(handlePOST);

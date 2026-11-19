@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withRequestDb } from "@/lib/db-context-server";
 import { authorizeSlipRequest, SlipError } from "@/lib/payment-slips-server";
 import { listReminderLogs, runLineReminders, sendTestReminder } from "@/lib/line/reminders";
 
@@ -13,7 +14,7 @@ const privateHeaders = { "Cache-Control": "private, no-store" };
  *  - test:    send one test reminder to &roomNumber= now (not logged)
  * Uses the same owner/manager account check as /api/payment-slips.
  */
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const propertyId = request.nextUrl.searchParams.get("propertyId") || "";
     const action = request.nextUrl.searchParams.get("action") || "preview";
@@ -38,3 +39,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message || "ดำเนินการไม่สำเร็จ" }, { status, headers: privateHeaders });
   }
 }
+
+// ทำงานกับฐานข้อมูลของบัญชีที่ส่งคำขอมา (header x-pakdee-db)
+export const POST = withRequestDb(handlePOST);

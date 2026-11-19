@@ -98,11 +98,24 @@ async function resolveLineTokens() {
     tokens.add(envConfig.LINE_CHANNEL_ACCESS_TOKEN.trim());
   }
 
-  const sbUrl = envConfig.NEXT_PUBLIC_SUPABASE_URL;
-  const sbKey = envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY || envConfig.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (sbUrl && sbKey) {
+  // ฐานหลัก + ฐานเพิ่มเติม (NEXT_PUBLIC_EXTRA_DATABASES) — ทุก OA ชี้มาที่ webhook เดียวกัน
+  // เว็บหาเองว่าข้อความเป็นของฐานไหนจากลายเซ็น (src/app/api/line/webhook/route.ts)
+  const databases = [
+    {
+      url: envConfig.NEXT_PUBLIC_SUPABASE_URL,
+      key: envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY || envConfig.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    },
+  ];
+  try {
+    const extra = JSON.parse(envConfig.NEXT_PUBLIC_EXTRA_DATABASES || "[]");
+    for (const d of Array.isArray(extra) ? extra : []) databases.push({ url: d?.url, key: d?.anonKey });
+  } catch {
+    console.warn("[AUTO-BOT] NEXT_PUBLIC_EXTRA_DATABASES อ่านไม่ได้ (ต้องเป็น JSON array) — ข้าม OA ของฐานเพิ่มเติม");
+  }
+  for (const { url: sbUrl, key: sbKey } of databases) {
+    if (!sbUrl || !sbKey) continue;
     try {
-      const res = await fetch(`${sbUrl}/rest/v1/branch_settings?select=line_channel_access_token&limit=20`, {
+      const res = await fetch(`${sbUrl}/rest/v1/branch_settings?select=line_channel_access_token&limit=50`, {
         headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` },
       });
       if (res.ok) {

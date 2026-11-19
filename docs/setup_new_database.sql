@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
     phone VARCHAR(50) DEFAULT '',
     assigned_branch_ids TEXT[] DEFAULT ARRAY[]::TEXT[],
     is_active BOOLEAN DEFAULT true,
+    data_db TEXT,                  -- ฐานข้อมูลหอของบัญชีนี้ (ใช้ในฐานหลักเท่านั้น — docs/supabase_multi_database.sql)
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
