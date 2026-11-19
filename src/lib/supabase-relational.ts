@@ -489,6 +489,9 @@ export async function syncBranchSettingsToSupabase(
     contract_terms: settings.contractTerms || "",
     // JSONB column (docs/supabase_branch_notification_settings.sql); stripped by safeUpsert if missing
     notification_settings: settings.notificationSettings ?? null,
+    // JSONB (docs/supabase_branch_room_types.sql): ประเภทห้อง + ราคา — เดิมเก็บแค่ในเบราว์เซอร์
+    // รีเฟรชแล้วราคากลับเป็นค่าเริ่มต้น; ถ้ายังไม่ได้รัน SQL safeUpsert จะตัดคอลัมน์นี้ทิ้งเอง
+    room_types: Array.isArray(settings.roomTypes) && settings.roomTypes.length > 0 ? settings.roomTypes : null,
     updated_at: new Date().toISOString(),
   };
 
@@ -1120,6 +1123,17 @@ export async function loadCoreContextFromSupabase(
   return { hasCoreData: hasRelationalData, data: core };
 }
 
+/** อ่านค่าที่แคชไว้ใน localStorage ของเบราว์เซอร์ (ฝั่งเซิร์ฟเวอร์ = undefined) */
+function readCachedValue(key: string): any {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = localStorage.getItem(`pakdee_dev_${key}`) || localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Loads data directly from the separate Supabase relational tables and merges with
  * any extended JSON fields in memoryDb.
@@ -1243,7 +1257,9 @@ export async function loadFromRelationalTables(
         const rawPropId = String(sRow.property_id || "").toLowerCase();
         if (!rawPropId || !knownBranchIds.has(rawPropId)) continue;
         const propId = uuidToPropId.get(rawPropId) || String(sRow.property_id);
-        const existingSetting = existingMemoryDb[`branch_settings_${propId}`] || {};
+        // ค่าที่ฐานข้อมูลไม่มีคอลัมน์ (เช่น คีย์ตรวจสลิป, ประเภทห้องถ้ายังไม่รัน SQL) อยู่แค่ในเครื่อง:
+        // ตอนรีเฟรช memoryDb ยังว่าง จึงต้องอ่านจาก localStorage ด้วย ไม่งั้นค่าพวกนี้ถูกเขียนทับหาย
+        const existingSetting = existingMemoryDb[`branch_settings_${propId}`] || readCachedValue(`branch_settings_${propId}`) || {};
         result[`branch_settings_${propId}`] = {
           ...existingSetting,
           id: String(sRow.id),
@@ -1281,6 +1297,8 @@ export async function loadFromRelationalTables(
             sRow.notification_settings && typeof sRow.notification_settings === "object"
               ? sRow.notification_settings
               : existingSetting.notificationSettings,
+          roomTypes:
+            Array.isArray(sRow.room_types) && sRow.room_types.length > 0 ? sRow.room_types : existingSetting.roomTypes,
         } satisfies BranchSettingsDetail;
       }
     }

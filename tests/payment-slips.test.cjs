@@ -4,6 +4,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 
+// กฎความเป็นเจ้าของสาขาตัวจริง (ไม่ mock) — ใช้ร่วมกับหน้าเว็บ
+function loadBranchOwnership() {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/branch-ownership.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, { exports });
+  return exports;
+}
+
 function setup(results, configured = true) {
   const calls = [];
   const db = { from(table) {
@@ -27,6 +34,7 @@ function setup(results, configured = true) {
     require(name) {
       if (name === '@supabase/supabase-js') return { createClient: () => db };
       if (name === '@/lib/supabase-relational') return { toUuid: id => 'uuid-' + id };
+      if (name === '@/lib/branch-ownership') return loadBranchOwnership();
       if (name === '@/lib/slip-verification') return { validateImageSignature: () => ({ isValid: true, format: 'png' }) };
       return require(name);
     },
@@ -78,6 +86,21 @@ test('owner credentials cannot read another owners branch', async () => {
   ]);
   const request = new Request('https://example.test', { headers: { authorization: 'Basic ' + Buffer.from('owner-a:secret').toString('base64') } });
   await assert.rejects(api.authorizeSlipRequest(request, 'branch-b'), e => e.status === 403);
+});
+
+const basicAuth = (id) => ({ headers: { authorization: 'Basic ' + Buffer.from(id + ':secret').toString('base64') } });
+const ownerRow = (id, phone) => ({ data: { id, role: 'owner', is_active: true, phone, assigned_branch_ids: ['pwd:secret'] } });
+
+test('owner of a branch (owner_id column from the database) is allowed', async () => {
+  // แถวจริงจาก Supabase เป็น snake_case — เดิมอ่าน ownerId จึงได้ 403 กับสาขาของตัวเอง
+  const { api } = setup([ownerRow('U0002', '0800000002'), { data: [{ id: 'P0003', owner_id: 'U0002', phone: '021111111' }] }]);
+  const result = await api.authorizeSlipRequest(new Request('https://example.test', basicAuth('U0002')), 'P0003');
+  assert.equal(result.propertyUuid, 'uuid-P0003');
+});
+
+test('owner_id of another account is refused even when the branch phone matches', async () => {
+  const { api } = setup([ownerRow('U0001', '0800000001'), { data: [{ id: 'P0003', owner_id: 'U0002', phone: '0800000001' }] }]);
+  await assert.rejects(api.authorizeSlipRequest(new Request('https://example.test', basicAuth('U0001')), 'P0003'), e => e.status === 403);
 });
 
 test('missing server key and corrupt database image fail closed', () => {

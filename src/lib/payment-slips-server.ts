@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { timingSafeEqual, createHash } from "node:crypto";
 import { toUuid } from "@/lib/supabase-relational";
 import { validateImageSignature } from "@/lib/slip-verification";
+import { isUnclaimedBranch, userOwnsBranch } from "@/lib/branch-ownership";
 
 export class SlipError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -41,11 +42,15 @@ export async function authorizeSlipRequest(request: Request, propertyId: string)
     properties = rows[0]?.value && Array.isArray(rows[0].value) ? rows[0].value : rows;
   }
   const property = properties.find((p: { id: string }) => p.id === propertyId || p.id === toUuid(propertyId));
-  const normalizePhone = (v: string) => String(v || "").replace(/\D/g, "");
-  const owned = property && user.role === "owner" && (
-    property.ownerId === user.id ||
-    (normalizePhone(user.phone).length >= 9 && normalizePhone(property.phone || property.ownerPhone) === normalizePhone(user.phone))
-  );
+  // แถวจากฐานข้อมูลเป็น snake_case (owner_id / owner_phone) — เดิมอ่าน property.ownerId ซึ่งไม่มีอยู่จริง
+  // จึงผ่านได้เฉพาะเมื่อเบอร์ติดต่อของสาขาบังเอิญตรงกับเบอร์บัญชี (สาขาใหม่ได้ 403)
+  // ใช้กฎเดียวกับหน้าเว็บ (src/lib/branch-ownership.ts): owner_id ตรงกับบัญชี หรือ owner_phone ตรงกับเบอร์บัญชี
+  // สาขาเก่าที่ยังไม่มีเจ้าของ: เจ้าของหอทุกบัญชีเข้าได้เหมือนหน้าเว็บ (จนกว่าจะกด "เป็นสาขาของฉัน")
+  const branchOwner = property
+    ? { ownerId: property.owner_id ?? property.ownerId, ownerPhone: property.owner_phone ?? property.ownerPhone }
+    : null;
+  const owned = Boolean(property) && user.role === "owner" &&
+    (userOwnsBranch(branchOwner, { id: String(user.id), phone: user.phone }) || isUnclaimedBranch(branchOwner));
   const assigned = property && user.role === "manager" &&
     (tags.includes(propertyId) || tags.includes(toUuid(propertyId)));
   if (!owned && !assigned) throw new SlipError("ไม่มีสิทธิ์เข้าถึงสลิปของสาขานี้", 403);

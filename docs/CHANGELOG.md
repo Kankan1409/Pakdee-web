@@ -19,6 +19,7 @@
 - [ ] `docs/supabase_branch_isolation.sql`: property_id ให้ tenants / daily_bookings / meter_readings (แยกสาขา) + ลบตาราง buildings (2026-11-12)
 - [ ] `docs/supabase_invoice_payment_method.sql`: คอลัมน์วิธีชำระ/เลขอ้างอิง/ธนาคารในตาราง `invoices` สำหรับช่อง "ชำระโดย" ในใบเสร็จ + เติมย้อนหลังจากสลิปที่ตรวจผ่าน (2026-11-12)
 - [ ] `docs/supabase_contract_revisions.sql`: คอลัมน์สัญญาฉบับแก้ไข (`revision`, `root_contract_number`, `previous_contract_number`, `superseded_by`) + `contract_details` (ค่าบริการในสัญญา) (2026-11-12)
+- [ ] `docs/supabase_branch_room_types.sql`: คอลัมน์ `branch_settings.room_types` (JSONB) เก็บประเภทห้อง + ราคา (2026-11-19) — ไม่รันก็ไม่พัง แต่ราคาประเภทห้องจะอยู่แค่ในเครื่องที่แก้
 - [ ] `docs/supabase_account_scope.sql`: `activity_logs.property_id` (log ผูกกับสาขา → บัญชี) + คำสั่งนับแถวที่ยังไม่รู้สาขา (2026-11-19) — รันหลัง branch_isolation
 - [ ] `docs/supabase_tenant_links.sql`: `tenants.tenant_type` (รายเดือน/รายวัน) + `contracts.tenant_id` + `daily_bookings.tenant_id` ผูกผู้เช่าด้วยรหัส แทนชื่อ/เบอร์ (2026-11-17) — รันหลัง branch_isolation
 
@@ -45,6 +46,19 @@
 ---
 
 ## 2026-11-19
+
+### 🟡 แก้ราคาประเภทห้องแล้วรีเฟรช ราคากลับเป็นค่าเดิม
+- **สาเหตุ:** ประเภทห้อง (`roomTypes`) ไม่มีคอลัมน์ใน Supabase เก็บแค่ใน localStorage; ตอนรีเฟรช `memoryDb` ยังว่าง ตัวโหลด (`loadFromRelationalTables`) จึงสร้างตั้งค่าสาขาใหม่จากแถวฐานข้อมูลอย่างเดียว แล้วเขียนทับ localStorage → `roomTypes` หาย → กลับไปใช้ `defaultRoomTypes`; ค่าอื่นที่อยู่แค่ในเครื่องก็หายแบบเดียวกัน (คีย์/ผู้ให้บริการตรวจสลิป, รูปสาขา)
+- **แก้ (`src/lib/supabase-relational.ts`):** บันทึก/โหลด `room_types` (JSONB) ใน `branch_settings` + ตอนโหลดอ่านตั้งค่าเดิมจาก localStorage ด้วย (`readCachedValue`) ค่าที่ฐานข้อมูลไม่มีจึงไม่ถูกเขียนทับ
+- **SQL:** `docs/supabase_branch_room_types.sql` — ถ้ายังไม่รัน ราคาจะไม่หายเมื่อรีเฟรชบนเครื่องเดิมแล้ว แต่เครื่องอื่นจะไม่เห็น
+- **ตรวจแล้ว:** tsc, tests 39/39, build ผ่าน ⏳ ยังไม่ได้ทดสอบในเบราว์เซอร์จริง
+
+### 🟡 แก้ 403 ที่ /api/payment-slips และ /api/contracts/sign ของสาขาใหม่
+- **อาการ:** สาขาใหม่ (P0003) ขึ้น 403 Forbidden ตอนโหลดสลิป/สถานะลายเซ็นสัญญา
+- **สาเหตุ:** `authorizeSlipRequest` (`src/lib/payment-slips-server.ts`) อ่าน `property.ownerId` จากแถวฐานข้อมูล แต่คอลัมน์จริงชื่อ `owner_id` (snake_case) จึงไม่เคยตรง ผ่านได้แค่ตอนเบอร์ติดต่อของสาขาบังเอิญตรงกับเบอร์บัญชี
+- **แก้:** ใช้กฎเดียวกับหน้าเว็บ (`branch-ownership.ts`): `owner_id` ตรงกับบัญชี หรือ `owner_phone` ตรงกับเบอร์บัญชี; สาขาเก่าที่ยังไม่มีเจ้าของ เจ้าของหอเข้าได้เหมือนหน้าเว็บ; ไม่ใช้เบอร์ติดต่อของสาขาแล้ว (ใช้กับ /api/line/reminders ด้วย)
+- **Test:** `tests/payment-slips.test.cjs` โหลดกฎตัวจริง + เพิ่ม 2 เคส (เจ้าของผ่าน / owner_id บัญชีอื่นถูกปฏิเสธแม้เบอร์สาขาตรง) → 39/39 ผ่าน, build ผ่าน
+- **ใน console ที่ไม่ใช่บั๊ก:** "Successfully deleted 6 rooms" มาจากการกดลบหลายห้องพร้อมกัน (`deleteRooms`) ไม่ใช่การลบอัตโนมัติ; POST properties 400 ครั้งเดียว น่าจะเป็นรอบแรกของ `safeUpsert` ที่เจอคอลัมน์ที่ไม่มีแล้วลองใหม่ (ถ้าล้มจริงจะมีข้อความ "Upsert properties failed")
 
 ### 🟡 ทุกตารางยึดตามบัญชี (โหลดเฉพาะข้อมูลของบัญชีที่ล็อกอิน)
 - **โครงสร้าง:** บัญชี → สาขา (`properties.owner_id`) → ทุกตาราง (`property_id`) ไม่ใส่ owner_id ซ้ำทุกตาราง เพื่อให้เจ้าของอยู่จุดเดียว ไม่มีทางขัดกัน; กฎความเป็นเจ้าของรวมไว้ที่ `src/lib/branch-ownership.ts` (ใช้ทั้ง `database.service.ts` และ `supabase-relational.ts`)
