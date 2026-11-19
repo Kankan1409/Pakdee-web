@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { DatabaseService } from "@/lib/database.service";
 import {
   multicastLineMessage,
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
 
-    const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    const channelAccessToken = branchLineToken(settings);
     const branchName = settings?.branchName || property?.name || "หอพัก";
     const branchPhone = settings?.phone || property?.phone || "";
 
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ไม่มีผู้เช่าปัจจุบันที่ผูก LINE ในกลุ่มที่เลือก จึงยังไม่ได้ส่งประกาศ" }, { status: 400 });
     }
     if (!channelAccessToken.trim()) {
-      return NextResponse.json({ error: "กรุณาตั้งค่า LINE Channel Access Token ก่อนส่งประกาศ" }, { status: 400 });
+      return NextResponse.json({ error: LINE_OA_NOT_CONFIGURED }, { status: 400 });
     }
 
     // 2. สร้าง Flex Message ตามมาตรฐาน LINE

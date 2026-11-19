@@ -1,4 +1,5 @@
 import { DatabaseService } from "@/lib/database.service";
+import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import {
   attachQuickReplyToLast,
   buildReceiptFlexMessage,
@@ -89,7 +90,7 @@ export async function pushReceiptToTenantLine(options: {
   const settings =
     options.settings ?? (await DatabaseService.getBranchSettings(property, options.propertyId));
   const channelAccessToken =
-    settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    branchLineToken(settings);
   const branchName = settings?.branchName || property?.name || "หอพัก";
 
   let invoice = options.invoice || null;
@@ -103,6 +104,10 @@ export async function pushReceiptToTenantLine(options: {
   }
   if (!invoice) {
     return { notified: false, reason: "invoice_not_found", error: "Invoice not found" };
+  }
+
+  if (!channelAccessToken) {
+    return { notified: false, reason: "line_not_configured", error: LINE_OA_NOT_CONFIGURED };
   }
 
   let recipientUserId = options.recipientUserId?.trim();

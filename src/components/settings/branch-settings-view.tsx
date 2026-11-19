@@ -281,8 +281,41 @@ export function BranchSettingsView({
     globalPopup.info("คืนค่าเริ่มต้นสำเร็จ", "รีเซ็ตประเภทห้องพักเป็นค่ามาตรฐาน 4 ประเภทเรียบร้อยแล้ว");
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  /**
+   * LINE OA หนึ่งตัวใช้ได้กับบัญชีเดียว (สาขาหลายสาขาของบัญชีเดียวกันใช้ร่วมกันได้)
+   * ถ้าสองบัญชีใส่ OA เดียวกัน ข้อความจากผู้เช่าจะถูกส่งเข้าหอของทั้งสองบัญชี
+   */
+  const lineChannelChanged =
+    (formData.lineChannelSecret || "").trim() !== (settings.lineChannelSecret || "").trim() ||
+    (formData.lineChannelAccessToken || "").trim() !== (settings.lineChannelAccessToken || "").trim();
+
+  const isLineChannelUsedByOtherAccount = async (): Promise<boolean> => {
+    const channelSecret = (formData.lineChannelSecret || "").trim();
+    const channelAccessToken = (formData.lineChannelAccessToken || "").trim();
+    if (!propertyId || (!channelSecret && !channelAccessToken)) return false;
+    try {
+      const res = await fetch("/api/line/check-channel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyId, channelSecret, channelAccessToken }),
+      });
+      const data = await res.json();
+      return Boolean(data?.conflict);
+    } catch {
+      return false; // ตรวจไม่ได้ (เช่น ออฟไลน์) → ไม่บล็อกการบันทึก
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lineChannelChanged && (await isLineChannelUsedByOtherAccount())) {
+      globalPopup.error(
+        "LINE OA นี้ถูกใช้กับบัญชีอื่นแล้ว",
+        "Channel Secret / Access Token นี้ผูกกับหอพักของบัญชีอื่นอยู่ กรุณาใช้ LINE OA ของคุณเอง (หนึ่ง OA ใช้ได้กับบัญชีเดียว ไม่งั้นข้อความจากผู้เช่าจะเข้าหอผิดบัญชี)"
+      );
+      setActiveTab("line");
+      return;
+    }
     if (formData.electricRate !== undefined && formData.electricRate < 0) {
       globalPopup.error("อัตราค่าไฟฟ้าไม่ถูกต้อง", "อัตราค่าไฟฟ้าต้องไม่ติดลบ (อย่างน้อย 0 บาท/หน่วย)");
       setActiveTab("rates");

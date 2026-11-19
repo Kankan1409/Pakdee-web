@@ -1,4 +1,5 @@
 import { rememberPublicOrigin } from "@/lib/public-origin";
+import { branchLineToken, branchLineSecret } from "@/lib/line/branch-line-config";
 import { CONTRACT_SIGN_POSTBACK } from "@/lib/line/contract-signing";
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database.service";
@@ -52,9 +53,9 @@ async function resolveWebhookBranchContext(
   for (const propId of candidateIds) {
     const property = await DatabaseService.getProperty(propId);
     const settings = await DatabaseService.getBranchSettings(property, propId);
-    const channelSecret = settings?.lineChannelSecret || process.env.LINE_CHANNEL_SECRET || "";
+    const channelSecret = branchLineSecret(settings);
     const channelAccessToken =
-      settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+      branchLineToken(settings);
 
     if (channelSecret.trim()) {
       hasConfiguredSecret = true;

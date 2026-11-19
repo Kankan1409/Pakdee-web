@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
 import { getDefaultQuickReply } from "@/lib/line/flex-templates";
@@ -29,7 +30,10 @@ export async function POST(req: NextRequest) {
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
 
-    const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    const channelAccessToken = branchLineToken(settings);
+    if (!channelAccessToken) {
+      return NextResponse.json({ success: false, error: LINE_OA_NOT_CONFIGURED }, { status: 400 });
+    }
     const branchName = settings?.branchName || property?.name || "หอพัก";
 
     const allInvoices = await DatabaseService.getInvoices(activePropId);

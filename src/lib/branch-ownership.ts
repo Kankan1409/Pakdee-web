@@ -48,6 +48,14 @@ export function userOwnsBranch(p: any, user: SessionUserLike | null): boolean {
   return userPhone.length >= 9 && digitsOf(p?.ownerPhone) === userPhone;
 }
 
+/** รหัสระบุเจ้าของสาขา ใช้เทียบว่าสองสาขาเป็นของบัญชีเดียวกันไหม ("" = ไม่รู้เจ้าของ) */
+export function branchOwnerKey(p: any): string {
+  const ownerId = realOwnerIdOf(p);
+  if (ownerId) return `id:${ownerId}`;
+  const phone = digitsOf(p?.ownerPhone);
+  return phone.length >= 9 ? `phone:${phone}` : "";
+}
+
 /** สาขาเก่าที่ไม่มีทั้ง owner_id และ owner_phone — ยังไม่รู้ว่าเป็นของบัญชีไหน (รอกด "เป็นสาขาของฉัน") */
 export function isUnclaimedBranch(p: any): boolean {
   return !realOwnerIdOf(p) && digitsOf(p?.ownerPhone).length < 9;

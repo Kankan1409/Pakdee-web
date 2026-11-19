@@ -57,7 +57,8 @@ export function InvoicePreviewModal({
       const res = await fetch("/api/line/send-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceId: invoice.id }),
+        // ต้องส่งสาขาไปด้วย ไม่งั้นเซิร์ฟเวอร์ใช้สาขาที่จำไว้ล่าสุด (อาจเป็น OA ของสาขาอื่น)
+        body: JSON.stringify({ invoiceId: invoice.id, propertyId: invoice.propertyId }),
       });
       const data = await res.json();
       if (data.success) {

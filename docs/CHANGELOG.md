@@ -47,6 +47,20 @@
 
 ## 2026-11-19
 
+### 🟡 LINE OA แยกตามบัญชี (เลิกใช้ OA ใน .env เป็นค่าสำรอง)
+- **ปัญหา:** ทุกจุดที่ใช้ LINE เขียนว่า `settings.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN` → สาขาที่ยังไม่ได้ตั้ง OA ส่งบิล/ประกาศออกทาง OA ใน `.env` (ของบัญชีอื่น) และ webhook จับข้อความที่เข้า OA นั้นไปประมวลผลกับทุกสาขาที่ไม่ได้ตั้ง OA (ลงทะเบียน/สลิปเข้าหอผิดบัญชี)
+- **แก้:** `src/lib/line/branch-line-config.ts` (`branchLineToken`, `branchLineSecret`, `LINE_OA_NOT_CONFIGURED`) ใช้แทนทุกจุด: webhook, send-invoice, notify-slip, broadcast, contracts/sign, reminders, receipt-delivery
+- **ไม่มี OA = แจ้งชัด:** เดิมไม่มี token ระบบตอบ "ส่งสำเร็จ (จำลอง)" → ตอนนี้ send-invoice / notify-slip ตอบ 400 พร้อมข้อความ "ยังไม่ได้ตั้งค่า LINE OA ของสาขานี้"; ส่งบิลใหม่อัตโนมัติ (`page.tsx`) หยุดแล้วขึ้นข้อความนี้แทน "ส่ง 0/N ห้อง"; ใบเสร็จได้ `reason: "line_not_configured"`
+- **กัน OA ซ้ำข้ามบัญชี:** API ใหม่ `/api/line/check-channel` ตรวจฝั่งเซิร์ฟเวอร์ว่า Secret/Token นี้ใช้กับสาขาของบัญชีอื่นอยู่หรือไม่ (ตอบแค่ชน/ไม่ชน) — หน้าตั้งค่าเรียกตอนกดบันทึกเมื่อแก้ช่อง LINE ถ้าชนจะไม่ให้บันทึก; สาขาหลายสาขาของบัญชีเดียวกันใช้ OA เดียวกันได้ (`branchOwnerKey` ใน `branch-ownership.ts`)
+- **แก้บั๊กระหว่างทาง:** ปุ่มส่งบิลเข้า LINE ในหน้าดูบิล (`invoice-preview-modal.tsx`) ไม่ส่ง `propertyId` → เซิร์ฟเวอร์ใช้สาขาที่จำไว้ล่าสุด อาจส่งผ่าน OA ของสาขาอื่น
+- **Test:** `tests/line-oa-per-account.test.cjs` (3 เคส) → 42/42, build ผ่าน ⏳ ยังไม่ได้ทดสอบกับ LINE จริง
+- ⏳ **ต้องทำเอง:** ย้าย `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_CHANNEL_SECRET` ใน `.env` ไปใส่ในหน้าตั้งค่าของสาขาเจ้าของ OA นั้น — ไม่งั้นสาขานั้นจะส่ง/รับ LINE ไม่ได้ (`scripts/dev-with-bot.mjs` ยังใช้ token ใน .env ตั้ง webhook ให้ได้ ไม่เสียหาย)
+
+### 🟡 เอกสารแผนแยกข้อมูลแต่ละบัญชีด้วย Supabase Auth + RLS (ยังไม่ลงมือ)
+- `docs/PLAN_SUPABASE_AUTH_RLS.md`: ขั้นตอน 0–7, SQL ตัวอย่าง (ฟังก์ชัน `can_access_property`, policy ทุกตาราง), ไฟล์ที่ต้องแก้, รายการทดสอบ, วิธีถอยกลับ, เรื่องที่ต้องตัดสินใจ
+- ⚠️ พบระหว่างเขียน: หน้าล็อกอินดึง `user_profiles` ทุกแถว (รวมรหัสผ่าน `pwd:...` แบบข้อความเปล่า) มาที่เบราว์เซอร์ — แก้ได้ในขั้น 3–4 ของแผน
+- ⏳ รอตัดสินใจ: ล็อกอินด้วยอีเมล/เบอร์, ย้ายหรือรีเซ็ตรหัสผ่านเดิม, วิธีออกรหัสเอกสารเมื่อมองไม่เห็นข้อมูลบัญชีอื่น
+
 ### 🟡 แก้ราคาประเภทห้องแล้วรีเฟรช ราคากลับเป็นค่าเดิม
 - **สาเหตุ:** ประเภทห้อง (`roomTypes`) ไม่มีคอลัมน์ใน Supabase เก็บแค่ใน localStorage; ตอนรีเฟรช `memoryDb` ยังว่าง ตัวโหลด (`loadFromRelationalTables`) จึงสร้างตั้งค่าสาขาใหม่จากแถวฐานข้อมูลอย่างเดียว แล้วเขียนทับ localStorage → `roomTypes` หาย → กลับไปใช้ `defaultRoomTypes`; ค่าอื่นที่อยู่แค่ในเครื่องก็หายแบบเดียวกัน (คีย์/ผู้ให้บริการตรวจสลิป, รูปสาขา)
 - **แก้ (`src/lib/supabase-relational.ts`):** บันทึก/โหลด `room_types` (JSONB) ใน `branch_settings` + ตอนโหลดอ่านตั้งค่าเดิมจาก localStorage ด้วย (`readCachedValue`) ค่าที่ฐานข้อมูลไม่มีจึงไม่ถูกเขียนทับ

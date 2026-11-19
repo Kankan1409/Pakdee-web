@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { DatabaseService } from "@/lib/database.service";
 import { pushLineMessage } from "@/lib/line/line-client";
 import { buildInvoiceFlexMessage } from "@/lib/line/flex-templates";
@@ -18,7 +19,11 @@ export async function POST(req: NextRequest) {
     const property = await DatabaseService.getProperty(activePropId);
     const settings = await DatabaseService.getBranchSettings(property, activePropId);
 
-    const channelAccessToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    const channelAccessToken = branchLineToken(settings);
+    if (!channelAccessToken) {
+      // เดิมไม่มี token ก็ "ส่งสำเร็จ (จำลอง)" — ผู้ใช้เข้าใจว่าส่งแล้ว ทั้งที่ไม่มีใครได้รับ
+      return NextResponse.json({ success: false, error: LINE_OA_NOT_CONFIGURED }, { status: 400 });
+    }
     const promptpayNumber = settings?.promptpayNumber || property?.promptpayNumber || "";
 
     const allInvoices = await DatabaseService.getInvoices(activePropId);

@@ -1604,6 +1604,7 @@ export default function HomePage() {
           // ให้บิลใหม่ขึ้นฐานข้อมูลก่อน เพราะเซิร์ฟเวอร์อ่านบิลจาก Supabase
           await DatabaseService.refreshFromServer();
           let lineSent = 0;
+          let lineError = "";
           for (const inv of newBills) {
             const res = await fetch("/api/line/send-invoice", {
               method: "POST",
@@ -1612,8 +1613,16 @@ export default function HomePage() {
             });
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.success && data.hasLinkedLine) lineSent++;
+            if (!res.ok && data.error) {
+              lineError = data.error; // เช่น สาขายังไม่ได้ตั้ง LINE OA — ไม่ต้องลองห้องที่เหลือ
+              break;
+            }
           }
-          showToast(`📱 ส่งบิลใหม่เข้า LINE ${lineSent}/${newBills.length} ห้อง (ห้องที่เหลือยังไม่ผูก LINE หรือส่งไม่สำเร็จ)`, "info");
+          if (lineError) {
+            showToast("ยังไม่ได้ส่งบิลเข้า LINE: " + lineError, "error");
+          } else {
+            showToast(`📱 ส่งบิลใหม่เข้า LINE ${lineSent}/${newBills.length} ห้อง (ห้องที่เหลือยังไม่ผูก LINE หรือส่งไม่สำเร็จ)`, "info");
+          }
           setInvoices(await DatabaseService.getInvoices(property.id));
         } catch (e: any) {
           showToast("ส่งบิลใหม่เข้า LINE ไม่สำเร็จ: " + (e?.message || e), "error");

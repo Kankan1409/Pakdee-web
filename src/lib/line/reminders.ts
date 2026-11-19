@@ -12,6 +12,7 @@
  * A branch without saved notification settings in the database is never reminded.
  */
 import { DatabaseService } from "@/lib/database.service";
+import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { pushLineMessage } from "@/lib/line/line-client";
 import { buildInvoiceFlexMessage } from "@/lib/line/flex-templates";
 import { generatePromptPayQRCodeUrl } from "@/lib/promptpay";
@@ -126,7 +127,7 @@ export async function runLineReminders(opts: { propertyId?: string; dryRun?: boo
 
     const property = await DatabaseService.getProperty(branch.id);
     const settings = await DatabaseService.getBranchSettings(property, branch.id);
-    const token = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    const token = branchLineToken(settings);
     const promptpay = settings?.promptpayNumber || property?.promptpayNumber || "";
     const lateFeePerDay = Number(settings?.lateFeePerDay) || 0;
     const branchName = settings?.branchName || property?.name || "";
@@ -218,7 +219,7 @@ export async function runLineReminders(opts: { propertyId?: string; dryRun?: boo
         ]);
         if (res.isSimulated) {
           item.status = "simulated";
-          item.error = "ยังไม่ได้ตั้งค่า LINE Channel Access Token";
+          item.error = LINE_OA_NOT_CONFIGURED;
           result.items.push(item);
           continue;
         }
@@ -272,8 +273,8 @@ export async function sendTestReminder(propertyId: string, roomNumber: string): 
   await DatabaseService.init();
   const property = await DatabaseService.getProperty(propertyId);
   const settings = await DatabaseService.getBranchSettings(property, propertyId);
-  const token = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-  if (!token) return { success: false, message: "ยังไม่ได้ตั้งค่า LINE Channel Access Token" };
+  const token = branchLineToken(settings);
+  if (!token) return { success: false, message: LINE_OA_NOT_CONFIGURED };
   const branchName = settings?.branchName || property?.name || "";
   const promptpay = settings?.promptpayNumber || property?.promptpayNumber || "";
 

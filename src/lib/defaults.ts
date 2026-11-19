@@ -2,7 +2,7 @@
  * Blank starting values used before real data is loaded from Supabase, and as the
  * template for a new branch. No sample/mock data: names, phones, bank accounts,
  * tax IDs and LINE credentials must come from the user's own settings.
- * (LINE credentials fall back to LINE_CHANNEL_ACCESS_TOKEN / LINE_CHANNEL_SECRET in .env.)
+ * (LINE OA ต้องตั้งในแต่ละสาขา — ไม่ใช้ LINE_CHANNEL_* ใน .env เป็นค่าสำรองแล้ว ดู src/lib/line/branch-line-config.ts)
  */
 import {
   Property,

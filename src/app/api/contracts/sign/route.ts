@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { branchLineToken, LINE_OA_NOT_CONFIGURED } from "@/lib/line/branch-line-config";
 import { createHash, randomBytes } from "node:crypto";
 import { authorizeSlipRequest, slipDatabase, SlipError } from "@/lib/payment-slips-server";
 import { resolvePublicOrigin } from "@/lib/public-origin";
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
           await DatabaseService.init();
           const property = await DatabaseService.getProperty(row.property_id);
           const settings = await DatabaseService.getBranchSettings(property, row.property_id);
-          const token2 = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+          const token2 = branchLineToken(settings);
           const origin = await resolvePublicOrigin(request);
           await pushLineMessage(token2, row.line_user_id, [
             {
@@ -232,8 +233,8 @@ export async function POST(request: NextRequest) {
       await DatabaseService.init();
       const property = await DatabaseService.getProperty(propertyId);
       const settings = await DatabaseService.getBranchSettings(property, propertyId);
-      const lineToken = settings?.lineChannelAccessToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
-      if (!lineToken) throw new SlipError("ยังไม่ได้ตั้งค่า LINE Channel Access Token");
+      const lineToken = branchLineToken(settings);
+      if (!lineToken) throw new SlipError(LINE_OA_NOT_CONFIGURED);
       const [rooms, tenants] = await Promise.all([DatabaseService.getRooms(propertyId), DatabaseService.getTenants()]);
       const room = rooms.find((r) => r.roomNumber === roomNumber);
       const lineUserId = resolveLineUserId(
