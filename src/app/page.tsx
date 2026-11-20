@@ -2590,6 +2590,48 @@ export default function HomePage() {
       };
       setContracts((prev) => [newContract, ...prev]);
       await DatabaseService.addContract(newContract);
+
+      // 3. เงินก้อนแรก ณ วันทำสัญญา → ออกบิลแรกเข้าสถานะ "ชำระแล้ว" ให้นับเป็นรายรับบนแดชบอร์ดทันที
+      const moveInItems: InvoiceItem[] = [
+        { name: "ค่าเช่าห้องพักล่วงหน้า (เดือนแรก)", amount: targetRoom?.monthlyRate || 0 },
+        { name: "เงินประกันมัดจำความเสียหาย", amount: actualDeposit },
+        { name: "ค่าบริการเช่าทีวีเดือนแรก", amount: tenantData.hasTv ? tenantData.tvRentalFee || 0 : 0 },
+        { name: "ค่าบริการเช่าตู้เย็นเดือนแรก", amount: tenantData.hasFridge ? tenantData.fridgeRentalFee || 0 : 0 },
+        ...(tenantData.additionalFees || []).map((f) => ({
+          name: `${f.name || "ค่าบริการเพิ่มเติม"} เดือนแรก`,
+          amount: Number(f.amount) || 0,
+        })),
+        {
+          name: "ค่าอุปกรณ์ & ครุภัณฑ์แรกเข้า",
+          amount: (tenantData.electricalEquipmentFee || 0) + (tenantData.furnitureFee || 0),
+        },
+      ].filter((it) => it.amount > 0);
+      const moveInTotal = moveInItems.reduce((sum, it) => sum + it.amount, 0);
+
+      if (moveInTotal > 0) {
+        const now = new Date();
+        const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+        const moveInInvoice: Invoice = {
+          id: `inv-movein-${Date.now()}-${targetRoom?.roomNumber || ""}`,
+          propertyId: property.id,
+          invoiceNumber: `INV-M-${today.replace(/-/g, "")}-${targetRoom?.roomNumber || ""}`,
+          roomNumber: targetRoom?.roomNumber || "",
+          tenantId: finalTenant.id,
+          tenantName: finalTenant.fullName,
+          tenantPhone: finalTenant.phone,
+          billingDate: today,
+          dueDate: today,
+          status: "paid",
+          paidAmount: moveInTotal,
+          remainingAmount: 0,
+          paidAt: now.toISOString(),
+          invoiceType: "move_in",
+          items: moveInItems,
+          totalAmount: moveInTotal,
+        };
+        await DatabaseService.createDirectInvoice(moveInInvoice);
+        setInvoices((prev) => [moveInInvoice, ...prev]);
+      }
     }
 
     setTenants((prev) => [finalTenant, ...prev]);
